@@ -1,0 +1,387 @@
+name: ml4t-engineer
+version: 1.0.0
+python_requires: ">=3.11"
+description: High-performance feature engineering for financial machine learning
+
+modules:
+  - path: ml4t.engineer
+    description: Main entry point
+    functions:
+      - name: compute_features
+        signature: "(data: pl.DataFrame, features: list[str] | list[dict] | Path) -> pl.DataFrame"
+        description: Compute technical indicators on OHLCV data
+        params:
+          - name: data
+            type: polars.DataFrame
+            required: true
+            schema:
+              columns: [open, high, low, close, volume]
+          - name: features
+            type: list[str] | list[dict] | Path
+            required: true
+            description: Feature specifications (names, dicts with params, or YAML path)
+        returns:
+          type: polars.DataFrame
+          description: Original data with feature columns appended
+        errors:
+          - type: ValueError
+            condition: "Unknown feature name"
+            message: "Feature '{name}' not found. Use list_features() to see available."
+          - type: ValueError
+            condition: "Missing required columns"
+            message: "DataFrame missing required columns: {columns}"
+        example: |
+          from ml4t.engineer import compute_features
+          result = compute_features(df, ["rsi", "macd", "atr"])
+
+      - name: list_features
+        signature: "(category: str | None = None) -> list[str]"
+        description: List available features, optionally filtered by category
+        params:
+          - name: category
+            type: str | None
+            required: false
+            description: Filter by category (momentum, trend, volatility, etc.)
+        returns:
+          type: list[str]
+          description: Sorted list of feature names
+        example: |
+          from ml4t.engineer import list_features
+          all_features = list_features()
+          momentum = list_features("momentum")
+
+      - name: list_categories
+        signature: "() -> list[str]"
+        description: List available feature categories
+        returns:
+          type: list[str]
+          description: Sorted list of category names
+        example: |
+          from ml4t.engineer import list_categories
+          categories = list_categories()
+          # ['math', 'microstructure', 'ml', 'momentum', ...]
+
+      - name: describe_feature
+        signature: "(name: str) -> dict[str, Any]"
+        description: Get detailed metadata about a feature
+        params:
+          - name: name
+            type: str
+            required: true
+        returns:
+          type: dict
+          description: Feature metadata (description, parameters, formula, etc.)
+        errors:
+          - type: ValueError
+            condition: "Feature not found"
+        example: |
+          from ml4t.engineer import describe_feature
+          info = describe_feature("rsi")
+
+  - path: ml4t.engineer.labeling
+    description: Label generation for supervised learning
+    functions:
+      - name: triple_barrier_labels
+        signature: "(data: pl.DataFrame, upper_barrier: float, lower_barrier: float, max_holding: int) -> pl.Series"
+        description: Triple-barrier labeling method from AFML
+        params:
+          - name: data
+            type: polars.DataFrame
+            required: true
+          - name: upper_barrier
+            type: float
+            required: true
+            description: Upper profit target (e.g., 0.02 for 2%)
+          - name: lower_barrier
+            type: float
+            required: true
+            description: Lower stop loss (e.g., 0.01 for 1%)
+          - name: max_holding
+            type: int
+            required: true
+            description: Maximum holding period in bars
+        returns:
+          type: polars.Series
+          description: Labels (1=upper hit, -1=lower hit, 0=timeout)
+        example: |
+          from ml4t.engineer.labeling import triple_barrier_labels
+          labels = triple_barrier_labels(df, 0.02, 0.01, 20)
+
+      - name: atr_barriers
+        signature: "(data: pl.DataFrame, atr_period: int, upper_multiplier: float, lower_multiplier: float, max_holding: int) -> pl.Series"
+        description: Triple-barrier with ATR-based dynamic barriers
+        params:
+          - name: atr_period
+            type: int
+            default: 14
+          - name: upper_multiplier
+            type: float
+            default: 2.0
+          - name: lower_multiplier
+            type: float
+            default: 1.0
+          - name: max_holding
+            type: int
+            required: true
+        returns:
+          type: polars.Series
+          description: Labels (1=upper hit, -1=lower hit, 0=timeout)
+
+  - path: ml4t.engineer.bars
+    description: Alternative bar sampling
+    functions:
+      - name: volume_bars
+        signature: "(data: pl.DataFrame, volume_threshold: float) -> pl.DataFrame"
+        description: Sample bars with equal volume per bar
+        params:
+          - name: volume_threshold
+            type: float
+            required: true
+            description: Volume per bar
+
+      - name: dollar_bars
+        signature: "(data: pl.DataFrame, dollar_threshold: float) -> pl.DataFrame"
+        description: Sample bars with equal dollar volume per bar
+
+      - name: tick_imbalance_bars
+        signature: "(data: pl.DataFrame, expected_imbalance: float) -> pl.DataFrame"
+        description: Information-driven bar sampling
+
+  - path: ml4t.engineer.preprocessing
+    description: Leakage-safe preprocessing
+    classes:
+      - name: Preprocessor
+        description: Pipeline of preprocessing steps
+        methods:
+          - name: fit_transform
+            signature: "(X: pl.DataFrame) -> pl.DataFrame"
+          - name: transform
+            signature: "(X: pl.DataFrame) -> pl.DataFrame"
+
+      - name: StandardScaler
+        description: Zero mean, unit variance scaling
+
+      - name: RobustScaler
+        description: Robust scaling using median and IQR
+
+      - name: MinMaxScaler
+        description: Scale to [0, 1] range
+
+catalog:
+  features:
+    momentum:
+      - name: rsi
+        usage: "rsi"
+        params:
+          period: {type: int, default: 14, range: [2, 100]}
+        description: "Relative Strength Index (0-100)"
+        ta_lib: true
+
+      - name: macd
+        usage: "macd"
+        params:
+          fast: {type: int, default: 12}
+          slow: {type: int, default: 26}
+          signal: {type: int, default: 9}
+        description: "Moving Average Convergence/Divergence"
+        ta_lib: true
+
+      - name: stoch
+        usage: "stoch"
+        params:
+          fastk_period: {type: int, default: 14}
+          slowk_period: {type: int, default: 3}
+          slowd_period: {type: int, default: 3}
+        description: "Stochastic Oscillator"
+        ta_lib: true
+
+      - name: cci
+        usage: "cci"
+        params:
+          period: {type: int, default: 14}
+        description: "Commodity Channel Index"
+        ta_lib: true
+
+      - name: adx
+        usage: "adx"
+        params:
+          period: {type: int, default: 14}
+        description: "Average Directional Index (0-100)"
+        ta_lib: true
+
+      - name: mfi
+        usage: "mfi"
+        params:
+          period: {type: int, default: 14}
+        description: "Money Flow Index (0-100)"
+        ta_lib: true
+
+    trend:
+      - name: sma
+        usage: "sma"
+        params:
+          period: {type: int, default: 20, range: [1, 500]}
+        description: "Simple Moving Average"
+        ta_lib: true
+
+      - name: ema
+        usage: "ema"
+        params:
+          period: {type: int, default: 20}
+        description: "Exponential Moving Average"
+        ta_lib: true
+
+      - name: wma
+        usage: "wma"
+        params:
+          period: {type: int, default: 20}
+        description: "Weighted Moving Average"
+        ta_lib: true
+
+      - name: kama
+        usage: "kama"
+        params:
+          period: {type: int, default: 30}
+        description: "Kaufman Adaptive Moving Average"
+        ta_lib: true
+
+    volatility:
+      - name: atr
+        usage: "atr"
+        params:
+          period: {type: int, default: 14}
+        description: "Average True Range"
+        ta_lib: true
+
+      - name: natr
+        usage: "natr"
+        params:
+          period: {type: int, default: 14}
+        description: "Normalized ATR (percentage)"
+        ta_lib: true
+
+      - name: bollinger_bands
+        usage: "bollinger_bands"
+        params:
+          period: {type: int, default: 20}
+          std_dev: {type: float, default: 2.0}
+        description: "Bollinger Bands (upper, middle, lower)"
+        ta_lib: true
+
+      - name: yang_zhang
+        usage: "yang_zhang"
+        params:
+          window: {type: int, default: 20}
+        description: "Yang-Zhang volatility (most efficient estimator)"
+
+      - name: parkinson
+        usage: "parkinson"
+        params:
+          window: {type: int, default: 20}
+        description: "Parkinson high-low volatility"
+
+      - name: garman_klass
+        usage: "garman_klass"
+        params:
+          window: {type: int, default: 20}
+        description: "Garman-Klass OHLC volatility"
+
+      - name: realized
+        usage: "realized"
+        params:
+          window: {type: int, default: 20}
+        description: "Realized volatility (squared returns)"
+
+    volume:
+      - name: obv
+        usage: "obv"
+        description: "On Balance Volume"
+        ta_lib: true
+
+      - name: ad
+        usage: "ad"
+        description: "Accumulation/Distribution"
+        ta_lib: true
+
+      - name: adosc
+        usage: "adosc"
+        params:
+          fast: {type: int, default: 3}
+          slow: {type: int, default: 10}
+        description: "A/D Oscillator"
+        ta_lib: true
+
+    microstructure:
+      - name: kyle_lambda
+        usage: "kyle_lambda"
+        params:
+          window: {type: int, default: 20}
+        description: "Kyle's Lambda (price impact coefficient)"
+
+      - name: amihud_illiquidity
+        usage: "amihud_illiquidity"
+        params:
+          window: {type: int, default: 20}
+        description: "Amihud illiquidity ratio"
+
+      - name: vpin
+        usage: "vpin"
+        params:
+          volume_bucket_size: {type: int, default: 1000}
+          n_buckets: {type: int, default: 50}
+        description: "Volume-Synchronized Probability of Informed Trading"
+
+      - name: roll_spread
+        usage: "roll_spread"
+        params:
+          window: {type: int, default: 20}
+        description: "Roll implied bid-ask spread"
+
+    ml:
+      - name: fractional_diff
+        usage: "fractional_diff"
+        params:
+          d: {type: float, default: 0.4, range: [0, 1]}
+          threshold: {type: float, default: 1e-5}
+        description: "Fractionally differenced series"
+
+      - name: lag
+        usage: "lag"
+        params:
+          periods: {type: int, default: 1}
+        description: "Lagged values"
+
+      - name: rolling_stats
+        usage: "rolling_stats"
+        params:
+          window: {type: int, default: 20}
+        description: "Rolling statistics (mean, std, skew, kurtosis)"
+
+      - name: entropy
+        usage: "entropy"
+        params:
+          window: {type: int, default: 20}
+        description: "Shannon entropy"
+
+      - name: hurst
+        usage: "hurst"
+        params:
+          window: {type: int, default: 100}
+        description: "Hurst exponent (mean reversion indicator)"
+
+errors:
+  - type: ValueError
+    message: "Feature '{name}' not found"
+    fix: "Use list_features() to see available features"
+
+  - type: ValueError
+    message: "DataFrame missing required columns: {columns}"
+    fix: "Ensure data has columns: open, high, low, close, volume"
+
+  - type: InsufficientDataError
+    message: "Need at least {required} rows, got {actual}"
+    fix: "Provide more historical data for the lookback period"
+
+  - type: InvalidParameterError
+    message: "Invalid value for {param}: {value}"
+    fix: "Check describe_feature() for valid parameter ranges"

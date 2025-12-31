@@ -40,7 +40,10 @@ Example
 >>> result = compute_features(df, ["rsi_14", "sma_20"])
 """
 
-__version__ = "0.1.0"
+try:
+    from ml4t.engineer._version import __version__
+except ImportError:
+    __version__ = "0.0.0.dev0"
 
 from ml4t.engineer.api import (
     compute_features,
