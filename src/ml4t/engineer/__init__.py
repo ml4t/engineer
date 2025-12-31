@@ -11,6 +11,17 @@ list_features : List available features
 list_categories : List feature categories
 describe_feature : Get feature metadata
 
+Modules
+-------
+features : Technical indicators and feature engineering
+labeling : Triple-barrier and other labeling methods
+bars : Alternative bar sampling (volume, tick, imbalance)
+pipeline : DAG-based feature orchestration
+preprocessing : Scalers and preprocessing utilities
+dataset : ML dataset building utilities
+store : Feature storage (DuckDB)
+validation : Cross-validation utilities
+
 Example
 -------
 >>> import polars as pl
@@ -65,6 +76,39 @@ from ml4t.engineer.core import (
     validate_period,
     validate_window,
 )
+from ml4t.engineer.dataset import (
+    DatasetInfo,
+    FoldResult,
+    MLDatasetBuilder,
+    create_dataset_builder,
+)
+from ml4t.engineer.preprocessing import (
+    BaseScaler,
+    MinMaxScaler,
+    NotFittedError,
+    Preprocessor,
+    RobustScaler,
+    StandardScaler,
+)
+
+# Import submodules
+from ml4t.engineer import (
+    bars,
+    config,
+    core,
+    dataset,
+    features,
+    labeling,
+    logging,
+    outcome,
+    pipeline,
+    preprocessing,
+    relationships,
+    selection,
+    store,
+    validation,
+    visualization,
+)
 
 __all__ = [
     # Version
@@ -79,6 +123,18 @@ __all__ = [
     "FeatureMetadata",
     "FeatureRegistry",
     "get_registry",
+    # Dataset builder
+    "MLDatasetBuilder",
+    "create_dataset_builder",
+    "FoldResult",
+    "DatasetInfo",
+    # Preprocessing
+    "Preprocessor",
+    "StandardScaler",
+    "MinMaxScaler",
+    "RobustScaler",
+    "BaseScaler",
+    "NotFittedError",
     # Exceptions
     "ComputationError",
     "DataSchemaError",
@@ -100,4 +156,20 @@ __all__ = [
     # Validation
     "validate_period",
     "validate_window",
+    # Submodules
+    "bars",
+    "config",
+    "core",
+    "dataset",
+    "features",
+    "labeling",
+    "logging",
+    "outcome",
+    "pipeline",
+    "preprocessing",
+    "relationships",
+    "selection",
+    "store",
+    "validation",
+    "visualization",
 ]
