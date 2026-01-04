@@ -2,32 +2,33 @@
 
 ## Important Notice
 
-Cross-validation with purging and embargo for financial time series is implemented in the **qeval** library, not qfeatures.
+Cross-validation with purging and embargo for financial time series is implemented in the **ml4t-diagnostic** library, not ml4t-engineer.
 
-## Why Not in QFeatures?
+## Why Not in ML4T Engineer?
 
-The qfeatures library focuses on feature engineering, while qeval specializes in model evaluation and backtesting. Proper cross-validation for financial time series requires:
+The ml4t-engineer library focuses on feature engineering, while ml4t-diagnostic specializes in model evaluation and backtesting. Proper cross-validation for financial time series requires:
 
 1. **Purging**: Removing training samples that are too close to test samples to prevent information leakage
 2. **Embargo**: Adding a gap after test samples to account for the forward-looking nature of labels
 3. **Label Horizons**: Accounting for how far into the future labels look
 
-These requirements are tightly coupled with backtesting and evaluation logic, making qeval the natural home for these utilities.
+These requirements are tightly coupled with backtesting and evaluation logic, making ml4t-diagnostic the natural home for these utilities.
 
-## Using Cross-Validation with QFeatures Data
+## Using Cross-Validation with ML4T Engineer Data
 
-To use proper cross-validation with data processed by qfeatures:
+To use proper cross-validation with data processed by ml4t-engineer:
 
 ```python
-# 1. Engineer features with qfeatures
-import qfeatures as qf
-from qfeatures.labeling import BarrierConfig, triple_barrier_labels
+# 1. Engineer features with ml4t-engineer
+from ml4t.engineer import compute_features
+from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
 
-# Create features
-df = df.with_columns([
-    qf.ta.rsi("close", 14).alias("rsi"),
-    qf.ta.adx("high", "low", "close", 14).alias("adx"),
-])
+# Create features using config-driven API
+feature_config = {
+    "rsi": {"period": 14},
+    "adx": {"period": 14},
+}
+df = compute_features(df, feature_config)
 
 # Apply labeling
 config = BarrierConfig(
@@ -37,8 +38,8 @@ config = BarrierConfig(
 )
 labeled_df = triple_barrier_labels(df, config)
 
-# 2. Use qeval for cross-validation
-from qeval.splitters import PurgedWalkForwardCV
+# 2. Use ml4t-diagnostic for cross-validation
+from ml4t.diagnostic.splitters import PurgedWalkForwardCV
 
 # Create cross-validator
 cv = PurgedWalkForwardCV(
@@ -56,7 +57,7 @@ for train_idx, test_idx in cv.split(X, y):
     pass
 ```
 
-## Available Cross-Validators in qeval
+## Available Cross-Validators in ML4T Diagnostic
 
 1. **PurgedWalkForwardCV**: Walk-forward cross-validation with purging and embargo
    - Best for time series with strong temporal dependencies
@@ -73,5 +74,5 @@ for train_idx, test_idx in cv.split(X, y):
 
 ## See Also
 
-- [qeval documentation](https://github.com/quantlab/qeval) for detailed usage examples
-- [qfeatures labeling module](../labeling/) for creating labels with proper horizons
+- [ml4t-diagnostic documentation](https://github.com/ml4t/diagnostic) for detailed usage examples
+- [ml4t-engineer labeling module](../labeling/) for creating labels with proper horizons

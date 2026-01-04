@@ -1,6 +1,6 @@
-# qfeatures Examples
+# ML4T Engineer Examples
 
-This directory contains example scripts and notebooks demonstrating the Financial Machine Learning (FML) features of the qfeatures library.
+This directory contains example scripts and notebooks demonstrating the Financial Machine Learning (FML) features of the ml4t-engineer library.
 
 ## Core FML Examples
 
@@ -68,11 +68,11 @@ Shows how to chain transformations:
 - Combining technical indicators
 - Data preprocessing workflows
 
-## Legacy Examples (Technical Analysis)
+## Technical Analysis Examples
 
 ### 8. **indicator_comparison.py** - TA Indicator Comparison
 
-Compare qfeatures indicators with TA-Lib for validation.
+Compare ml4t-engineer indicators with TA-Lib for validation.
 
 ### 9. **performance_comparison.py** - Performance Benchmarks
 
