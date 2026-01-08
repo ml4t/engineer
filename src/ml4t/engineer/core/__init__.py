@@ -1,19 +1,30 @@
 """Core module for ml4t-engineer.
 
-Contains base types, exceptions, schemas, and registry.
+Contains base types, exceptions, schemas, calendar utilities, and registry.
 """
 
+from ml4t.engineer.core.calendars import (
+    CryptoCalendar,
+    EquityCalendar,
+    ExchangeCalendar,
+)
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import (
     ComputationError,
+    # First-level exceptions (flat hierarchy)
+    ConfigurationError,
+    DataError,
     DataSchemaError,
     DataValidationError,
     ImplementationNotAvailableError,
-    IndicatorError,
+    IndicatorError,  # Deprecated
     InsufficientDataError,
+    IntegrationError,
     InvalidArgumentError,
     InvalidParameterError,
-    ML4TEngineerError,
+    # Base exception
+    QuantLabTAError,
+    # Backward compatibility aliases
     TechnicalAnalysisError,
     ValidationError,
 )
@@ -27,7 +38,6 @@ from ml4t.engineer.core.schemas import (
     FEATURE_SCHEMA,
     LABELED_DATA_SCHEMA,
     OHLCV_SCHEMA,
-    validate_ohlcv_schema,
     validate_schema,
 )
 from ml4t.engineer.core.types import (
@@ -42,15 +52,12 @@ from ml4t.engineer.core.types import (
     StepConfig,
     StepName,
     Symbol,
-    TimeUnit,
     Timestamp,
+    TimeUnit,
 )
 from ml4t.engineer.core.validation import (
-    validate_column_exists,
     validate_lag,
     validate_list_length,
-    validate_numeric_column,
-    validate_percentage,
     validate_period,
     validate_positive,
     validate_probability,
@@ -59,17 +66,11 @@ from ml4t.engineer.core.validation import (
 )
 
 __all__ = [
-    # Registry
-    "feature",
-    "FeatureMetadata",
-    "FeatureRegistry",
-    "get_registry",
     # Schemas
     "EXTENDED_OHLCV_SCHEMA",
     "FEATURE_SCHEMA",
     "LABELED_DATA_SCHEMA",
     "OHLCV_SCHEMA",
-    "validate_ohlcv_schema",
     "validate_schema",
     # Types
     "AssetId",
@@ -83,26 +84,37 @@ __all__ = [
     "StepConfig",
     "StepName",
     "Symbol",
-    "TimeUnit",
     "Timestamp",
-    # Exceptions
-    "ComputationError",
-    "DataSchemaError",
-    "DataValidationError",
-    "ImplementationNotAvailableError",
-    "IndicatorError",
-    "InsufficientDataError",
-    "InvalidArgumentError",
-    "InvalidParameterError",
-    "ML4TEngineerError",
-    "TechnicalAnalysisError",
+    "TimeUnit",
+    # Calendars
+    "CryptoCalendar",
+    "EquityCalendar",
+    "ExchangeCalendar",
+    # Registry
+    "feature",
+    "FeatureMetadata",
+    "FeatureRegistry",
+    "get_registry",
+    # Exceptions - Base
+    "QuantLabTAError",
+    # Exceptions - First-level (flat hierarchy)
+    "ConfigurationError",
     "ValidationError",
+    "InvalidParameterError",
+    "DataValidationError",
+    "DataSchemaError",
+    "InsufficientDataError",
+    "ComputationError",
+    "DataError",
+    "IntegrationError",
+    # Exceptions - Backward compatibility aliases
+    "TechnicalAnalysisError",
+    "IndicatorError",  # Deprecated
+    "InvalidArgumentError",
+    "ImplementationNotAvailableError",
     # Validation
-    "validate_column_exists",
     "validate_lag",
     "validate_list_length",
-    "validate_numeric_column",
-    "validate_percentage",
     "validate_period",
     "validate_positive",
     "validate_probability",

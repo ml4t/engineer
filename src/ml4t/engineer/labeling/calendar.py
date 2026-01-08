@@ -13,7 +13,7 @@ from typing import Protocol
 import polars as pl
 
 from ml4t.engineer.labeling.barriers import BarrierConfig
-from ml4t.engineer.labeling.core import triple_barrier_labels
+from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
 
 
 class TradingCalendar(Protocol):

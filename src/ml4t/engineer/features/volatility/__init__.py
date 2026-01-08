@@ -1,27 +1,7 @@
-"""Volatility indicators for ml4t-engineer.
+"""
+Volatility features.
 
-This module provides volatility-based technical analysis indicators including:
-
-TA-Lib Compatible:
-- ATR (Average True Range)
-- NATR (Normalized ATR)
-- TRANGE (True Range)
-- Bollinger Bands
-
-Advanced Volatility Models (Academic):
-- Yang-Zhang volatility (most efficient estimator)
-- Parkinson volatility (high-low range-based)
-- Garman-Klass volatility (OHLC-based)
-- Rogers-Satchell volatility (drift-adjusted)
-- Realized volatility (squared returns)
-- EWMA volatility (exponentially weighted)
-- GARCH forecast (conditional volatility)
-
-Volatility Analysis:
-- Conditional volatility ratio
-- Volatility of volatility
-- Volatility percentile rank
-- Volatility regime probability
+All features in this category are auto-registered via @feature decorators.
 """
 
 # Import all features to trigger registration

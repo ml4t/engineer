@@ -1,4 +1,4 @@
-"""Simple feature metadata registry for ML4T Engineer.
+"""Simple feature metadata registry for QFeatures.
 
 This module provides a lightweight registry system for tracking feature metadata
 without the overhead of complex class hierarchies.
@@ -37,6 +37,8 @@ class FeatureMetadata:
         - None: Depends on parameters or input
 
         Note: This indicates ML-readiness, NOT statistical stationarity.
+              For proper stationarity testing (ADF/KPSS), use the
+              ml4t.engineer.diagnostics.stationarity module.
     lookback : Callable[[dict[str, Any]], int]
         Function that returns minimum lookback period given parameters
         For example: lambda **kwargs: kwargs.get("period", 14)

@@ -46,6 +46,12 @@ Examples
 ...     timestamp_col="timestamp",
 ... )
 >>>
+>>> # Using LabelingConfig for reproducibility
+>>> from ml4t.engineer.config import LabelingConfig
+>>> config = LabelingConfig.atr_barrier(atr_tp_multiple=2.0, atr_sl_multiple=1.0)
+>>> config.to_yaml("atr_config.yaml")  # Save for later
+>>> labeled = atr_triple_barrier_labels(df, config=config)
+>>>
 >>> # Short positions (profit when price falls)
 >>> labeled = atr_triple_barrier_labels(
 ...     df,
@@ -55,26 +61,33 @@ Examples
 ... )
 """
 
-from typing import Literal
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.features.volatility import atr_polars
 from ml4t.engineer.labeling.barriers import BarrierConfig
-from ml4t.engineer.labeling.core import triple_barrier_labels
+from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
+
+if TYPE_CHECKING:
+    from ml4t.engineer.config import LabelingConfig
 
 
 def atr_triple_barrier_labels(
     data: pl.DataFrame | pl.LazyFrame,
-    atr_tp_multiple: float = 2.0,
-    atr_sl_multiple: float = 1.0,
-    atr_period: int = 14,
+    atr_tp_multiple: float | None = None,
+    atr_sl_multiple: float | None = None,
+    atr_period: int | None = None,
     max_holding_bars: int | str | None = None,
-    side: Literal[1, -1, 0] | str | None = 1,
+    side: Literal[1, -1, 0] | str | None = None,
     price_col: str = "close",
     timestamp_col: str = "timestamp",
     trailing_stop: bool = False,
+    *,
+    config: LabelingConfig | None = None,
 ) -> pl.DataFrame:
     """
     Triple barrier labeling with ATR-adjusted dynamic barriers.
@@ -129,6 +142,11 @@ def atr_triple_barrier_labels(
         Timestamp column for duration calculations.
     trailing_stop : bool, default False
         Enable trailing stop (lock in profits as price moves favorably).
+    config : LabelingConfig, optional
+        Pydantic configuration object (alternative to individual parameters).
+        If provided, extracts atr_tp_multiple, atr_sl_multiple, atr_period,
+        max_holding_bars, side, and trailing_stop from config.
+        Individual parameters override config values if both are provided.
 
     Returns
     -------
@@ -213,6 +231,24 @@ def atr_triple_barrier_labels(
     ...     side="side_prediction",  # Dynamic side
     ... )
     """
+    # Extract values from config if provided, with individual params as overrides
+    if config is not None:
+        atr_tp_multiple = atr_tp_multiple if atr_tp_multiple is not None else config.atr_tp_multiple
+        atr_sl_multiple = atr_sl_multiple if atr_sl_multiple is not None else config.atr_sl_multiple
+        atr_period = atr_period if atr_period is not None else config.atr_period
+        if max_holding_bars is None and isinstance(config.max_holding_period, int | str):
+            max_holding_bars = config.max_holding_period
+        if side is None:
+            side = config.side  # type: ignore[assignment]
+        if not trailing_stop and config.trailing_stop:
+            trailing_stop = bool(config.trailing_stop)
+
+    # Apply defaults for any remaining None values
+    atr_tp_multiple = atr_tp_multiple if atr_tp_multiple is not None else 2.0
+    atr_sl_multiple = atr_sl_multiple if atr_sl_multiple is not None else 1.0
+    atr_period = atr_period if atr_period is not None else 14
+    side = side if side is not None else 1
+
     # Validate OHLC columns
     required_cols = ["high", "low", "close"]
     missing = [col for col in required_cols if col not in data.columns]
@@ -245,7 +281,7 @@ def atr_triple_barrier_labels(
     # Use a large default (len of data) if not specified
     holding_period = max_holding_bars if max_holding_bars is not None else len(data_with_barriers)
 
-    config = BarrierConfig(
+    barrier_config = BarrierConfig(
         upper_barrier="upper_barrier_distance",  # Column name
         lower_barrier="lower_barrier_distance",  # Column name
         max_holding_period=holding_period,
@@ -256,7 +292,7 @@ def atr_triple_barrier_labels(
     # Use existing triple_barrier_labels with dynamic barriers
     labeled = triple_barrier_labels(
         data_with_barriers,
-        config=config,
+        config=barrier_config,
         price_col=price_col,
         timestamp_col=timestamp_col,
     )

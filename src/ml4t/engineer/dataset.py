@@ -43,6 +43,8 @@ if TYPE_CHECKING:
     import pandas as pd
     from numpy.typing import NDArray
 
+    from ml4t.engineer.config import PreprocessingConfig
+
 
 class SplitterProtocol(Protocol):
     """Protocol for cross-validation splitters.
@@ -230,13 +232,16 @@ class MLDatasetBuilder:
         """Get the current scaler."""
         return self._scaler
 
-    def set_scaler(self, scaler: BaseScaler | None) -> MLDatasetBuilder:
+    def set_scaler(self, scaler: BaseScaler | PreprocessingConfig | None) -> MLDatasetBuilder:
         """Set the scaler for preprocessing.
 
         Parameters
         ----------
-        scaler : BaseScaler | None
-            Scaler to use. Pass None to disable scaling.
+        scaler : BaseScaler | PreprocessingConfig | None
+            Scaler to use. Accepts:
+            - BaseScaler instance (StandardScaler, MinMaxScaler, RobustScaler)
+            - PreprocessingConfig (Pydantic config, calls create_scaler())
+            - None to disable scaling
 
         Returns
         -------
@@ -248,8 +253,16 @@ class MLDatasetBuilder:
         >>> builder.set_scaler(StandardScaler())
         >>> builder.set_scaler(MinMaxScaler(feature_range=(-1, 1)))
         >>> builder.set_scaler(None)  # Disable scaling
+        >>>
+        >>> # Using PreprocessingConfig for reproducibility
+        >>> from ml4t.engineer.config import PreprocessingConfig
+        >>> builder.set_scaler(PreprocessingConfig.robust())
         """
-        self._scaler = scaler
+        # Handle PreprocessingConfig by creating the scaler
+        if hasattr(scaler, "create_scaler"):
+            self._scaler = scaler.create_scaler()  # type: ignore[union-attr]
+        else:
+            self._scaler = scaler
         return self
 
     @property
@@ -550,7 +563,7 @@ def create_dataset_builder(
     features: pl.DataFrame,
     labels: pl.Series | pl.DataFrame,
     dates: pl.Series | None = None,
-    scaler: BaseScaler | str | None = "standard",
+    scaler: BaseScaler | PreprocessingConfig | str | None = "standard",
 ) -> MLDatasetBuilder:
     """Convenience function to create MLDatasetBuilder with common defaults.
 
@@ -562,12 +575,13 @@ def create_dataset_builder(
         Target variable.
     dates : pl.Series | None, optional
         Date/time index.
-    scaler : BaseScaler | str | None, default "standard"
+    scaler : BaseScaler | PreprocessingConfig | str | None, default "standard"
         Scaler to use. Options:
         - "standard": StandardScaler (z-score)
         - "minmax": MinMaxScaler ([0, 1])
         - "robust": RobustScaler (median/IQR)
         - BaseScaler instance: Use provided scaler
+        - PreprocessingConfig: Use config to create scaler
         - None: No scaling
 
     Returns
@@ -578,6 +592,11 @@ def create_dataset_builder(
     Examples
     --------
     >>> builder = create_dataset_builder(features, labels, scaler="robust")
+    >>>
+    >>> # Using PreprocessingConfig for reproducibility
+    >>> from ml4t.engineer.config import PreprocessingConfig
+    >>> config = PreprocessingConfig.robust(quantile_range=(10.0, 90.0))
+    >>> builder = create_dataset_builder(features, labels, scaler=config)
     """
     from ml4t.engineer.preprocessing import MinMaxScaler, RobustScaler
 
@@ -587,6 +606,9 @@ def create_dataset_builder(
 
     if scaler is None:
         pass
+    elif hasattr(scaler, "create_scaler"):
+        # PreprocessingConfig - use set_scaler which handles the conversion
+        builder.set_scaler(scaler)  # type: ignore[arg-type]
     elif isinstance(scaler, str):
         scaler_map = {
             "standard": StandardScaler,
@@ -601,6 +623,8 @@ def create_dataset_builder(
     elif isinstance(scaler, BaseScaler):
         builder.set_scaler(scaler)
     else:
-        raise TypeError(f"scaler must be str, BaseScaler, or None. Got {type(scaler)}")
+        raise TypeError(
+            f"scaler must be str, BaseScaler, PreprocessingConfig, or None. Got {type(scaler)}"
+        )
 
     return builder

@@ -5,17 +5,20 @@ MOM is the simplest momentum indicator. It calculates the difference
 between the current price and the price n periods ago.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import numpy.typing as npt
 import polars as pl
 from numba import jit
 
 from ml4t.engineer.core.decorators import feature
+from ml4t.engineer.core.deprecation import resolve_period_parameter
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
 
 @jit(nopython=True, cache=True, fastmath=False)  # type: ignore[misc]
-def mom_numba(close: npt.NDArray[np.float64], timeperiod: int = 10) -> npt.NDArray[np.float64]:
+def mom_numba(close: npt.NDArray[np.float64], period: int = 10) -> npt.NDArray[np.float64]:
     """
     Momentum calculation optimized for performance.
 
@@ -25,7 +28,7 @@ def mom_numba(close: npt.NDArray[np.float64], timeperiod: int = 10) -> npt.NDArr
     ----------
     close : npt.NDArray
         Price data (typically closing close)
-    timeperiod : int, default 10
+    period : int, default 10
         Number of periods for momentum calculation
 
     Returns
@@ -36,17 +39,17 @@ def mom_numba(close: npt.NDArray[np.float64], timeperiod: int = 10) -> npt.NDArr
     n = len(close)
     result = np.full(n, np.nan)
 
-    # Need at least timeperiod + 1 close
-    if n <= timeperiod:
+    # Need at least period + 1 close
+    if n <= period:
         return result
 
     # Vectorized calculation - much faster than loop
-    result[timeperiod:] = close[timeperiod:] - close[:-timeperiod]
+    result[period:] = close[period:] - close[:-period]
 
     return result
 
 
-def mom_polars(column: str, timeperiod: int = 10) -> pl.Expr:
+def mom_polars(column: str, period: int = 10) -> pl.Expr:
     """
     Momentum using Polars - delegates to Numba for exact TA-Lib compatibility.
 
@@ -54,7 +57,7 @@ def mom_polars(column: str, timeperiod: int = 10) -> pl.Expr:
     ----------
     column : str
         Column name for price data
-    timeperiod : int, default 10
+    period : int, default 10
         Number of periods for momentum calculation
 
     Returns
@@ -63,7 +66,7 @@ def mom_polars(column: str, timeperiod: int = 10) -> pl.Expr:
         Polars expression for momentum
     """
     return pl.col(column).map_batches(
-        lambda s: pl.Series(mom_numba(s.to_numpy(), timeperiod)),
+        lambda s: pl.Series(mom_numba(s.to_numpy(), period)),
         return_dtype=pl.Float64,
     )
 
@@ -79,7 +82,9 @@ def mom_polars(column: str, timeperiod: int = 10) -> pl.Expr:
 )
 def mom(
     close: npt.NDArray[np.float64] | pl.Series | str,
-    timeperiod: int = 10,
+    period: int | None = None,
+    *,
+    timeperiod: int | None = None,  # Deprecated alias for period
 ) -> npt.NDArray[np.float64] | pl.Expr:
     """
     Momentum exactly matching TA-Lib.
@@ -92,10 +97,10 @@ def mom(
     ----------
     close : array-like or str
         Price data or column name
-    timeperiod : int, default 10
+    period : int, default 10
         Number of periods for momentum calculation
-    implementation : str, default 'auto'
-        Implementation to use: 'auto', 'numba', or 'polars'
+    timeperiod : int, optional
+        Deprecated alias for period. Use period instead.
 
     Returns
     -------
@@ -106,22 +111,30 @@ def mom(
     --------
     >>> import numpy as np
     >>> close = np.array([10, 11, 12, 13, 14, 15, 14, 13, 12, 11, 10])
-    >>> mom_values = mom(close, timeperiod=5)
+    >>> mom_values = mom(close, period=5)
 
     Notes
     -----
     - MOM is not normalized and should not be used to compare different securities
     - For normalized momentum, use ROC or ROCP
-    - First 'timeperiod' close will be NaN
+    - First 'period' close will be NaN
     - Simple calculation: price - price[n periods ago]
     """
+    # Resolve period with deprecation handling
+    period = resolve_period_parameter(
+        period=period,
+        timeperiod=timeperiod,
+        default=10,
+        func_name="mom",
+    )
+
     # Validate parameters
-    if timeperiod < 1:
-        raise InvalidParameterError(f"timeperiod must be >= 1, got {timeperiod}")
+    if period < 1:
+        raise InvalidParameterError(f"period must be >= 1, got {period}")
 
     if isinstance(close, str):
         # Column name provided for Polars
-        return mom_polars(close, timeperiod)
+        return mom_polars(close, period)
 
     # Convert to numpy if needed
     if isinstance(close, pl.Series):
@@ -134,15 +147,15 @@ def mom(
         close = close.astype(np.float64, copy=False)
 
     n = len(close)
-    if n <= timeperiod:
+    if n <= period:
         return np.full(n, np.nan)
 
     # Ultra-minimal allocation approach for best performance
     result = np.empty(n, dtype=np.float64)
-    result[:timeperiod] = np.nan
+    result[:period] = np.nan
 
     # Direct array subtraction - NumPy's C code is highly optimized for this
-    result[timeperiod:] = close[timeperiod:] - close[:-timeperiod]
+    result[period:] = close[period:] - close[:-period]
     return result
 
 
