@@ -2,6 +2,25 @@
 """
 Structural Break Detection Features.
 
+Exports:
+    coefficient_of_variation(data, window=20) -> Expr
+        Rolling CV (std/mean). Key "gate" feature for regime detection.
+
+    variance_ratio(data, window=20, holding_period=5) -> Expr
+        Lo-MacKinlay variance ratio test for random walk.
+
+    rolling_kl_divergence(data, ref_window=252, test_window=20) -> Expr
+        KL divergence between reference and test distributions.
+
+    rolling_wasserstein(data, ref_window=252, test_window=20) -> Expr
+        Wasserstein distance for distribution shift detection.
+
+    rolling_drift(data, ref_window=252, test_window=20) -> Expr
+        Combined drift score from multiple metrics.
+
+    rolling_cv_zscore(data, window=20, lookback=252) -> Expr
+        Z-score of CV relative to historical distribution.
+
 Implements statistical features for detecting regime changes and structural breaks
 in financial time series. Based on 2025 ADIA Lab Structural Break Challenge insights
 and modern machine learning approaches.
@@ -299,7 +318,8 @@ def variance_ratio(
     validate_window(q, min_window=2, name="q")
     feature_expr = pl.col(feature) if isinstance(feature, str) else feature
 
-    return feature_expr.rolling_map(
+    # Cast to Float64 to ensure consistent return type from rolling_map
+    return feature_expr.cast(pl.Float64).rolling_map(
         lambda x: _variance_ratio_nb(x.to_numpy().astype(np.float64), q),
         window_size=window,
         weights=None,

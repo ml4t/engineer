@@ -1,6 +1,26 @@
 # mypy: disable-error-code="arg-type,call-arg,return-value,assignment,operator"
 """Core logging functionality for ml4t.engineer.
 
+Exports:
+    setup_logging(level=INFO, file=None) - Configure logging subsystem.
+    get_logger(name, level=None) -> FeatureLogger - Get named logger.
+    logged_feature(func) - Decorator for feature function logging.
+    suppress_warnings() - Context manager to suppress warnings.
+
+    Module Loggers:
+        get_ta_logger() -> FeatureLogger - Technical analysis
+        get_ml_logger() -> FeatureLogger - ML features
+        get_microstructure_logger() -> FeatureLogger - Market microstructure
+        get_volatility_logger() -> FeatureLogger - Volatility features
+        get_regime_logger() -> FeatureLogger - Regime detection
+        get_cross_asset_logger() -> FeatureLogger - Cross-asset features
+        get_risk_logger() -> FeatureLogger - Risk metrics
+
+    Classes:
+        FeatureLogger - Extended logger with feature context
+        PerformanceTracker - Track feature computation performance
+        QFeaturesFormatter - Custom log formatter
+
 Provides structured logging for feature engineering operations, performance tracking,
 data quality monitoring, and error reporting with rich context information.
 """

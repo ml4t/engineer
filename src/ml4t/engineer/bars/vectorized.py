@@ -2,6 +2,19 @@
 """
 Vectorized bar samplers using Polars for high performance.
 
+Exports:
+    VolumeBarSamplerVectorized(volume_threshold=1000) -> BarSampler
+        Volume bars using Numba-accelerated threshold detection.
+
+    DollarBarSamplerVectorized(dollar_threshold=1_000_000) -> BarSampler
+        Dollar bars using vectorized cumulative sum.
+
+    TickBarSamplerVectorized(tick_threshold=100) -> BarSampler
+        Tick bars with fixed trade count.
+
+    ImbalanceBarSamplerVectorized(expected_imbalance=100) -> BarSampler
+        Tick imbalance bars with EWMA-adaptive thresholds.
+
 This module provides vectorized implementations of bar samplers that achieve
 10,000+ rows/sec performance by leveraging Polars' columnar operations instead
 of Python loops.

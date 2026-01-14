@@ -1,5 +1,20 @@
 """ML Dataset Builder for leakage-free train/test preparation.
 
+Exports:
+    MLDatasetBuilder(features, labels, ...) - Main class for dataset preparation
+        .set_scaler(scaler) - Set scaling strategy
+        .set_features(feature_names) - Select feature subset
+        .split(cv) -> Generator[FoldResult] - Generate CV folds
+        .get_full_dataset() -> tuple[X, y] - Get full dataset
+
+    create_dataset_builder(features, labels, ...) -> MLDatasetBuilder
+        Factory function with common defaults.
+
+    Classes:
+        FoldResult - Train/test split results with metadata
+        DatasetInfo - Dataset statistics and diagnostics
+        SplitterProtocol - Protocol for CV splitters
+
 This module provides the MLDatasetBuilder class that orchestrates:
 1. Feature/label management
 2. Train-only preprocessing (scaling, imputation)

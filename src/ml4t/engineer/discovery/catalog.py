@@ -1,5 +1,19 @@
 """Feature catalog for enhanced discoverability.
 
+Exports:
+    FeatureCatalog(registry) - Feature discovery interface
+        .list(category=None, normalized=None, ...) -> list[FeatureMetadata]
+        .search(query, ...) -> list[FeatureMetadata]
+        .describe(name) -> str - Rich feature description
+        .categories() -> list[str] - Available categories
+        .tags() -> list[str] - Available tags
+
+    Module-level API (via proxy):
+        from ml4t.engineer import features
+        features.list(category="momentum")
+        features.search("volatility")
+        features.describe("rsi")
+
 Provides filtering, search, and description capabilities for the feature registry.
 
 Examples

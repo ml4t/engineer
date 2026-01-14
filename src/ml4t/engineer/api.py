@@ -1,6 +1,19 @@
-"""Config-driven feature computation API for QFeatures.
+"""Config-driven feature computation API for ml4t.engineer.
 
 This module provides the main public API for computing features from configurations.
+
+Exports:
+    compute_features(data, features, column_map=None) -> DataFrame
+        Main API for computing technical indicators on OHLCV data.
+
+    Constants:
+        COLUMN_ARG_MAP: dict - Maps function params to DataFrame columns
+        INPUT_TYPE_COLUMNS: dict - Maps input_type metadata to required columns
+
+Internal:
+    _parse_feature_input() - Parse feature specifications
+    _resolve_dependencies() - Topological sort of features
+    _execute_feature() - Execute single feature computation
 """
 
 from pathlib import Path

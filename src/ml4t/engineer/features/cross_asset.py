@@ -1,5 +1,39 @@
 """Cross-asset relationship features for multi-asset ML models.
 
+Exports:
+    rolling_correlation(series1, series2, window=20) -> Expr
+        Rolling correlation between two series.
+
+    beta_to_market(returns, market_returns, window=60) -> Expr
+        Rolling beta to market index.
+
+    correlation_regime_indicator(series1, series2, ...) -> Expr
+        High/low correlation regime detection.
+
+    lead_lag_correlation(series1, series2, max_lag=5, window=60) -> Expr
+        Cross-correlation at various lags.
+
+    multi_asset_dispersion(returns_list, window=20) -> Expr
+        Cross-sectional return dispersion.
+
+    correlation_matrix_features(returns_df, window=60) -> DataFrame
+        Eigenvalue-based correlation features.
+
+    relative_strength_index_spread(series1, series2, period=14) -> Expr
+        RSI spread between assets.
+
+    volatility_ratio(series1, series2, window=20) -> Expr
+        Relative volatility between assets.
+
+    transfer_entropy(series1, series2, window=20, lag=1, bins=5) -> Expr
+        Information flow between time series.
+
+    co_integration_score(series1, series2, window=252) -> Expr
+        Rolling cointegration test score.
+
+    cross_asset_momentum(returns_df, lookback=20, n_top=3) -> DataFrame
+        Cross-sectional momentum features.
+
 This module provides features that capture relationships between different assets,
 useful for portfolio models and cross-market signal detection.
 """

@@ -1,6 +1,16 @@
 # mypy: disable-error-code="misc,operator,assignment,arg-type"
 """Run bar sampler implementations.
 
+Exports:
+    TickRunBarSampler(initial_run=50, alpha=0.1) -> BarSampler
+        Run bars based on consecutive trade count.
+
+    VolumeRunBarSampler(initial_run=5000, alpha=0.1) -> BarSampler
+        Volume-weighted run bars.
+
+    DollarRunBarSampler(initial_run=500_000, alpha=0.1) -> BarSampler
+        Dollar-weighted run bars.
+
 Run bars sample when a sequence of trades becomes unusually long in terms of
 consecutive buys or sells, indicating sustained one-sided market flow.
 

@@ -1,6 +1,25 @@
 # mypy: disable-error-code="no-any-return"
 """Market regime identification features.
 
+Exports:
+    choppiness_index(high, low, close, period=14) -> Expr
+        Identifies trending vs choppy/range-bound markets (0-100).
+
+    variance_ratio(close, period=20, holding_period=5) -> Expr
+        Lo-MacKinlay variance ratio for random walk testing.
+
+    fractal_efficiency(close, period=10) -> Expr
+        Price path efficiency (0-1). Higher = more trending.
+
+    hurst_exponent(close, window=100, max_lag=20) -> Expr
+        Long memory/persistence measure. H>0.5 = trending, H<0.5 = mean reverting.
+
+    trend_intensity_index(close, period=30) -> Expr
+        Directional strength based on positive vs negative closes.
+
+    market_regime_classifier(data, ...) -> DataFrame
+        Multi-indicator regime classification.
+
 This module provides features to identify market regimes (trending vs range-bound)
 which is critical for ML models to adapt their predictions based on market state.
 """

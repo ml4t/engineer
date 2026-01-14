@@ -2,6 +2,19 @@
 # ruff: noqa: UP006, UP045, ARG002, SIM102
 """Feature-outcome relationship analysis (Module C).
 
+Exports:
+    FeatureOutcome - Main class for feature-outcome analysis
+        .run_analysis(features, returns, ...) -> FeatureOutcomeResult
+        Orchestrates IC, classification, threshold, and ML diagnostics.
+
+    compute_shap_importance(model, X, ...) -> DataFrame
+        SHAP-based feature importance with optional interactions.
+
+    Classes:
+        FeatureICResults - IC analysis results per feature
+        FeatureImportanceResults - ML feature importance results
+        FeatureOutcomeResult - Complete analysis results with recommendations
+
 This module provides comprehensive analysis of how features relate to outcomes:
 - **IC Analysis**: Information Coefficient for predictive power
 - **Binary Classification**: Precision, recall, lift for signal quality

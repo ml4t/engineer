@@ -4,6 +4,15 @@ This module provides sklearn-like preprocessing transformers that maintain
 strict separation between training and test data statistics, preventing
 lookahead bias in ML pipelines.
 
+Exports:
+    StandardScaler - Z-score normalization (mean=0, std=1)
+    MinMaxScaler - Scale to [0, 1] range
+    RobustScaler - IQR-based scaling (outlier resistant)
+    PreprocessingPipeline - Chain multiple transformers
+
+    ScalerMethod - Enum: STANDARD, MINMAX, ROBUST
+    TransformType - Enum: SCALE, CLIP, WINSORIZE
+
 Key Concepts:
 - Fit on training data only, transform both train and test
 - Polars-native implementation for performance
@@ -11,20 +20,10 @@ Key Concepts:
 - Serializable for production deployment
 
 Example:
-    >>> import polars as pl
     >>> from ml4t.engineer.preprocessing import StandardScaler
-
-    >>> # Create train/test split
-    >>> train_df = pl.DataFrame({"feature_a": [1.0, 2.0, 3.0], "feature_b": [10.0, 20.0, 30.0]})
-    >>> test_df = pl.DataFrame({"feature_a": [4.0, 5.0], "feature_b": [40.0, 50.0]})
-
-    >>> # Fit on train only, transform both
     >>> scaler = StandardScaler()
     >>> train_scaled = scaler.fit_transform(train_df)
     >>> test_scaled = scaler.transform(test_df)  # Uses train statistics
-
-Reference:
-    Based on sklearn StandardScaler API with Polars implementation.
 """
 
 from __future__ import annotations

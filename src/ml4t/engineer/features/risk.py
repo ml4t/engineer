@@ -1,5 +1,33 @@
 """Risk management and measurement features for quantitative finance.
 
+Exports:
+    value_at_risk(returns, confidence=0.95, window=252, method="historical") -> Expr
+        VaR calculation: historical, parametric, or cornish_fisher methods.
+
+    conditional_value_at_risk(returns, confidence=0.95, window=252) -> Expr
+        CVaR/Expected Shortfall (average loss beyond VaR threshold).
+
+    maximum_drawdown(data, price_col="close", window=None) -> Expr
+        Maximum peak-to-trough drawdown.
+
+    downside_deviation(returns, target=0.0, window=252) -> Expr
+        Standard deviation of returns below target.
+
+    tail_ratio(returns, window=252) -> Expr
+        Ratio of upper to lower tail quantiles.
+
+    higher_moments(returns, window=252) -> dict[str, Expr]
+        Skewness, kurtosis, and Jarque-Bera test statistics.
+
+    risk_adjusted_returns(returns, benchmark, ...) -> dict[str, Expr]
+        Sharpe, Sortino, Calmar, and information ratios.
+
+    ulcer_index(prices, window=14) -> Expr
+        Ulcer Performance Index (drawdown-based volatility).
+
+    information_ratio(returns, benchmark, window=252) -> Expr
+        Excess return per unit of tracking error.
+
 This module provides comprehensive risk metrics including Value at Risk (VaR),
 Conditional VaR (CVaR/Expected Shortfall), maximum drawdown analysis, and
 higher moment calculations for financial risk management.

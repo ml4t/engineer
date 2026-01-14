@@ -2,6 +2,31 @@
 # ruff: noqa: UP006, UP045
 """Feature evaluation configuration (Modules A, B, C).
 
+Exports:
+    Module A (Feature Diagnostics):
+        StationarityConfig - ADF, KPSS, PP test settings
+        ACFConfig - Autocorrelation analysis settings
+        VolatilityConfig - Volatility clustering detection
+        DistributionConfig - Distribution analysis settings
+        ModuleAConfig - Combined Module A configuration
+
+    Module B (Cross-Feature Analysis):
+        CorrelationConfig - Correlation matrix settings
+        PCAConfig - Principal component analysis
+        ClusteringConfig - Feature clustering
+        RedundancyConfig - Redundancy detection
+        ModuleBConfig - Combined Module B configuration
+
+    Module C (Feature-Outcome):
+        ICConfig - Information coefficient analysis
+        BinaryClassificationConfig - Classification metrics
+        ThresholdAnalysisConfig - Threshold optimization
+        MLDiagnosticsConfig - SHAP and importance settings
+        ModuleCConfig - Combined Module C configuration
+
+    Main:
+        FeatureEvaluatorConfig - Master configuration for all modules
+
 This module defines configuration for:
 - **Module A**: Feature diagnostics (stationarity, ACF, volatility, distribution)
 - **Module B**: Cross-feature analysis (correlation, PCA, clustering, redundancy)

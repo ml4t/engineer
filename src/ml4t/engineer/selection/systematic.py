@@ -1,5 +1,18 @@
 """Systematic feature selection for ML pipelines.
 
+Exports:
+    FeatureSelector - Main class for systematic feature selection
+        .filter_by_ic(threshold=0.02) - Filter by information coefficient
+        .filter_by_importance(threshold, method="mdi") - Filter by importance
+        .filter_by_correlation(threshold=0.8) - Remove correlated features
+        .filter_by_drift(threshold=0.2) - Remove drifting features
+        .run_pipeline(steps) - Execute multiple filters in sequence
+        .get_selected_features() -> list[str]
+        .get_selection_report() -> SelectionReport
+
+    SelectionStep - Dataclass for individual filter step results
+    SelectionReport - Dataclass for full selection pipeline results
+
 This module provides a comprehensive feature selection workflow that combines
 multiple filtering criteria:
 

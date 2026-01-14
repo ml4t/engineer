@@ -1,6 +1,16 @@
 # mypy: disable-error-code="arg-type,call-arg,assignment,return-value"
 """Offline feature store using DuckDB with Arrow integration.
 
+Exports:
+    OfflineFeatureStore(path) - DuckDB-based feature store
+        .save(features, name, ...) - Save feature DataFrame
+        .load(name, columns=None, ...) -> DataFrame - Load features
+        .list_features() -> list[str] - List stored features
+        .delete(name) - Delete stored features
+        .point_in_time_join(features, labels, ...) -> DataFrame
+
+    FeatureStoreError - Exception for store operations
+
 This module provides a DuckDB-based offline feature store that enables:
 - Zero-copy integration with Polars via Arrow
 - Efficient storage and retrieval of computed features

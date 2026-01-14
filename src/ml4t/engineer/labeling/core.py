@@ -13,6 +13,33 @@ This implementation supports:
 - Path-dependent features
 - Asymmetric barriers
 - Side-aware labeling
+
+Exports:
+    triple_barrier_labels(data, upper_barrier, lower_barrier, max_holding, ...) -> DataFrame
+        Main API for triple-barrier labeling. Returns labels (+1/-1/0), returns, touch times.
+
+    fixed_time_horizon_labels(data, horizon=1, method="returns") -> DataFrame
+        Simple forward return labels (returns, log_returns, or binary).
+
+    trend_scanning_labels(data, min_window=5, max_window=50) -> DataFrame
+        De Prado's t-statistic method. Optimal window selection per observation.
+
+    sequential_bootstrap(data, n_samples) -> DataFrame
+        Sequential bootstrap sampling for overlapping labels.
+
+    calculate_label_uniqueness(data, label_col) -> DataFrame
+        Uniqueness score per label for sample weighting.
+
+    calculate_sample_weights(data, label_col) -> DataFrame
+        Sample weights based on label uniqueness.
+
+    build_concurrency(data, timestamps, end_times) -> DataFrame
+        Build concurrency matrix for overlapping events.
+
+Internal:
+    _calculate_barrier_prices() - Side-aware barrier price calculation
+    _process_single_event() - Process one event through barriers
+    _apply_triple_barrier_nb() - Numba-compiled triple barrier loop
 """
 
 from typing import Any, Literal

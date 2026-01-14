@@ -2,6 +2,21 @@
 """
 Entropy Features for Financial Time Series.
 
+Exports:
+    rolling_entropy(data, window=20, bins=10) -> Expr
+        Shannon entropy via histogram binning.
+
+    rolling_entropy_lz(data, window=20, encoding="binary") -> Expr
+        Kontoyiannis (LZ) entropy via compression complexity.
+
+    rolling_entropy_plugin(data, window=20, word_length=3) -> Expr
+        Plug-in entropy via word/pattern frequency.
+
+    Encoding Functions:
+        encode_binary(returns) -> array - Binary encoding (pos/neg)
+        encode_quantile(returns, n_bins=5) -> array - Quantile buckets
+        encode_sigma(returns, n_sigma=2) -> array - Sigma-based buckets
+
 Implements entropy estimators from AFML Chapter 18 for measuring market complexity
 and predictability. Updated with 2025 best practices.
 

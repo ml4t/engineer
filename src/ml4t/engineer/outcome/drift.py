@@ -1,6 +1,26 @@
 # mypy: disable-error-code="call-arg,arg-type,assignment,no-untyped-def,return-value"
 """Distribution drift detection for feature monitoring.
 
+Exports:
+    analyze_drift(reference, test, methods=["psi", "wasserstein"], ...) -> DriftSummaryResult
+        Multi-method drift analysis with consensus-based flagging. Main API.
+
+    compute_psi(reference, test, n_bins=10, ...) -> PSIResult
+        Population Stability Index for univariate drift detection.
+
+    compute_wasserstein_distance(reference, test, ...) -> WassersteinResult
+        Optimal transport metric for continuous feature drift.
+
+    compute_domain_classifier_drift(reference, test, ...) -> DomainClassifierResult
+        ML-based multivariate drift detection with feature importance.
+
+    Classes:
+        PSIResult - PSI computation results with alert level
+        WassersteinResult - Wasserstein distance with calibrated threshold
+        DomainClassifierResult - Domain classifier AUC and feature importance
+        FeatureDriftResult - Per-feature drift results across methods
+        DriftSummaryResult - Comprehensive drift analysis results
+
 This module provides comprehensive drift detection with three complementary methods
 and a unified analysis interface:
 
