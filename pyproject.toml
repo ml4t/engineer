@@ -14,6 +14,8 @@ version-file = "src/ml4t/engineer/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ml4t"]
 namespaces = true
+# Include AGENT.md files for agent navigation
+artifacts = ["src/ml4t/**/AGENT.md"]
 
 [tool.hatch.build.targets.sdist]
 include = [
