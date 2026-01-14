@@ -2,3 +2,7 @@ src/ml4t/engineer/_version.py
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Claude Code (local development only)
+CLAUDE.md
+.claude/
