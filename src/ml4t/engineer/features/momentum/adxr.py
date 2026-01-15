@@ -127,7 +127,7 @@ def adxr(
     ...     qta.adxr("high", "low", "close", 14).alias("adxr")
     ... ])
     """
-    if isinstance(high, pl.Expr | str):
+    if isinstance(high, (pl.Expr, str)):
         # Return Polars expression using map_batches for complex calculations
         if isinstance(high, str):
             high = pl.col(high)

@@ -185,7 +185,7 @@ def macdfix(
     >>> close = np.array([100, 102, 104, 103, 105, 107, 106, 108])
     >>> macd_line = qta.macdfix(close, signalperiod=9)
     """
-    if isinstance(close, pl.Expr | str):
+    if isinstance(close, (pl.Expr, str)):
         # Return Polars expression
         if isinstance(close, str):
             close = pl.col(close)
@@ -227,7 +227,7 @@ def macdfix_signal(
     npt.NDArray[np.float64] or pl.Expr
         Signal line close
     """
-    if isinstance(close, pl.Expr | str):
+    if isinstance(close, (pl.Expr, str)):
         # Return Polars expression
         if isinstance(close, str):
             close = pl.col(close)
@@ -281,7 +281,7 @@ def macdfix_full(
     >>> close = np.array([100, 102, 104, 103, 105, 107, 106, 108])
     >>> macd, signal, hist = qta.macdfix_full(close, signalperiod=9)
     """
-    if isinstance(close, pl.Expr | str):
+    if isinstance(close, (pl.Expr, str)):
         # Return Polars expressions
         if isinstance(close, str):
             close = pl.col(close)

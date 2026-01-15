@@ -96,7 +96,7 @@ def rocr(
     ...     qta.rocr("price", 3).alias("rocr")
     ... ])
     """
-    if isinstance(close, pl.Expr | str):
+    if isinstance(close, (pl.Expr, str)):
         # Return Polars expression
         if isinstance(close, str):
             close = pl.col(close)

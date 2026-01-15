@@ -865,7 +865,7 @@ def _prepare_barrier_arrays(
     # Upper barriers
     if config.upper_barrier is None:
         upper_barriers = np.full(n_events, np.inf)
-    elif isinstance(config.upper_barrier, int | float):
+    elif isinstance(config.upper_barrier, (int, float)):
         upper_barriers = np.full(n_events, float(config.upper_barrier))
     else:
         if config.upper_barrier not in data.columns:
@@ -877,7 +877,7 @@ def _prepare_barrier_arrays(
     # Lower barriers
     if config.lower_barrier is None:
         lower_barriers = np.full(n_events, -np.inf)
-    elif isinstance(config.lower_barrier, int | float):
+    elif isinstance(config.lower_barrier, (int, float)):
         lower_barriers = np.full(n_events, float(config.lower_barrier))
     else:
         if config.lower_barrier not in data.columns:
@@ -912,12 +912,12 @@ def _prepare_barrier_arrays(
     elif config.trailing_stop is True:
         if config.lower_barrier is not None and isinstance(
             config.lower_barrier,
-            int | float,
+            (int, float),
         ):
             trailing_stops = np.full(n_events, abs(float(config.lower_barrier)))
         else:
             trailing_stops = np.full(n_events, 0.01)  # Default 1%
-    elif isinstance(config.trailing_stop, int | float):
+    elif isinstance(config.trailing_stop, (int, float)):
         trailing_stops = np.full(n_events, float(config.trailing_stop))
     else:
         if config.trailing_stop not in data.columns:

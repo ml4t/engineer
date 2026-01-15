@@ -114,7 +114,7 @@ def minimum(
     >>> df = pl.DataFrame({"price": [3, 1, 4, 2, 6, 3, 8, 5]})
     >>> result = df.with_columns(qta.minimum("price", 3).alias("min"))
     """
-    if isinstance(close, pl.Expr | str):
+    if isinstance(close, (pl.Expr, str)):
         # Use native Polars rolling min - much faster than Numba for this operation
         if isinstance(close, str):
             close = pl.col(close)

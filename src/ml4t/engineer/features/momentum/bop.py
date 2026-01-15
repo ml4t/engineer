@@ -122,7 +122,7 @@ def bop(
     ...     qta.bop("open", "high", "low", "close").alias("bop")
     ... ])
     """
-    if isinstance(open, pl.Expr | str):
+    if isinstance(open, (pl.Expr, str)):
         # Return Polars expression using map_batches for complex calculations
         open_expr = pl.col(open) if isinstance(open, str) else open
         if isinstance(high, str):

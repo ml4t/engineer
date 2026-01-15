@@ -236,7 +236,7 @@ def atr_triple_barrier_labels(
         atr_tp_multiple = atr_tp_multiple if atr_tp_multiple is not None else config.atr_tp_multiple
         atr_sl_multiple = atr_sl_multiple if atr_sl_multiple is not None else config.atr_sl_multiple
         atr_period = atr_period if atr_period is not None else config.atr_period
-        if max_holding_bars is None and isinstance(config.max_holding_period, int | str):
+        if max_holding_bars is None and isinstance(config.max_holding_period, (int, str)):
             max_holding_bars = config.max_holding_period
         if side is None:
             side = config.side  # type: ignore[assignment]

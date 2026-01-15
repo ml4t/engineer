@@ -116,7 +116,7 @@ def minus_dm(
     ...     qta.minus_dm("high", "low", 14).alias("minus_dm")
     ... ])
     """
-    if isinstance(high, pl.Expr | str):
+    if isinstance(high, (pl.Expr, str)):
         # Return Polars expression using map_batches for complex calculations
         if isinstance(high, str):
             high = pl.col(high)

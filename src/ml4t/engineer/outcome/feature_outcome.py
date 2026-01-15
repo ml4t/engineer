@@ -519,7 +519,7 @@ def compute_shap_importance(
 
     # Get base value (expected value)
     base_value = explainer.expected_value
-    if isinstance(base_value, list | np.ndarray):
+    if isinstance(base_value, (list, np.ndarray)):
         # For binary/multiclass, take positive class or first class
         base_value = base_value[1] if len(base_value) == 2 else base_value[0]
 

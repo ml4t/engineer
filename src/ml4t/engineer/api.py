@@ -212,7 +212,7 @@ def _parse_feature_input(
         If config file doesn't exist
     """
     # Handle YAML config file
-    if isinstance(features, Path | str):
+    if isinstance(features, (Path, str)):
         if not YAML_AVAILABLE:
             raise ImportError(
                 "PyYAML is required for YAML configs. Install with: pip install pyyaml"
@@ -252,7 +252,7 @@ def _parse_feature_input(
         return result
 
     # Handle mixed list of strings and dicts
-    if isinstance(features, list) and all(isinstance(f, str | dict) for f in features):
+    if isinstance(features, list) and all(isinstance(f, (str, dict)) for f in features):
         result = []
         for item in features:
             if isinstance(item, str):
@@ -441,7 +441,7 @@ def _execute_feature(
             return data.with_columns(exprs)
         else:
             raise ValueError(f"Feature '{feature_name}' returned dict without Expr values")
-    elif isinstance(result, tuple | list):
+    elif isinstance(result, (tuple, list)):
         # Multiple expressions as tuple/list - add all
         exprs = []
         for i, expr in enumerate(result):
