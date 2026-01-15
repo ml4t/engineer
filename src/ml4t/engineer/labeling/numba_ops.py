@@ -88,10 +88,12 @@ def _initialize_trailing_stop(
         Initial trailing stop price level
     """
     if trailing_stop > 0:
-        if side == 1:
+        # Treat side==0 (symmetric) as long-like for trailing stop
+        if side == 1 or side == 0:
             return event_price * (1 - trailing_stop)
         return event_price * (1 + trailing_stop)
-    return float(-np.inf) if side == 1 else float(np.inf)
+    # For disabled trailing stop, return inf that won't trigger
+    return float(-np.inf) if side == 1 or side == 0 else float(np.inf)
 
 
 @jit(nopython=True, cache=True)  # type: ignore[misc]
@@ -120,7 +122,8 @@ def _update_trailing_stop(
         Updated trailing stop price level
     """
     if trailing_stop > 0:
-        if side == 1:
+        # Treat side==0 (symmetric) as long-like for trailing stop
+        if side == 1 or side == 0:
             # For long, trail up with price
             new_stop = current_price * (1 - trailing_stop)
             return max(trailing_stop_price, new_stop)
@@ -175,10 +178,11 @@ def _check_barrier_touch(
 
     # Check lower barrier (stop loss)
     # LONG: low can hit SL, SHORT: high can hit SL (which is above entry)
+    # Side==0 (symmetric) is treated as long-like for trailing stop
     lower_hit = (
         (side == 1 and (low_price <= lower_price or low_price <= trailing_stop_price))
         or (side == -1 and (high_price >= lower_price or high_price >= trailing_stop_price))
-        or (side == 0 and low_price <= lower_price)
+        or (side == 0 and (low_price <= lower_price or low_price <= trailing_stop_price))
     )
 
     if upper_hit:
@@ -276,7 +280,8 @@ def _process_single_event(
     trailing_stop_price = _initialize_trailing_stop(event_price, trailing_stop, side)
 
     # Scan forward to find first barrier touch
-    end_idx = min(event_idx + max_period, n_prices)
+    # Use max_period + 1 to include the vertical barrier bar (max holding period is inclusive)
+    end_idx = min(event_idx + max_period + 1, n_prices)
 
     for j in range(event_idx + 1, end_idx):
         high_price = highs[j]
