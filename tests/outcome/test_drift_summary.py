@@ -280,8 +280,7 @@ class TestDriftScenarios:
     def test_multivariate_drift_only(self):
         """Test multivariate drift detected but not univariate."""
         np.random.seed(42)
-        # Create correlated features where individual features may not drift
-        # but their joint distribution does
+        # Create independent features in reference
         n = 500
         reference = pd.DataFrame(
             {
@@ -290,17 +289,25 @@ class TestDriftScenarios:
             }
         )
 
-        # Rotate the distribution (multivariate drift)
-        theta = np.pi / 4
-        rotation = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
-        test_rotated = reference.values @ rotation.T
-        test = pd.DataFrame(test_rotated, columns=["feature1", "feature2"])
+        # Create correlated features in test - same marginals but different joint
+        # This creates multivariate drift (correlation change) without univariate drift
+        base1 = np.random.normal(0, 1, n)
+        base2 = np.random.normal(0, 1, n)
+        # Introduce correlation: feature2 = 0.8 * feature1 + 0.6 * noise
+        # (0.8^2 + 0.6^2 = 1, so variance is preserved)
+        test = pd.DataFrame(
+            {
+                "feature1": base1,
+                "feature2": 0.8 * base1 + 0.6 * base2,  # correlated with feature1
+            }
+        )
 
         result = analyze_drift(reference, test, methods=["domain_classifier"])
 
-        # Domain classifier should detect the multivariate drift
+        # Domain classifier should detect the multivariate drift (correlation change)
         assert result.domain_classifier_result is not None
-        # AUC should be reasonably high (distribution rotated)
+        # AUC should be above random (correlation structure changed)
+        # Using > 0.5 since this is a subtle change
         assert result.domain_classifier_result.auc > 0.5
 
 
