@@ -126,6 +126,7 @@ Example - Unified Analysis:
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -150,6 +151,8 @@ try:
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -292,6 +295,8 @@ def compute_psi(
         # Continuous feature: quantile binning
         bin_edges, ref_counts, test_counts = _bin_continuous(reference, test, n_bins)
         bin_labels = bin_edges  # Will be formatted in summary()
+        # Update n_bins to reflect actual number after unique edge collapsing
+        n_bins = len(bin_edges) - 1 if len(bin_edges) > 1 else 1
     else:
         # Categorical feature: category-based binning
         bin_labels, ref_counts, test_counts = _bin_categorical(
@@ -607,16 +612,15 @@ def compute_wasserstein_distance(
     if p not in [1, 2]:
         raise ValueError(f"p must be 1 or 2, got {p}")
 
-    # Set random state
-    if random_state is not None:
-        np.random.seed(random_state)
+    # Create local RNG to avoid global state pollution
+    rng = np.random.default_rng(random_state)
 
     # Subsample if requested
     if n_samples is not None and len(reference) > n_samples:
-        indices_ref = np.random.choice(len(reference), n_samples, replace=False)
+        indices_ref = rng.choice(len(reference), n_samples, replace=False)
         reference = reference[indices_ref]
     if n_samples is not None and len(test) > n_samples:
-        indices_test = np.random.choice(len(test), n_samples, replace=False)
+        indices_test = rng.choice(len(test), n_samples, replace=False)
         test = test[indices_test]
 
     n_reference = len(reference)
@@ -658,7 +662,7 @@ def compute_wasserstein_distance(
 
     if threshold_calibration:
         threshold, p_value = _calibrate_wasserstein_threshold(
-            reference, test, distance, n_permutations, alpha, p
+            reference, test, distance, n_permutations, alpha, p, rng
         )
         calibration_config = {
             "n_permutations": n_permutations,
@@ -753,6 +757,7 @@ def _calibrate_wasserstein_threshold(
     n_permutations: int,
     alpha: float,
     p: int,
+    rng: np.random.Generator | None = None,
 ) -> tuple[float, float]:
     """Calibrate Wasserstein distance threshold via permutation test.
 
@@ -780,12 +785,16 @@ def _calibrate_wasserstein_threshold(
     pooled = np.concatenate([reference, test])
     n_ref = len(reference)
 
+    # Create local RNG if not provided
+    if rng is None:
+        rng = np.random.default_rng()
+
     # Compute null distribution
     null_distances = np.zeros(n_permutations)
 
     for i in range(n_permutations):
         # Random permutation
-        np.random.shuffle(pooled)
+        rng.shuffle(pooled)
 
         # Split into two groups
         ref_perm = pooled[:n_ref]
@@ -1004,43 +1013,39 @@ def compute_domain_classifier_drift(
     # Extract feature importances
     importances_df = _extract_feature_importances(model, feature_names)
 
-    # Compute final AUC on full data
-    from sklearn.metrics import roc_auc_score
-
-    y_pred_proba = model.predict_proba(X)[:, 1]
-    final_auc = float(roc_auc_score(y, y_pred_proba))
-
-    # Determine drift status
-    drifted = final_auc > threshold
-
-    # Generate interpretation
+    # Compute CV AUC statistics for drift decision
+    # Using cross-validated AUC avoids optimistic bias from training AUC
     cv_auc_mean = float(np.mean(cv_scores))
     cv_auc_std = float(np.std(cv_scores))
 
+    # Determine drift status using cross-validated AUC (unbiased estimate)
+    drifted = cv_auc_mean > threshold
+
+    # Generate interpretation
     if drifted:
-        if final_auc > 0.9:
+        if cv_auc_mean > 0.9:
             severity = "strong"
-        elif final_auc > 0.7:
+        elif cv_auc_mean > 0.7:
             severity = "moderate"
         else:
             severity = "weak"
 
         interpretation = (
             f"{severity.capitalize()} distribution drift detected "
-            f"(AUC={final_auc:.4f} > {threshold:.4f}). "
+            f"(CV AUC={cv_auc_mean:.4f} ± {cv_auc_std:.4f} > {threshold:.4f}). "
             f"The classifier can distinguish reference from test distributions. "
             f"Top drifted feature: {importances_df['feature'][0]}."
         )
     else:
         interpretation = (
-            f"No significant drift detected (AUC={final_auc:.4f} ≤ {threshold:.4f}). "
+            f"No significant drift detected (CV AUC={cv_auc_mean:.4f} ± {cv_auc_std:.4f} ≤ {threshold:.4f}). "
             f"Distributions are indistinguishable by the classifier."
         )
 
     computation_time = time.time() - start_time
 
     return DomainClassifierResult(
-        auc=final_auc,
+        auc=cv_auc_mean,  # Use CV AUC as main metric (unbiased estimate)
         drifted=drifted,
         feature_importances=importances_df,
         threshold=threshold,
@@ -1119,7 +1124,7 @@ def _prepare_domain_classification_data(
         )
 
     # Process test data
-    if isinstance(test, pl.DataFrame | pd.DataFrame):
+    if isinstance(test, (pl.DataFrame, pd.DataFrame)):
         X_test = test[feature_names].to_numpy()
     elif isinstance(test, np.ndarray):
         X_test = test
@@ -1172,7 +1177,7 @@ def _train_domain_classifier(
         ValueError: If model_type is unknown
         ImportError: If required library is not installed
     """
-    from sklearn.model_selection import cross_val_score
+    from sklearn.model_selection import StratifiedKFold, cross_val_score
 
     # Select and configure model
     if model_type == "lightgbm":
@@ -1218,8 +1223,11 @@ def _train_domain_classifier(
             f"Unknown model_type: '{model_type}'. Must be 'lightgbm', 'xgboost', or 'sklearn'."
         )
 
-    # Cross-validation for AUC
-    cv_scores = cross_val_score(model, X, y, cv=cv_folds, scoring="roc_auc")
+    # Cross-validation for AUC using stratified folds
+    # StratifiedKFold ensures balanced class distribution in each fold
+    # (critical since data is [zeros, ones] concatenated)
+    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+    cv_scores = cross_val_score(model, X, y, cv=cv, scoring="roc_auc")
 
     # Train on full data
     model.fit(X, y)
@@ -1721,7 +1729,7 @@ def analyze_drift(
                     n_methods_detected += 1
             except Exception as e:
                 # Log warning but continue
-                print(f"Warning: PSI failed for feature {feature}: {e}")
+                logger.warning("PSI failed for feature %s: %s", feature, e)
 
         # Wasserstein
         if "wasserstein" in methods:
@@ -1734,7 +1742,7 @@ def analyze_drift(
                     n_methods_detected += 1
             except Exception as e:
                 # Log warning but continue
-                print(f"Warning: Wasserstein failed for feature {feature}: {e}")
+                logger.warning("Wasserstein failed for feature %s: %s", feature, e)
 
         # Consensus drift flag
         drift_probability = n_methods_detected / max(1, n_methods_run)
@@ -1774,7 +1782,7 @@ def analyze_drift(
             )
         except Exception as e:
             # Log warning but continue
-            print(f"Warning: Domain classifier failed: {e}")
+            logger.warning("Domain classifier failed: %s", e)
 
     # Aggregate results
     n_features = len(features)
