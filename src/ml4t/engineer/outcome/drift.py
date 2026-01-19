@@ -146,7 +146,7 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
 
 try:
-    import xgboost as xgb
+    import xgboost as xgb  # type: ignore[import-not-found]
 
     XGBOOST_AVAILABLE = True
 except ImportError:

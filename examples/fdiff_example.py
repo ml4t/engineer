@@ -1,11 +1,11 @@
 """Example of using fractional differencing with real crypto data."""
 
 import matplotlib.pyplot as plt
-import ml4t_features as qf
 import numpy as np
 import polars as pl
 from statsmodels.tsa.stattools import adfuller
 
+from ml4t.engineer import pipeline
 from ml4t.engineer.features.fdiff import fdiff_diagnostics, ffdiff, find_optimal_d
 
 # Load real crypto data
@@ -90,7 +90,7 @@ print("Pipeline Integration Example")
 print("=" * 50)
 
 # Create a pipeline with multiple transformations
-pipeline = qf.pipeline.Pipeline(
+pipeline = pipeline.Pipeline(
     steps=[
         # Calculate returns
         ("returns", lambda df: df.with_columns(returns=pl.col("close").pct_change())),

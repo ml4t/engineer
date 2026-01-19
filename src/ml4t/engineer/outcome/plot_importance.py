@@ -125,7 +125,7 @@ def plot_feature_importance(
 
     # Convert to DataFrame if dict
     if isinstance(importance_results, dict):
-        df = _importance_dict_to_dataframe(importance_results)
+        df = _importance_dict_to_dataframe(importance_results)  # type: ignore[arg-type]
     else:
         df = importance_results.copy()
 
@@ -280,7 +280,7 @@ def plot_importance_comparison(
 
     # Convert to DataFrame if dict
     if isinstance(importance_results, dict):
-        df = _importance_dict_to_dataframe(importance_results)
+        df = _importance_dict_to_dataframe(importance_results)  # type: ignore[arg-type]
     else:
         df = importance_results.copy()
 

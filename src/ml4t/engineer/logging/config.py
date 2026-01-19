@@ -92,7 +92,7 @@ class LoggingConfig:
                 f"Unknown preset '{preset}'. Available: {list(cls.PRESETS.keys())}",
             )
 
-        return cls(**cls.PRESETS[preset])
+        return cls(**cls.PRESETS[preset])  # type: ignore[arg-type]
 
     @classmethod
     def from_environment(cls) -> "LoggingConfig":
@@ -190,7 +190,7 @@ def configure_logging(
         config = LoggingConfig.from_preset(config)
     elif isinstance(config, dict):
         # Dictionary
-        config = LoggingConfig(**config)
+        config = LoggingConfig(**config)  # type: ignore[arg-type]
     elif not isinstance(config, LoggingConfig):
         raise TypeError("config must be LoggingConfig, str, dict, or None")
 

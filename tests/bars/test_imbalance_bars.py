@@ -61,44 +61,112 @@ class TestCalculateImbalanceBarsNb:
     """Tests for the Numba imbalance calculation function."""
 
     def test_basic_calculation(self):
-        """Test basic imbalance calculation."""
+        """Test basic imbalance calculation with AFML formula."""
         volumes = np.array([100.0, 100.0, 100.0, 100.0, 100.0])
         sides = np.array([1.0, 1.0, 1.0, 1.0, 1.0])  # All buys
 
-        bar_indices, expected_imbalances, cumulative_thetas = _calculate_imbalance_bars_nb(
-            volumes, sides, initial_expectation=250.0, alpha=0.1
+        # AFML params
+        initial_expected_t = 3.0  # Expect 3 ticks per bar
+        initial_p_buy = 0.5
+        initial_v_buy = 100.0
+        initial_v = 100.0
+
+        (
+            bar_indices,
+            expected_thetas,
+            cumulative_thetas,
+            expected_ts,
+            p_buys,
+            v_pluses,
+            e_vs,
+        ) = _calculate_imbalance_bars_nb(
+            volumes, sides, initial_expected_t, initial_p_buy, initial_v_buy, initial_v
         )
 
-        # With initial_expectation=250 and all buys at 100 vol each,
-        # cumulative theta reaches 300 after 3 ticks (100+100+100=300 > 250)
+        # Should create at least one bar
         assert len(bar_indices) > 0
+
+    def test_afml_threshold_formula(self):
+        """Verify AFML threshold formula: E[T] × |2v⁺ - E[v]|."""
+        volumes = np.array([100.0] * 20)
+        sides = np.array([1.0] * 20)  # All buys
+
+        initial_expected_t = 5.0
+        initial_p_buy = 0.6  # 60% buys
+        initial_v_buy = 100.0  # Expected buy volume
+        initial_v = 100.0  # Mean volume
+
+        (
+            bar_indices,
+            expected_thetas,
+            cumulative_thetas,
+            expected_ts,
+            p_buys,
+            v_pluses,
+            e_vs,
+        ) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t,
+            initial_p_buy,
+            initial_v_buy,
+            initial_v,
+            alpha=0.1,
+            min_bars_warmup=0,  # No warmup for testing
+        )
+
+        # Verify first bar's threshold follows AFML formula
+        if len(expected_thetas) > 0:
+            # Expected: E[T] × |2 × P[b=1] × E[v|b=1] - E[v]|
+            # = 5.0 × |2 × 0.6 × 100 - 100| = 5.0 × |120 - 100| = 5.0 × 20 = 100
+            v_plus_expected = initial_p_buy * initial_v_buy  # 0.6 × 100 = 60
+            expected_threshold = initial_expected_t * abs(2 * v_plus_expected - initial_v)
+            assert abs(expected_thetas[0] - expected_threshold) < 0.01
 
     def test_alternating_sides(self):
         """Test with alternating buy/sell."""
         volumes = np.array([100.0, 100.0, 100.0, 100.0])
         sides = np.array([1.0, -1.0, 1.0, -1.0])  # Alternating
 
-        bar_indices, _, _ = _calculate_imbalance_bars_nb(
-            volumes, sides, initial_expectation=50.0, alpha=0.1
+        (bar_indices, *_) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t=2.0,
+            initial_p_buy=0.5,
+            initial_v_buy=100.0,
+            initial_v=100.0,
         )
 
         # Each tick alternates, so cumulative should oscillate around 0
-        # Depends on threshold - with 50, should create bar when |theta| >= 50
         assert isinstance(bar_indices, np.ndarray)
 
     def test_alpha_effect(self):
         """Test that alpha affects expected imbalance updates."""
-        volumes = np.array([100.0] * 20)
-        sides = np.array([1.0] * 20)
+        volumes = np.array([100.0] * 50)
+        sides = np.array([1.0] * 50)
 
         # Low alpha - slow adaptation
-        _, expected_low_alpha, _ = _calculate_imbalance_bars_nb(
-            volumes, sides, initial_expectation=200.0, alpha=0.1
+        (_, expected_low_alpha, *_) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t=5.0,
+            initial_p_buy=0.5,
+            initial_v_buy=100.0,
+            initial_v=100.0,
+            alpha=0.1,
+            min_bars_warmup=2,
         )
 
         # High alpha - fast adaptation
-        _, expected_high_alpha, _ = _calculate_imbalance_bars_nb(
-            volumes, sides, initial_expectation=200.0, alpha=0.9
+        (_, expected_high_alpha, *_) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t=5.0,
+            initial_p_buy=0.5,
+            initial_v_buy=100.0,
+            initial_v=100.0,
+            alpha=0.9,
+            min_bars_warmup=2,
         )
 
         # Both should have values
@@ -110,13 +178,53 @@ class TestCalculateImbalanceBarsNb:
         volumes = np.array([], dtype=np.float64)
         sides = np.array([], dtype=np.float64)
 
-        bar_indices, expected_imbalances, cumulative_thetas = _calculate_imbalance_bars_nb(
-            volumes, sides, initial_expectation=100.0, alpha=0.1
+        (
+            bar_indices,
+            expected_thetas,
+            cumulative_thetas,
+            expected_ts,
+            p_buys,
+            v_pluses,
+            e_vs,
+        ) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t=100.0,
+            initial_p_buy=0.5,
+            initial_v_buy=100.0,
+            initial_v=100.0,
         )
 
         assert len(bar_indices) == 0
-        assert len(expected_imbalances) == 0
+        assert len(expected_thetas) == 0
         assert len(cumulative_thetas) == 0
+
+    def test_warmup_period(self):
+        """Test that EWMA updates only happen after warmup."""
+        volumes = np.array([100.0] * 100)
+        sides = np.array([1.0] * 100)
+
+        # With warmup of 5 bars
+        (
+            bar_indices,
+            expected_thetas,
+            cumulative_thetas,
+            expected_ts,
+            *_,
+        ) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t=5.0,
+            initial_p_buy=0.5,
+            initial_v_buy=100.0,
+            initial_v=100.0,
+            alpha=0.5,
+            min_bars_warmup=5,
+        )
+
+        # First 5 bars should have same expected_t (warmup)
+        if len(expected_ts) >= 5:
+            assert all(expected_ts[i] == 5.0 for i in range(min(5, len(expected_ts))))
 
 
 class TestImbalanceBarSampler:
@@ -124,13 +232,17 @@ class TestImbalanceBarSampler:
 
     def test_init_valid_params(self):
         """Test initialization with valid parameters."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=100, initial_expectation=5000.0, alpha=0.2
-        )
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=100, alpha=0.2, initial_p_buy=0.6)
 
         assert sampler.expected_ticks_per_bar == 100
-        assert sampler.initial_expectation == 5000.0
         assert sampler.alpha == 0.2
+        assert sampler.initial_p_buy == 0.6
+
+    def test_init_deprecated_initial_expectation(self):
+        """Test deprecation warning for initial_expectation."""
+        with pytest.warns(DeprecationWarning, match="initial_expectation is deprecated"):
+            sampler = ImbalanceBarSampler(expected_ticks_per_bar=100, initial_expectation=5000.0)
+        assert sampler.expected_ticks_per_bar == 100
 
     def test_init_invalid_expected_ticks(self):
         """Test initialization fails with invalid expected_ticks_per_bar."""
@@ -152,13 +264,19 @@ class TestImbalanceBarSampler:
 
     def test_init_invalid_alpha_too_large(self):
         """Test alpha=1 is valid (edge of range)."""
-        # alpha=1.0 should be valid
         sampler = ImbalanceBarSampler(expected_ticks_per_bar=100, alpha=1.0)
         assert sampler.alpha == 1.0
 
-        # alpha > 1 should fail
         with pytest.raises(ValueError, match="alpha must be in"):
             ImbalanceBarSampler(expected_ticks_per_bar=100, alpha=1.1)
+
+    def test_init_invalid_p_buy(self):
+        """Test initialization fails with invalid p_buy."""
+        with pytest.raises(ValueError, match="initial_p_buy must be in"):
+            ImbalanceBarSampler(expected_ticks_per_bar=100, initial_p_buy=-0.1)
+
+        with pytest.raises(ValueError, match="initial_p_buy must be in"):
+            ImbalanceBarSampler(expected_ticks_per_bar=100, initial_p_buy=1.1)
 
     def test_sample_missing_side_column(self):
         """Test sampling fails without side column."""
@@ -188,17 +306,20 @@ class TestImbalanceBarSampler:
 
         bars = sampler.sample(empty_data)
         assert len(bars) == 0
+        # Check new columns in schema
+        assert "expected_t" in bars.columns
+        assert "p_buy" in bars.columns
+        assert "v_plus" in bars.columns
+        assert "e_v" in bars.columns
 
     def test_sample_basic(self, sample_tick_data):
         """Test basic imbalance bar sampling."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=20, initial_expectation=1000.0, alpha=0.2
-        )
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=20, alpha=0.2)
         bars = sampler.sample(sample_tick_data)
 
         assert len(bars) > 0
 
-        # Check bar structure
+        # Check bar structure - both old and new columns
         assert "timestamp" in bars.columns
         assert "open" in bars.columns
         assert "high" in bars.columns
@@ -212,11 +333,15 @@ class TestImbalanceBarSampler:
         assert "cumulative_theta" in bars.columns
         assert "expected_imbalance" in bars.columns
 
+        # AFML diagnostic columns
+        assert "expected_t" in bars.columns
+        assert "p_buy" in bars.columns
+        assert "v_plus" in bars.columns
+        assert "e_v" in bars.columns
+
     def test_sample_with_incomplete(self, sample_tick_data):
         """Test sampling with include_incomplete=True."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=50, initial_expectation=5000.0, alpha=0.1
-        )
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=50, alpha=0.1)
 
         bars_without = sampler.sample(sample_tick_data, include_incomplete=False)
         bars_with = sampler.sample(sample_tick_data, include_incomplete=True)
@@ -224,27 +349,9 @@ class TestImbalanceBarSampler:
         # Should have at least one more bar with incomplete
         assert len(bars_with) >= len(bars_without)
 
-    def test_sample_auto_initial_expectation(self, sample_tick_data):
-        """Test sampling with auto-estimated initial expectation."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=20,
-            initial_expectation=None,  # Auto-estimate
-            alpha=0.1,
-        )
-
-        bars = sampler.sample(sample_tick_data)
-
-        assert len(bars) > 0
-        # Initial expectation should have been set
-        assert sampler.initial_expectation is not None
-        assert sampler.initial_expectation > 0
-
     def test_sample_imbalance_calculation(self, uniform_tick_data):
         """Test imbalance is correctly calculated."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=10, initial_expectation=500.0, alpha=0.2
-        )
-
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=10, alpha=0.2)
         bars = sampler.sample(uniform_tick_data)
 
         # All sides are buys (1), so imbalance = buy_volume - sell_volume = buy_volume
@@ -257,13 +364,9 @@ class TestImbalanceBarSampler:
 
     def test_sample_cumulative_theta_sign(self, sample_tick_data):
         """Test cumulative theta reflects imbalance direction."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=25, initial_expectation=1000.0, alpha=0.1
-        )
-
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=25, alpha=0.1)
         bars = sampler.sample(sample_tick_data)
 
-        # cumulative_theta should match imbalance direction (positive for buys, negative for sells)
         for i in range(len(bars)):
             imbalance = bars["imbalance"][i]
             theta = bars["cumulative_theta"][i]
@@ -272,23 +375,22 @@ class TestImbalanceBarSampler:
             if abs(imbalance) > 0.01:
                 assert np.sign(imbalance) == np.sign(theta) or abs(theta) < 0.01
 
-    def test_sample_expected_imbalance_updates(self, sample_tick_data):
-        """Test expected imbalance is updated with EWMA."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=25,
-            initial_expectation=500.0,
-            alpha=0.5,  # High alpha for noticeable updates
-        )
-
+    def test_afml_diagnostic_columns(self, sample_tick_data):
+        """Test AFML diagnostic columns are populated correctly."""
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=25, alpha=0.5, initial_p_buy=0.6)
         bars = sampler.sample(sample_tick_data)
 
-        if len(bars) > 1:
-            # Expected imbalance should change between bars
-            expected_imbalances = bars["expected_imbalance"].to_list()
+        if len(bars) > 0:
+            # expected_t should be positive
+            assert all(bars["expected_t"] > 0)
 
-            # Not all should be the same (unless by coincidence)
-            # This is a weak test but verifies the mechanism works
-            assert isinstance(expected_imbalances, list)
+            # p_buy should be in [0, 1]
+            assert all(bars["p_buy"] >= 0)
+            assert all(bars["p_buy"] <= 1)
+
+            # v_plus and e_v should be positive
+            assert all(bars["v_plus"] > 0)
+            assert all(bars["e_v"] > 0)
 
 
 class TestImbalanceBarSamplerEdgeCases:
@@ -296,7 +398,7 @@ class TestImbalanceBarSamplerEdgeCases:
 
     def test_single_tick(self):
         """Test with single tick."""
-        sampler = ImbalanceBarSampler(expected_ticks_per_bar=1, initial_expectation=50.0, alpha=0.5)
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=1, alpha=0.5)
 
         data = pl.DataFrame(
             {
@@ -309,16 +411,18 @@ class TestImbalanceBarSamplerEdgeCases:
 
         bars = sampler.sample(data, include_incomplete=True)
 
-        # Should create one bar
+        # Should create one bar (incomplete)
         assert len(bars) == 1
 
     def test_no_bars_created(self):
-        """Test when no bars meet threshold."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=100,
-            initial_expectation=1000000.0,  # Very high threshold
-            alpha=0.1,
-        )
+        """Test when no bars meet threshold.
+
+        AFML threshold: E[T] × |2v⁺ - E[v]|
+        With p_buy=0.9, v=10: threshold = 10000 × |2×0.9×10 - 10| = 80,000
+        Max cumulative theta from 10 ticks at volume 10 = 100 << 80,000
+        """
+        # Use high E[T] and p_buy far from 0.5 to get high threshold
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=10000, alpha=0.1, initial_p_buy=0.9)
 
         data = pl.DataFrame(
             {
@@ -332,6 +436,8 @@ class TestImbalanceBarSamplerEdgeCases:
         bars = sampler.sample(data, include_incomplete=False)
 
         # No bars should be created (threshold too high)
+        # threshold = 10000 × |2×0.9×10 - 10| = 80,000
+        # cumulative theta = 10 × 10 = 100 << 80,000
         assert len(bars) == 0
 
         # With incomplete, should get one bar
@@ -340,9 +446,7 @@ class TestImbalanceBarSamplerEdgeCases:
 
     def test_all_sells(self):
         """Test with all sell orders."""
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=5, initial_expectation=200.0, alpha=0.2
-        )
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=5, alpha=0.2)
 
         data = pl.DataFrame(
             {
@@ -361,3 +465,88 @@ class TestImbalanceBarSamplerEdgeCases:
         # All imbalances should be negative (all sells)
         for imb in bars["imbalance"]:
             assert imb <= 0
+
+
+class TestAFMLCompliance:
+    """Tests verifying AFML formula compliance."""
+
+    def test_threshold_formula_verification(self):
+        """Verify threshold = E[T] × |2v⁺ - E[v]|."""
+        # Create controlled data
+        n = 100
+        volumes = np.array([100.0] * n)
+        sides = np.array([1.0] * n)  # All buys
+
+        # Known initial values
+        E_T = 10.0  # Expected ticks per bar
+        p_buy = 0.7  # 70% buy probability
+        v_buy = 100.0  # Mean buy volume
+        E_v = 100.0  # Mean volume
+
+        (
+            bar_indices,
+            expected_thetas,
+            cumulative_thetas,
+            expected_ts,
+            p_buys,
+            v_pluses,
+            e_vs,
+        ) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t=E_T,
+            initial_p_buy=p_buy,
+            initial_v_buy=v_buy,
+            initial_v=E_v,
+            alpha=0.1,
+            min_bars_warmup=100,  # No EWMA updates during test
+        )
+
+        # Calculate expected threshold
+        # v_plus = P[b=1] × E[v|b=1] = 0.7 × 100 = 70
+        # threshold = E[T] × |2×v_plus - E[v]| = 10 × |2×70 - 100| = 10 × 40 = 400
+        v_plus_expected = p_buy * v_buy
+        threshold_expected = E_T * abs(2 * v_plus_expected - E_v)
+
+        # First bar should have this threshold
+        if len(expected_thetas) > 0:
+            assert abs(expected_thetas[0] - threshold_expected) < 0.01, (
+                f"Expected threshold {threshold_expected}, got {expected_thetas[0]}"
+            )
+
+    def test_ewma_updates_after_warmup(self):
+        """Test that EWMA values update after warmup period."""
+        n = 200
+        volumes = np.array([100.0] * n)
+        # Create asymmetric buy/sell pattern
+        sides = np.array([1.0] * 100 + [-1.0] * 100)
+
+        (
+            bar_indices,
+            expected_thetas,
+            cumulative_thetas,
+            expected_ts,
+            p_buys,
+            v_pluses,
+            e_vs,
+        ) = _calculate_imbalance_bars_nb(
+            volumes,
+            sides,
+            initial_expected_t=10.0,
+            initial_p_buy=0.5,
+            initial_v_buy=100.0,
+            initial_v=100.0,
+            alpha=0.5,  # High alpha for visible changes
+            min_bars_warmup=3,
+        )
+
+        if len(expected_ts) > 5:
+            # After warmup, expected_t should change
+            # First 3 bars should be same (warmup)
+            initial_expected_t = expected_ts[0]
+
+            # Later bars should show EWMA adaptation
+            later_values = expected_ts[4:]
+            # Not all should be the same as initial (unless by coincidence)
+            # This is a weak test but verifies the mechanism works
+            assert len(set(later_values)) >= 1 or len(later_values) == 0

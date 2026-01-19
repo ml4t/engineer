@@ -270,8 +270,12 @@ def plot_ic_comparison(
         msg = f"sort_by must be one of {valid_sort}, got {sort_by}"
         raise ValueError(msg)
 
-    # Convert to DataFrame if dict (type: ignore for type narrowing issue)
-    df = _ic_dict_to_dataframe(ic_results) if isinstance(ic_results, dict) else ic_results.copy()
+    # Convert to DataFrame if dict
+    df = (
+        _ic_dict_to_dataframe(ic_results)  # type: ignore[arg-type]
+        if isinstance(ic_results, dict)
+        else ic_results.copy()
+    )
 
     # Check required columns
     if "feature" not in df.columns:

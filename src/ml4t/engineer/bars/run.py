@@ -1,21 +1,33 @@
 # mypy: disable-error-code="misc,operator,assignment,arg-type"
 """Run bar sampler implementations.
 
-Exports:
-    TickRunBarSampler(initial_run=50, alpha=0.1) -> BarSampler
-        Run bars based on consecutive trade count.
+AFML-compliant run bars per López de Prado Chapter 2.3.
 
-    VolumeRunBarSampler(initial_run=5000, alpha=0.1) -> BarSampler
+Run bar threshold formula:
+    E[θ_T] = E[T] × max{P[b=1], 1-P[b=1]}
+
+Where:
+    E[T] = EWMA of bar lengths (ticks per bar)
+    P[b=1] = buy probability
+
+CRITICAL: θ_T = max{Σ(all buys in bar), Σ(all sells in bar)}
+    - NOT consecutive same-sided trades
+    - NO reset on direction change within bar
+
+Exports:
+    TickRunBarSampler(expected_ticks_per_bar=50, alpha=0.1) -> BarSampler
+        Run bars based on cumulative trade count.
+
+    VolumeRunBarSampler(expected_ticks_per_bar=100, alpha=0.1) -> BarSampler
         Volume-weighted run bars.
 
-    DollarRunBarSampler(initial_run=500_000, alpha=0.1) -> BarSampler
+    DollarRunBarSampler(expected_ticks_per_bar=100, alpha=0.1) -> BarSampler
         Dollar-weighted run bars.
-
-Run bars sample when a sequence of trades becomes unusually long in terms of
-consecutive buys or sells, indicating sustained one-sided market flow.
 
 Based on Advances in Financial Machine Learning by Marcos López de Prado.
 """
+
+import warnings
 
 import numpy as np
 import numpy.typing as npt
@@ -28,91 +40,154 @@ from ml4t.engineer.core.exceptions import DataValidationError
 
 @jit(nopython=True, cache=True)
 def _calculate_run_bars_nb(
-    volumes: npt.NDArray[np.float64],
+    values: npt.NDArray[np.float64],
     sides: npt.NDArray[np.float64],
-    initial_expectation: float,
+    initial_expected_t: float,
+    initial_p_buy: float,
     alpha: float = 0.1,
-) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.float64], npt.NDArray[np.int64]]:
-    """Calculate run bar indices using Numba.
+    min_bars_warmup: int = 10,
+) -> tuple[
+    npt.NDArray[np.int64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+]:
+    """Calculate AFML-compliant run bar indices.
 
-    A run is a sequence of consecutive trades with the same sign (buy or sell).
-    Bars are formed when the length of the current run exceeds an expected threshold.
+    AFML Chapter 2.3 formula:
+        θ_T = max{Σ(all buys in bar), Σ(all sells in bar)}
+        E[θ_T] = E[T] × max{P[b=1], 1-P[b=1]}
+
+    CRITICAL: This uses CUMULATIVE counts within the bar.
+    Direction changes DO NOT reset the counts.
 
     Parameters
     ----------
-    volumes : npt.NDArray[np.float64]
-        Array of volume values
-    sides : npt.NDArray[np.float64]
+    values : ndarray
+        Array of values to accumulate (ticks=1, volumes, or dollar amounts)
+    sides : ndarray
         Array of trade signs (+1 for buy, -1 for sell)
-    initial_expectation : float
-        Initial expected run length threshold
-    alpha : float, default 0.1
-        EWMA decay factor for updating expectation
+    initial_expected_t : float
+        Initial expected ticks per bar (E[T])
+    initial_p_buy : float
+        Initial buy probability P[b=1]
+    alpha : float
+        EWMA decay factor for updating expectations
+    min_bars_warmup : int
+        Number of bars before starting EWMA updates
 
     Returns
     -------
     tuple of arrays
-        (bar_end_indices, expected_runs, run_lengths)
+        (bar_indices, thetas, expected_thetas, expected_ts, p_buys,
+         cumulative_buys, cumulative_sells)
     """
-    n = len(volumes)
-    bar_indices = []
-    expected_runs = []
-    run_lengths_out = []
+    n = len(values)
 
-    # Initialize
-    expected_run = initial_expectation
-    current_run_length = 0
-    previous_side = 0.0  # No previous side yet
+    # Pre-allocate output lists
+    bar_indices = []
+    thetas = []
+    expected_thetas = []
+    expected_ts = []
+    p_buys = []
+    cumulative_buys_out = []
+    cumulative_sells_out = []
+
+    # Initialize EWMA state
+    expected_t = initial_expected_t
+    p_buy = initial_p_buy
+
+    # Within-bar accumulators - CUMULATIVE, not consecutive
+    cumulative_buys = 0.0
+    cumulative_sells = 0.0
+    bar_tick_count = 0
+    bar_buy_count = 0
+
+    n_bars = 0
 
     for i in range(n):
-        current_side = sides[i]
+        val = values[i]
+        side = sides[i]
+        is_buy = side > 0
 
-        # Check if we're continuing the run or starting a new one
-        if current_side == previous_side or previous_side == 0.0:
-            # Continue run
-            current_run_length += 1
+        # Accumulate - NEVER reset on direction change
+        bar_tick_count += 1
+        if is_buy:
+            cumulative_buys += val
+            bar_buy_count += 1
         else:
-            # Direction changed - start new run
-            current_run_length = 1
+            cumulative_sells += val
 
-        # Check if current run exceeds expectation
-        if current_run_length >= expected_run:
-            # Record bar end
+        # θ = max of cumulative buys and sells (NOT consecutive)
+        theta = max(cumulative_buys, cumulative_sells)
+
+        # Threshold: E[T] × max{P[b=1], 1-P[b=1]}
+        expected_theta = expected_t * max(p_buy, 1 - p_buy)
+
+        # Check if bar should be formed
+        if theta >= expected_theta:
+            # Record bar
             bar_indices.append(i)
-            run_lengths_out.append(current_run_length)
-            expected_runs.append(expected_run)
+            thetas.append(theta)
+            expected_thetas.append(expected_theta)
+            expected_ts.append(expected_t)
+            p_buys.append(p_buy)
+            cumulative_buys_out.append(cumulative_buys)
+            cumulative_sells_out.append(cumulative_sells)
 
-            # Update expected run using EWMA
-            # E[T] = alpha * T + (1 - alpha) * E[T]
-            expected_run = alpha * current_run_length + (1 - alpha) * expected_run
+            n_bars += 1
 
-            # Reset run
-            current_run_length = 0
-            previous_side = 0.0  # Reset so next tick starts new run
-        else:
-            previous_side = current_side
+            # Update EWMAs after warmup period
+            if n_bars > min_bars_warmup:
+                # Update E[T] - expected ticks per bar
+                expected_t = alpha * bar_tick_count + (1 - alpha) * expected_t
+
+                # Update P[b=1] - buy probability
+                bar_p_buy = bar_buy_count / bar_tick_count if bar_tick_count > 0 else 0.5
+                p_buy = alpha * bar_p_buy + (1 - alpha) * p_buy
+
+            # Reset within-bar accumulators - ONLY at bar boundary
+            cumulative_buys = 0.0
+            cumulative_sells = 0.0
+            bar_tick_count = 0
+            bar_buy_count = 0
 
     return (
         np.array(bar_indices, dtype=np.int64),
-        np.array(expected_runs, dtype=np.float64),
-        np.array(run_lengths_out, dtype=np.int64),
+        np.array(thetas, dtype=np.float64),
+        np.array(expected_thetas, dtype=np.float64),
+        np.array(expected_ts, dtype=np.float64),
+        np.array(p_buys, dtype=np.float64),
+        np.array(cumulative_buys_out, dtype=np.float64),
+        np.array(cumulative_sells_out, dtype=np.float64),
     )
 
 
 class TickRunBarSampler(BarSampler):
-    """Sample bars based on consecutive tick runs.
+    """Sample bars based on cumulative tick runs (AFML-compliant).
 
-    A tick run bar is formed when a sequence of consecutive buy or sell ticks
-    becomes unusually long, indicating sustained directional pressure.
+    AFML Chapter 2.3 formula:
+        θ_T = max{Σ(all buys in bar), Σ(all sells in bar)}
+        E[θ_T] = E[T] × max{P[b=1], 1-P[b=1]}
+
+    CRITICAL: Uses CUMULATIVE tick counts within the bar.
+    Direction changes DO NOT reset the counts - only bar boundaries do.
 
     Parameters
     ----------
     expected_ticks_per_bar : int
-        Expected number of ticks per bar (for initialization)
+        Expected number of ticks per bar (used to initialize E[T])
     initial_run_expectation : int, optional
-        Initial expected run length. If None, estimated from expected_ticks_per_bar
+        DEPRECATED. Use expected_ticks_per_bar instead.
     alpha : float, default 0.1
-        EWMA decay factor for updating expected run length
+        EWMA decay factor for updating expectations
+    initial_p_buy : float, default 0.5
+        Initial buy probability P[b=1]
+    min_bars_warmup : int, default 10
+        Number of bars before starting EWMA updates
 
     Examples
     --------
@@ -122,7 +197,7 @@ class TickRunBarSampler(BarSampler):
     References
     ----------
     .. [1] López de Prado, M. (2018). Advances in Financial Machine Learning.
-           John Wiley & Sons. Chapter 2: Financial Data Structures.
+           John Wiley & Sons. Chapter 2.3: Information-Driven Bars.
     """
 
     def __init__(
@@ -130,15 +205,31 @@ class TickRunBarSampler(BarSampler):
         expected_ticks_per_bar: int,
         initial_run_expectation: int | None = None,
         alpha: float = 0.1,
+        initial_p_buy: float = 0.5,
+        min_bars_warmup: int = 10,
     ):
         if expected_ticks_per_bar <= 0:
             raise ValueError("expected_ticks_per_bar must be positive")
         if not 0 < alpha <= 1:
             raise ValueError("alpha must be in (0, 1]")
+        if not 0 <= initial_p_buy <= 1:
+            raise ValueError("initial_p_buy must be in [0, 1]")
+        if min_bars_warmup < 0:
+            raise ValueError("min_bars_warmup must be non-negative")
+
+        if initial_run_expectation is not None:
+            warnings.warn(
+                "initial_run_expectation is deprecated and ignored. "
+                "The AFML threshold E[T] × max{P[b=1], 1-P[b=1]} is computed dynamically.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         self.expected_ticks_per_bar = expected_ticks_per_bar
-        self.initial_run_expectation = initial_run_expectation
+        self.initial_run_expectation = initial_run_expectation  # Keep for compat
         self.alpha = alpha
+        self.initial_p_buy = initial_p_buy
+        self.min_bars_warmup = min_bars_warmup
 
     def sample(
         self,
@@ -157,7 +248,7 @@ class TickRunBarSampler(BarSampler):
         Returns
         -------
         pl.DataFrame
-            Sampled run bars with run metrics
+            Sampled run bars with AFML diagnostic columns
         """
         self._validate_data(data)
 
@@ -167,21 +258,28 @@ class TickRunBarSampler(BarSampler):
         if len(data) == 0:
             return self._empty_run_bars_df()
 
-        # Estimate initial expectation if not provided
-        if self.initial_run_expectation is None:
-            # Assume runs are roughly 10-20% of expected ticks per bar
-            self.initial_run_expectation = max(1, int(self.expected_ticks_per_bar * 0.15))
+        # Extract arrays - for tick runs, values are all 1.0
+        n = len(data)
+        values = np.ones(n, dtype=np.float64)
+        volumes = data["volume"].to_numpy().astype(np.float64)
+        sides = data["side"].to_numpy().astype(np.float64)
 
-        # Extract arrays
-        volumes = data["volume"].to_numpy()
-        sides = data["side"].to_numpy()
-
-        # Calculate bar indices using Numba
-        bar_indices, expected_runs, run_lengths = _calculate_run_bars_nb(
-            volumes,
+        # Calculate bar indices using AFML-compliant Numba function
+        (
+            bar_indices,
+            thetas,
+            expected_thetas,
+            expected_ts,
+            p_buys,
+            cumulative_buys,
+            cumulative_sells,
+        ) = _calculate_run_bars_nb(
+            values,
             sides,
-            float(self.initial_run_expectation),
+            float(self.expected_ticks_per_bar),
+            self.initial_p_buy,
             self.alpha,
+            self.min_bars_warmup,
         )
 
         # Build bars
@@ -189,31 +287,34 @@ class TickRunBarSampler(BarSampler):
         start_idx = 0
 
         for i, end_idx in enumerate(bar_indices):
-            # Extract bar data
             bar_ticks = data.slice(start_idx, end_idx - start_idx + 1)
-
-            # Calculate metrics
             bar_volumes = volumes[start_idx : end_idx + 1]
             bar_sides = sides[start_idx : end_idx + 1]
 
             buy_volume = float(np.sum(bar_volumes[bar_sides > 0]))
             sell_volume = float(np.sum(bar_volumes[bar_sides < 0]))
 
-            # Create bar
             bar = self._create_ohlcv_bar(
                 bar_ticks,
                 additional_cols={
                     "buy_volume": buy_volume,
                     "sell_volume": sell_volume,
-                    "run_length": int(run_lengths[i]),
-                    "expected_run": float(expected_runs[i]),
+                    "run_length": int(thetas[i]),  # For backward compat
+                    "expected_run": float(expected_thetas[i]),  # For backward compat
+                    # AFML diagnostic columns
+                    "theta": float(thetas[i]),
+                    "expected_theta": float(expected_thetas[i]),
+                    "expected_t": float(expected_ts[i]),
+                    "p_buy": float(p_buys[i]),
+                    "cumulative_buys": float(cumulative_buys[i]),
+                    "cumulative_sells": float(cumulative_sells[i]),
                 },
             )
             bars.append(bar)
 
             start_idx = end_idx + 1
 
-        # Handle incomplete final bar
+        # Handle incomplete bar
         if include_incomplete and start_idx < len(data):
             bar_ticks = data.slice(start_idx)
 
@@ -224,25 +325,30 @@ class TickRunBarSampler(BarSampler):
                 buy_vol = float(np.sum(bar_volumes[bar_sides > 0]))
                 sell_vol = float(np.sum(bar_volumes[bar_sides < 0]))
 
-                # Calculate current run length
-                current_run_length = 1
-                for j in range(1, len(bar_sides)):
-                    if bar_sides[j] == bar_sides[j - 1]:
-                        current_run_length += 1
-                    else:
-                        current_run_length = 1
+                # Calculate current theta (cumulative, not consecutive)
+                cum_buys = float(np.sum(bar_sides > 0))
+                cum_sells = float(np.sum(bar_sides < 0))
+                current_theta = max(cum_buys, cum_sells)
+
+                last_expected_t = (
+                    expected_ts[-1] if len(expected_ts) > 0 else float(self.expected_ticks_per_bar)
+                )
+                last_p_buy = p_buys[-1] if len(p_buys) > 0 else self.initial_p_buy
+                expected_theta = last_expected_t * max(last_p_buy, 1 - last_p_buy)
 
                 bar = self._create_ohlcv_bar(
                     bar_ticks,
                     additional_cols={
                         "buy_volume": buy_vol,
                         "sell_volume": sell_vol,
-                        "run_length": current_run_length,
-                        "expected_run": float(
-                            expected_runs[-1]
-                            if len(expected_runs) > 0
-                            else self.initial_run_expectation
-                        ),
+                        "run_length": int(current_theta),
+                        "expected_run": float(expected_theta),
+                        "theta": float(current_theta),
+                        "expected_theta": float(expected_theta),
+                        "expected_t": float(last_expected_t),
+                        "p_buy": float(last_p_buy),
+                        "cumulative_buys": float(cum_buys),
+                        "cumulative_sells": float(cum_sells),
                     },
                 )
                 bars.append(bar)
@@ -267,23 +373,37 @@ class TickRunBarSampler(BarSampler):
                 "sell_volume": [],
                 "run_length": [],
                 "expected_run": [],
+                "theta": [],
+                "expected_theta": [],
+                "expected_t": [],
+                "p_buy": [],
+                "cumulative_buys": [],
+                "cumulative_sells": [],
             },
         )
 
 
 class VolumeRunBarSampler(BarSampler):
-    """Sample bars based on consecutive volume runs.
+    """Sample bars based on cumulative volume runs (AFML-compliant).
 
-    Similar to tick run bars, but weighs runs by volume rather than tick count.
+    AFML Chapter 2.3 formula with volume weighting:
+        θ_T = max{Σ(buy volumes in bar), Σ(sell volumes in bar)}
+        E[θ_T] = E[T] × max{P[b=1], 1-P[b=1]} × E[v]
+
+    Where E[v] is estimated from the data.
 
     Parameters
     ----------
     expected_ticks_per_bar : int
-        Expected number of ticks per bar (for initialization)
+        Expected number of ticks per bar
     initial_run_expectation : float, optional
-        Initial expected run length in volume terms
+        DEPRECATED. Threshold is computed dynamically.
     alpha : float, default 0.1
-        EWMA decay factor for updating expected run length
+        EWMA decay factor
+    initial_p_buy : float, default 0.5
+        Initial buy probability P[b=1]
+    min_bars_warmup : int, default 10
+        Number of bars before starting EWMA updates
 
     Examples
     --------
@@ -296,15 +416,31 @@ class VolumeRunBarSampler(BarSampler):
         expected_ticks_per_bar: int,
         initial_run_expectation: float | None = None,
         alpha: float = 0.1,
+        initial_p_buy: float = 0.5,
+        min_bars_warmup: int = 10,
     ):
         if expected_ticks_per_bar <= 0:
             raise ValueError("expected_ticks_per_bar must be positive")
         if not 0 < alpha <= 1:
             raise ValueError("alpha must be in (0, 1]")
+        if not 0 <= initial_p_buy <= 1:
+            raise ValueError("initial_p_buy must be in [0, 1]")
+        if min_bars_warmup < 0:
+            raise ValueError("min_bars_warmup must be non-negative")
+
+        if initial_run_expectation is not None:
+            warnings.warn(
+                "initial_run_expectation is deprecated and ignored. "
+                "The AFML threshold is computed dynamically.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         self.expected_ticks_per_bar = expected_ticks_per_bar
         self.initial_run_expectation = initial_run_expectation
         self.alpha = alpha
+        self.initial_p_buy = initial_p_buy
+        self.min_bars_warmup = min_bars_warmup
 
     def sample(
         self,
@@ -320,21 +456,32 @@ class VolumeRunBarSampler(BarSampler):
         if len(data) == 0:
             return self._empty_run_bars_df()
 
-        # Estimate initial expectation if not provided
-        if self.initial_run_expectation is None:
-            avg_volume = float(data["volume"].mean())
-            self.initial_run_expectation = float(self.expected_ticks_per_bar * avg_volume * 0.15)
+        volumes = data["volume"].to_numpy().astype(np.float64)
+        sides = data["side"].to_numpy().astype(np.float64)
 
-        # Use weighted volume as the run metric
-        volumes = data["volume"].to_numpy()
-        sides = data["side"].to_numpy()
+        # Estimate initial E[v] for scaling the threshold
+        warmup_size = min(1000, len(volumes))
+        avg_volume = float(np.mean(volumes[:warmup_size]))
 
-        # For volume runs, we accumulate volume during a run
-        bar_indices, expected_runs, run_volumes = self._calculate_volume_runs(
-            volumes,
+        # Scale expected_ticks_per_bar by average volume for volume-weighted runs
+        initial_expected_t_scaled = float(self.expected_ticks_per_bar) * avg_volume
+
+        # Calculate bar indices using AFML-compliant Numba function
+        (
+            bar_indices,
+            thetas,
+            expected_thetas,
+            expected_ts,
+            p_buys,
+            cumulative_buys,
+            cumulative_sells,
+        ) = _calculate_run_bars_nb(
+            volumes,  # Use volumes as values
             sides,
-            self.initial_run_expectation,
+            initial_expected_t_scaled,
+            self.initial_p_buy,
             self.alpha,
+            self.min_bars_warmup,
         )
 
         # Build bars
@@ -354,8 +501,15 @@ class VolumeRunBarSampler(BarSampler):
                 additional_cols={
                     "buy_volume": buy_volume,
                     "sell_volume": sell_volume,
-                    "run_volume": float(run_volumes[i]),
-                    "expected_run": float(expected_runs[i]),
+                    "run_volume": float(thetas[i]),  # For backward compat
+                    "expected_run": float(expected_thetas[i]),  # For backward compat
+                    # AFML diagnostic columns
+                    "theta": float(thetas[i]),
+                    "expected_theta": float(expected_thetas[i]),
+                    "expected_t": float(expected_ts[i]),
+                    "p_buy": float(p_buys[i]),
+                    "cumulative_buys": float(cumulative_buys[i]),
+                    "cumulative_sells": float(cumulative_sells[i]),
                 },
             )
             bars.append(bar)
@@ -365,6 +519,7 @@ class VolumeRunBarSampler(BarSampler):
         # Handle incomplete bar
         if include_incomplete and start_idx < len(data):
             bar_ticks = data.slice(start_idx)
+
             if len(bar_ticks) > 0:
                 bar_volumes = volumes[start_idx:]
                 bar_sides = sides[start_idx:]
@@ -372,27 +527,28 @@ class VolumeRunBarSampler(BarSampler):
                 buy_vol = float(np.sum(bar_volumes[bar_sides > 0]))
                 sell_vol = float(np.sum(bar_volumes[bar_sides < 0]))
 
-                # Calculate current run volume
-                current_run_volume = 0.0
-                prev_side = 0.0
-                for j in range(len(bar_sides)):
-                    if bar_sides[j] == prev_side or prev_side == 0.0:
-                        current_run_volume += bar_volumes[j]
-                    else:
-                        current_run_volume = bar_volumes[j]
-                    prev_side = bar_sides[j]
+                # Calculate current theta (cumulative volumes)
+                current_theta = max(buy_vol, sell_vol)
+
+                last_expected_t = (
+                    expected_ts[-1] if len(expected_ts) > 0 else initial_expected_t_scaled
+                )
+                last_p_buy = p_buys[-1] if len(p_buys) > 0 else self.initial_p_buy
+                expected_theta = last_expected_t * max(last_p_buy, 1 - last_p_buy)
 
                 bar = self._create_ohlcv_bar(
                     bar_ticks,
                     additional_cols={
                         "buy_volume": buy_vol,
                         "sell_volume": sell_vol,
-                        "run_volume": current_run_volume,
-                        "expected_run": float(
-                            expected_runs[-1]
-                            if len(expected_runs) > 0
-                            else self.initial_run_expectation
-                        ),
+                        "run_volume": float(current_theta),
+                        "expected_run": float(expected_theta),
+                        "theta": float(current_theta),
+                        "expected_theta": float(expected_theta),
+                        "expected_t": float(last_expected_t),
+                        "p_buy": float(last_p_buy),
+                        "cumulative_buys": float(buy_vol),
+                        "cumulative_sells": float(sell_vol),
                     },
                 )
                 bars.append(bar)
@@ -401,50 +557,6 @@ class VolumeRunBarSampler(BarSampler):
             return self._empty_run_bars_df()
 
         return pl.DataFrame(bars)
-
-    def _calculate_volume_runs(
-        self,
-        volumes: npt.NDArray[np.float64],
-        sides: npt.NDArray[np.float64],
-        initial_expectation: float,
-        alpha: float,
-    ) -> tuple[list[int], list[float], list[float]]:
-        """Calculate run bars based on cumulative volume in runs."""
-        n = len(volumes)
-        bar_indices = []
-        expected_runs = []
-        run_volumes_out = []
-
-        expected_run = initial_expectation
-        current_run_volume = 0.0
-        previous_side = 0.0
-
-        for i in range(n):
-            current_side = sides[i]
-
-            # Check if continuing run
-            if current_side == previous_side or previous_side == 0.0:
-                current_run_volume += volumes[i]
-            else:
-                # Direction changed
-                current_run_volume = volumes[i]
-
-            # Check if run exceeds expectation
-            if current_run_volume >= expected_run:
-                bar_indices.append(i)
-                run_volumes_out.append(current_run_volume)
-                expected_runs.append(expected_run)
-
-                # Update expectation
-                expected_run = alpha * current_run_volume + (1 - alpha) * expected_run
-
-                # Reset
-                current_run_volume = 0.0
-                previous_side = 0.0
-            else:
-                previous_side = current_side
-
-        return bar_indices, expected_runs, run_volumes_out
 
     def _empty_run_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
@@ -461,23 +573,34 @@ class VolumeRunBarSampler(BarSampler):
                 "sell_volume": [],
                 "run_volume": [],
                 "expected_run": [],
+                "theta": [],
+                "expected_theta": [],
+                "expected_t": [],
+                "p_buy": [],
+                "cumulative_buys": [],
+                "cumulative_sells": [],
             },
         )
 
 
 class DollarRunBarSampler(BarSampler):
-    """Sample bars based on consecutive dollar value runs.
+    """Sample bars based on cumulative dollar value runs (AFML-compliant).
 
-    Similar to volume run bars, but uses dollar value (price * volume) as the run metric.
+    AFML Chapter 2.3 formula with dollar weighting:
+        θ_T = max{Σ(buy dollars in bar), Σ(sell dollars in bar)}
 
     Parameters
     ----------
     expected_ticks_per_bar : int
-        Expected number of ticks per bar (for initialization)
+        Expected number of ticks per bar
     initial_run_expectation : float, optional
-        Initial expected run length in dollar terms
+        DEPRECATED. Threshold is computed dynamically.
     alpha : float, default 0.1
-        EWMA decay factor for updating expected run length
+        EWMA decay factor
+    initial_p_buy : float, default 0.5
+        Initial buy probability P[b=1]
+    min_bars_warmup : int, default 10
+        Number of bars before starting EWMA updates
 
     Examples
     --------
@@ -490,15 +613,31 @@ class DollarRunBarSampler(BarSampler):
         expected_ticks_per_bar: int,
         initial_run_expectation: float | None = None,
         alpha: float = 0.1,
+        initial_p_buy: float = 0.5,
+        min_bars_warmup: int = 10,
     ):
         if expected_ticks_per_bar <= 0:
             raise ValueError("expected_ticks_per_bar must be positive")
         if not 0 < alpha <= 1:
             raise ValueError("alpha must be in (0, 1]")
+        if not 0 <= initial_p_buy <= 1:
+            raise ValueError("initial_p_buy must be in [0, 1]")
+        if min_bars_warmup < 0:
+            raise ValueError("min_bars_warmup must be non-negative")
+
+        if initial_run_expectation is not None:
+            warnings.warn(
+                "initial_run_expectation is deprecated and ignored. "
+                "The AFML threshold is computed dynamically.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         self.expected_ticks_per_bar = expected_ticks_per_bar
         self.initial_run_expectation = initial_run_expectation
         self.alpha = alpha
+        self.initial_p_buy = initial_p_buy
+        self.min_bars_warmup = min_bars_warmup
 
     def sample(
         self,
@@ -514,24 +653,34 @@ class DollarRunBarSampler(BarSampler):
         if len(data) == 0:
             return self._empty_run_bars_df()
 
-        # Estimate initial expectation if not provided
-        if self.initial_run_expectation is None:
-            prices = data["price"].to_numpy()
-            volumes = data["volume"].to_numpy()
-            avg_dollar_volume = float(np.mean(prices * volumes))
-            self.initial_run_expectation = self.expected_ticks_per_bar * avg_dollar_volume * 0.15
-
-        # Calculate dollar runs
-        prices = data["price"].to_numpy()
-        volumes = data["volume"].to_numpy()
-        sides = data["side"].to_numpy()
+        prices = data["price"].to_numpy().astype(np.float64)
+        volumes = data["volume"].to_numpy().astype(np.float64)
+        sides = data["side"].to_numpy().astype(np.float64)
         dollar_volumes = prices * volumes
 
-        bar_indices, expected_runs, run_dollars = self._calculate_dollar_runs(
-            dollar_volumes,
+        # Estimate initial E[dollar] for scaling
+        warmup_size = min(1000, len(dollar_volumes))
+        avg_dollar_volume = float(np.mean(dollar_volumes[:warmup_size]))
+
+        # Scale expected_ticks_per_bar by average dollar volume
+        initial_expected_t_scaled = float(self.expected_ticks_per_bar) * avg_dollar_volume
+
+        # Calculate bar indices using AFML-compliant Numba function
+        (
+            bar_indices,
+            thetas,
+            expected_thetas,
+            expected_ts,
+            p_buys,
+            cumulative_buys,
+            cumulative_sells,
+        ) = _calculate_run_bars_nb(
+            dollar_volumes,  # Use dollar volumes as values
             sides,
-            self.initial_run_expectation,
+            initial_expected_t_scaled,
+            self.initial_p_buy,
             self.alpha,
+            self.min_bars_warmup,
         )
 
         # Build bars
@@ -557,8 +706,15 @@ class DollarRunBarSampler(BarSampler):
                     "sell_volume": sell_volume,
                     "dollar_volume": total_dollars,
                     "vwap": vwap,
-                    "run_dollars": float(run_dollars[i]),
-                    "expected_run": float(expected_runs[i]),
+                    "run_dollars": float(thetas[i]),  # For backward compat
+                    "expected_run": float(expected_thetas[i]),  # For backward compat
+                    # AFML diagnostic columns
+                    "theta": float(thetas[i]),
+                    "expected_theta": float(expected_thetas[i]),
+                    "expected_t": float(expected_ts[i]),
+                    "p_buy": float(p_buys[i]),
+                    "cumulative_buys": float(cumulative_buys[i]),
+                    "cumulative_sells": float(cumulative_sells[i]),
                 },
             )
             bars.append(bar)
@@ -568,6 +724,7 @@ class DollarRunBarSampler(BarSampler):
         # Handle incomplete bar
         if include_incomplete and start_idx < len(data):
             bar_ticks = data.slice(start_idx)
+
             if len(bar_ticks) > 0:
                 bar_volumes = volumes[start_idx:]
                 bar_sides = sides[start_idx:]
@@ -579,15 +736,16 @@ class DollarRunBarSampler(BarSampler):
                 total_vol = float(np.sum(bar_volumes))
                 vwap_val = total_dol / total_vol if total_vol > 0 else 0.0
 
-                # Calculate current run dollars
-                current_run_dollars = 0.0
-                prev_side = 0.0
-                for j in range(len(bar_sides)):
-                    if bar_sides[j] == prev_side or prev_side == 0.0:
-                        current_run_dollars += bar_dollars[j]
-                    else:
-                        current_run_dollars = bar_dollars[j]
-                    prev_side = bar_sides[j]
+                # Calculate current theta (cumulative dollars)
+                buy_dollars = float(np.sum(bar_dollars[bar_sides > 0]))
+                sell_dollars = float(np.sum(bar_dollars[bar_sides < 0]))
+                current_theta = max(buy_dollars, sell_dollars)
+
+                last_expected_t = (
+                    expected_ts[-1] if len(expected_ts) > 0 else initial_expected_t_scaled
+                )
+                last_p_buy = p_buys[-1] if len(p_buys) > 0 else self.initial_p_buy
+                expected_theta = last_expected_t * max(last_p_buy, 1 - last_p_buy)
 
                 bar = self._create_ohlcv_bar(
                     bar_ticks,
@@ -596,12 +754,14 @@ class DollarRunBarSampler(BarSampler):
                         "sell_volume": sell_vol,
                         "dollar_volume": total_dol,
                         "vwap": vwap_val,
-                        "run_dollars": current_run_dollars,
-                        "expected_run": float(
-                            expected_runs[-1]
-                            if len(expected_runs) > 0
-                            else self.initial_run_expectation
-                        ),
+                        "run_dollars": float(current_theta),
+                        "expected_run": float(expected_theta),
+                        "theta": float(current_theta),
+                        "expected_theta": float(expected_theta),
+                        "expected_t": float(last_expected_t),
+                        "p_buy": float(last_p_buy),
+                        "cumulative_buys": float(buy_dollars),
+                        "cumulative_sells": float(sell_dollars),
                     },
                 )
                 bars.append(bar)
@@ -610,50 +770,6 @@ class DollarRunBarSampler(BarSampler):
             return self._empty_run_bars_df()
 
         return pl.DataFrame(bars)
-
-    def _calculate_dollar_runs(
-        self,
-        dollar_volumes: npt.NDArray[np.float64],
-        sides: npt.NDArray[np.float64],
-        initial_expectation: float,
-        alpha: float,
-    ) -> tuple[list[int], list[float], list[float]]:
-        """Calculate run bars based on cumulative dollar volume in runs."""
-        n = len(dollar_volumes)
-        bar_indices = []
-        expected_runs = []
-        run_dollars_out = []
-
-        expected_run = initial_expectation
-        current_run_dollars = 0.0
-        previous_side = 0.0
-
-        for i in range(n):
-            current_side = sides[i]
-
-            # Check if continuing run
-            if current_side == previous_side or previous_side == 0.0:
-                current_run_dollars += dollar_volumes[i]
-            else:
-                # Direction changed
-                current_run_dollars = dollar_volumes[i]
-
-            # Check if run exceeds expectation
-            if current_run_dollars >= expected_run:
-                bar_indices.append(i)
-                run_dollars_out.append(current_run_dollars)
-                expected_runs.append(expected_run)
-
-                # Update expectation
-                expected_run = alpha * current_run_dollars + (1 - alpha) * expected_run
-
-                # Reset
-                current_run_dollars = 0.0
-                previous_side = 0.0
-            else:
-                previous_side = current_side
-
-        return bar_indices, expected_runs, run_dollars_out
 
     def _empty_run_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
@@ -672,6 +788,12 @@ class DollarRunBarSampler(BarSampler):
                 "vwap": [],
                 "run_dollars": [],
                 "expected_run": [],
+                "theta": [],
+                "expected_theta": [],
+                "expected_t": [],
+                "p_buy": [],
+                "cumulative_buys": [],
+                "cumulative_sells": [],
             },
         )
 

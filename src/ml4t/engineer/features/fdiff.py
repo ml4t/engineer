@@ -190,11 +190,11 @@ def ffdiff(
     Examples
     --------
     >>> import polars as pl
-    >>> import ml4t_features as qf
+    >>> from ml4t.engineer.features.fdiff import ffdiff
     >>>
     >>> # Apply to a column
     >>> df = pl.DataFrame({"price": [100, 102, 101, 103, 105]})
-    >>> df.with_columns(price_ffd=qf.features.fdiff.ffdiff("price", d=0.5))
+    >>> df.with_columns(price_ffd=ffdiff("price", d=0.5))
     """
     # Get weights
     weights = get_ffd_weights(d, threshold)

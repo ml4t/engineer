@@ -19,6 +19,13 @@ Based on "Advances in Financial Machine Learning" by Marcos López de Prado.
 """
 
 from ml4t.engineer.bars.base import BarSampler
+from ml4t.engineer.bars.imbalance import (
+    FixedTickImbalanceBarSampler,
+    FixedVolumeImbalanceBarSampler,
+    TickImbalanceBarSampler,
+    WindowTickImbalanceBarSampler,
+    WindowVolumeImbalanceBarSampler,
+)
 
 # Import original implementations with renamed identifiers
 from ml4t.engineer.bars.imbalance import ImbalanceBarSampler as ImbalanceBarSamplerOriginal
@@ -54,8 +61,16 @@ __all__ = [
     "TickBarSampler",
     "VolumeBarSampler",
     "DollarBarSampler",
-    # Advanced information-driven bars
-    "ImbalanceBarSampler",
+    # Advanced information-driven bars (adaptive)
+    "ImbalanceBarSampler",  # Volume imbalance bars (VIBs)
+    "TickImbalanceBarSampler",  # Tick imbalance bars (TIBs)
+    # Fixed threshold bars (recommended for production)
+    "FixedTickImbalanceBarSampler",
+    "FixedVolumeImbalanceBarSampler",
+    # Window-based bars (bounded adaptation via rolling windows)
+    "WindowTickImbalanceBarSampler",
+    "WindowVolumeImbalanceBarSampler",
+    # Run bars
     "TickRunBarSampler",
     "VolumeRunBarSampler",
     "DollarRunBarSampler",

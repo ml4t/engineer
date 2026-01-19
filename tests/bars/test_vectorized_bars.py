@@ -474,13 +474,15 @@ class TestImbalanceBarSamplerVectorized:
         assert len(bars_with) >= len(bars_without)
 
     def test_initial_expectation_estimation(self, sample_tick_data):
-        """Test initial expectation is estimated when not provided."""
-        sampler = ImbalanceBarSamplerVectorized(expected_ticks_per_bar=50, initial_expectation=None)
+        """Test AFML parameters are estimated when not provided."""
+        sampler = ImbalanceBarSamplerVectorized(expected_ticks_per_bar=50)
 
         sampler.sample(sample_tick_data)
-        # Should estimate initial_expectation from data
-        assert sampler.initial_expectation is not None
-        assert sampler.initial_expectation > 0
+        # Should estimate AFML parameters from data
+        assert sampler._initial_v is not None
+        assert sampler._initial_v > 0
+        assert sampler._initial_v_buy is not None
+        assert sampler._initial_v_buy > 0
 
     def test_initial_expectation_provided(self, sample_tick_data):
         """Test sampling with provided initial expectation."""
@@ -510,21 +512,34 @@ class TestImbalanceBarSamplerVectorized:
             "imbalance",
             "cumulative_theta",
             "expected_imbalance",
+            # AFML diagnostic columns
+            "expected_t",
+            "p_buy",
+            "v_plus",
+            "e_v",
         ]
         assert list(empty_df.columns) == expected_cols
 
     def test_create_incomplete_imbalance_bar(self, sample_tick_data):
         """Test _create_incomplete_imbalance_bar method."""
-        sampler = ImbalanceBarSamplerVectorized(
-            expected_ticks_per_bar=50, initial_expectation=1000.0
-        )
+        import numpy as np
 
-        incomplete_bar = sampler._create_incomplete_imbalance_bar(sample_tick_data)
+        sampler = ImbalanceBarSamplerVectorized(expected_ticks_per_bar=50, initial_p_buy=0.5)
+
+        # Extract volumes and sides arrays
+        volumes = sample_tick_data["volume"].to_numpy().astype(np.float64)
+        sides = sample_tick_data["side"].to_numpy().astype(np.float64)
+
+        incomplete_bar = sampler._create_incomplete_imbalance_bar(sample_tick_data, volumes, sides)
 
         assert len(incomplete_bar) == 1
         assert "imbalance" in incomplete_bar.columns
         assert "expected_imbalance" in incomplete_bar.columns
-        assert incomplete_bar["expected_imbalance"][0] == 1000.0
+        # AFML diagnostic columns should be present
+        assert "expected_t" in incomplete_bar.columns
+        assert "p_buy" in incomplete_bar.columns
+        assert "v_plus" in incomplete_bar.columns
+        assert "e_v" in incomplete_bar.columns
 
 
 class TestVectorizedBarsIntegration:

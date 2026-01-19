@@ -34,7 +34,7 @@ try:
     HAS_DUCKDB = True
 except ImportError:
     HAS_DUCKDB = False
-    duckdb = None
+    duckdb = None  # type: ignore[assignment]
 
 try:
     import polars as pl
@@ -42,7 +42,7 @@ try:
     HAS_POLARS = True
 except ImportError:
     HAS_POLARS = False
-    pl = None
+    pl = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     import duckdb

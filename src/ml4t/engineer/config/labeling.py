@@ -468,7 +468,7 @@ class LabelingConfig(BaseConfig):
             lower_multiplier=self.atr_sl_multiple,
             atr_period=self.atr_period,
             max_holding_period=self.max_holding_period,
-            side=self.side,
+            side=self.side,  # type: ignore[arg-type]  # str allowed for dynamic side
             weight_scheme=weight_scheme,
             weight_decay_rate=self.weight_decay_rate,
         )

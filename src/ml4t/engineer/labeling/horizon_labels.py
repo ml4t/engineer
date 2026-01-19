@@ -16,12 +16,62 @@ import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
 
+# Common grouping column names for different asset classes
+_DEFAULT_GROUP_COLS = ["symbol", "product", "ticker"]
+
+
+def _resolve_group_cols(
+    data: pl.DataFrame,
+    group_col: str | list[str] | None,
+) -> list[str]:
+    """Resolve grouping columns for label computation.
+
+    Auto-detects grouping columns if not explicitly specified, handling:
+    - Equities: 'symbol' column
+    - Futures: 'product' column, plus 'position' for contract months
+    - Explicit specification via group_col parameter
+
+    Args:
+        data: Input DataFrame
+        group_col: User-specified grouping column(s), or None for auto-detection
+
+    Returns:
+        List of column names to group by (empty list means no grouping)
+    """
+    # Explicit specification
+    if group_col is not None:
+        if isinstance(group_col, str):
+            return [group_col] if group_col in data.columns else []
+        elif isinstance(group_col, list):
+            # Return only columns that exist
+            return [c for c in group_col if c in data.columns]
+
+    # Auto-detection: Find first matching default column
+    detected_cols = []
+    for col in _DEFAULT_GROUP_COLS:
+        if col in data.columns:
+            detected_cols.append(col)
+            break  # Use first match only
+
+    # Check for position column (futures contract months)
+    # If product + position exist, group by both to handle continuous futures correctly
+    if "position" in data.columns:
+        # Add position to grouping if not already covered
+        if detected_cols and detected_cols[0] in ["product", "symbol"]:
+            detected_cols.append("position")
+        elif not detected_cols:
+            # If only position exists, use it alone
+            detected_cols.append("position")
+
+    return detected_cols
+
 
 def fixed_time_horizon_labels(
     data: pl.DataFrame,
     horizon: int = 1,
     method: str = "returns",
     price_col: str = "close",
+    group_col: str | list[str] | None = None,
 ) -> pl.DataFrame:
     """Generate forward-looking labels based on fixed time horizon.
 
@@ -42,12 +92,17 @@ def fixed_time_horizon_labels(
         - "binary": 1 if price[t+h] > price[t] else -1
     price_col : str, default "close"
         Name of the price column to use
+    group_col : str | list[str] | None, default None
+        Column(s) to group by for per-asset labels. If None, auto-detects from
+        common column names: 'symbol', 'product' (futures), or uses composite
+        grouping if 'position' column exists (e.g., for futures contract months).
+        Pass an empty list explicitly to disable grouping.
 
     Returns
     -------
     pl.DataFrame
         Original data with additional label column.
-        Last `horizon` values will be null (insufficient future data).
+        Last `horizon` values per group will be null (insufficient future data).
 
     Examples
     --------
@@ -90,10 +145,12 @@ def fixed_time_horizon_labels(
     # Get price column
     prices = pl.col(price_col)
 
-    # Use .over("symbol") if symbol column exists to handle multi-asset data correctly
-    # This prevents labels from leaking across symbol boundaries
-    if "symbol" in data.columns:
-        future_prices = prices.shift(-horizon).over("symbol")
+    # Determine grouping columns for multi-asset/multi-position data
+    # This prevents labels from leaking across asset/contract boundaries
+    group_cols = _resolve_group_cols(data, group_col)
+
+    if group_cols:
+        future_prices = prices.shift(-horizon).over(group_cols)
     else:
         future_prices = prices.shift(-horizon)
 

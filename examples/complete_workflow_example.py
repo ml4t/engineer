@@ -67,23 +67,27 @@ print("STEP 1: Feature Quality Diagnostics")
 print("=" * 80)
 print()
 
-from ml4t.engineer.diagnostics import diagnose_features
+# NOTE: diagnose_features requires ml4t-diagnostic package (not yet on PyPI)
+# Once available, install with: pip install ml4t-diagnostic
+# from ml4t.diagnostic import diagnose_features
+#
+# # Diagnose each feature individually
+# print("Analyzing feature quality (stationarity, autocorrelation, volatility, distribution)...")
+# diagnostic_results = {}
+# for col in features.columns:
+#     result = diagnose_features(features[col].to_pandas())
+#     diagnostic_results[col] = result
+#
+#     # Print summary for non-stationary features
+#     if result.stationarity and result.stationarity.consensus in [
+#         "strong_nonstationary",
+#         "likely_nonstationary",
+#     ]:
+#         print(f"  ⚠️  {col}: Non-stationary ({result.stationarity.consensus})")
+#
+# print(f"\n✓ Completed diagnostics for {len(diagnostic_results)} features")
 
-# Diagnose each feature individually
-print("Analyzing feature quality (stationarity, autocorrelation, volatility, distribution)...")
-diagnostic_results = {}
-for col in features.columns:
-    result = diagnose_features(features[col].to_pandas())
-    diagnostic_results[col] = result
-
-    # Print summary for non-stationary features
-    if result.stationarity and result.stationarity.consensus in [
-        "strong_nonstationary",
-        "likely_nonstationary",
-    ]:
-        print(f"  ⚠️  {col}: Non-stationary ({result.stationarity.consensus})")
-
-print(f"\n✓ Completed diagnostics for {len(diagnostic_results)} features")
+print("⏭️  Skipping diagnostics (requires ml4t-diagnostic package)")
 print()
 
 # ============================================================================

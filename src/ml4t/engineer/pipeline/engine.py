@@ -47,11 +47,11 @@ class Pipeline:
 
     Examples
     --------
-    >>> import ml4t_features as qf
+    >>> from ml4t.engineer import pipeline
     >>> import polars as pl
     >>>
     >>> # Create a simple pipeline
-    >>> pipeline = qf.pipeline.Pipeline(steps=[
+    >>> pipe = pipeline.Pipeline(steps=[
     ...     ("returns", lambda df: df.with_columns(
     ...         returns=pl.col("close").pct_change()
     ...     )),

@@ -530,7 +530,7 @@ def compute_shap_importance(
         "shap_values": shap_values,
         "importances": importances[sorted_idx],
         "feature_names": [feature_names[i] for i in sorted_idx],
-        "base_value": float(base_value) if base_value is not None else 0.0,
+        "base_value": float(base_value) if base_value is not None else 0.0,  # type: ignore[arg-type]
         "n_features": n_features,
         "n_samples": n_samples,
         "model_type": model_type,

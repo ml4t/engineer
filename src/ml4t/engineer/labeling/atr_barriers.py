@@ -279,7 +279,10 @@ def atr_triple_barrier_labels(
     # Create barrier configuration with dynamic barriers
     # Note: triple_barrier_labels requires int for max_holding_period, not None
     # Use a large default (len of data) if not specified
-    holding_period = max_holding_bars if max_holding_bars is not None else len(data_with_barriers)
+    # Note: LazyFrame doesn't support len(), but in practice this is always DataFrame
+    holding_period = (
+        max_holding_bars if max_holding_bars is not None else len(data_with_barriers)  # type: ignore[arg-type]
+    )
 
     barrier_config = BarrierConfig(
         upper_barrier="upper_barrier_distance",  # Column name
@@ -290,8 +293,9 @@ def atr_triple_barrier_labels(
     )
 
     # Use existing triple_barrier_labels with dynamic barriers
+    # Note: type signature allows LazyFrame but triple_barrier_labels needs DataFrame
     labeled = triple_barrier_labels(
-        data_with_barriers,
+        data_with_barriers,  # type: ignore[arg-type]
         config=barrier_config,
         price_col=price_col,
         timestamp_col=timestamp_col,

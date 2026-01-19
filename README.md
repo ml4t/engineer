@@ -16,7 +16,7 @@ ml4t-engineer provides 107+ technical indicators, triple-barrier labeling, and a
 - **Microstructure Metrics**: Kyle's Lambda, VPIN, Amihud, Roll spread
 - **ML-Specific Features**: Fractional differencing, entropy, Hurst exponent
 - **Polars-First**: 10-100x faster than pandas, ~0.8x TA-Lib C speed
-- **Type-Safe**: Full type hints with mypy strict mode
+- **Type-Safe**: Type hints throughout
 
 ## Installation
 
@@ -233,7 +233,7 @@ uv pip install -e ".[dev]"
 uv run pytest tests/ -v
 
 # Type checking
-uv run mypy src/
+uv run ty check src/
 
 # Linting
 uv run ruff check src/

@@ -193,7 +193,7 @@ class BaseConfig(BaseModel):
             # Parse validation errors from Pydantic
             if hasattr(e, "errors") and callable(getattr(e, "errors", None)):
                 errors = []
-                for error in e.errors():
+                for error in e.errors():  # type: ignore[operator]
                     loc = ".".join(str(x) for x in error["loc"])
                     msg = error["msg"]
                     errors.append(f"{loc}: {msg}")

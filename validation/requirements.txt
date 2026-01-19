@@ -1,0 +1,21 @@
+# Validation dependencies for ml4t-engineer
+# Install with: pip install -r validation/requirements.txt
+
+# Core testing
+pytest>=7.4.0
+numpy>=1.24.0
+polars>=0.20.0
+pandas>=2.0.0
+
+# Reference implementations
+TA-Lib>=0.4.0  # Requires C library installation first
+
+# mlfinpy (optional - requires separate venv due to numba conflict)
+# pip install mlfinpy  # In .venv-mlfinpy only
+# See validation/vs_mlfinpy/README.md for instructions
+
+# For fetching test data
+yfinance>=0.2.0
+
+# For golden file generation
+pyarrow>=14.0.0

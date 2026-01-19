@@ -3,9 +3,9 @@
 from datetime import datetime
 
 import matplotlib.pyplot as plt
-import ml4t_features as qf
 import polars as pl
 
+from ml4t.engineer import pipeline
 from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
 
 # Load real crypto data
@@ -266,7 +266,7 @@ print("Pipeline Integration")
 print("=" * 50)
 
 # Create a pipeline that combines multiple transformations
-pipeline = qf.pipeline.Pipeline(
+pipeline = pipeline.Pipeline(
     steps=[
         # Add returns
         ("returns", lambda df: df.with_columns(returns=pl.col("close").pct_change())),

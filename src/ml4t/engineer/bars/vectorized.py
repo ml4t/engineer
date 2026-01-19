@@ -369,19 +369,31 @@ class TickBarSamplerVectorized(BarSampler):
 
 
 class ImbalanceBarSamplerVectorized(BarSampler):
-    """Vectorized imbalance bar sampler with adaptive thresholds.
+    """Vectorized imbalance bar sampler with AFML-compliant adaptive thresholds.
 
     This implementation uses vectorized operations for the main logic while
     keeping the adaptive threshold calculation efficient.
 
+    AFML Threshold Formula:
+        E[θ_T] = E[T] × |2v⁺ - E[v]|
+
+    Where:
+        E[T] = EWMA of bar lengths (ticks per bar)
+        v⁺ = P[b=1] × E[v|b=1] = expected buy volume contribution
+        E[v] = unconditional mean volume per tick
+
     Parameters
     ----------
     expected_ticks_per_bar : int
-        Expected number of ticks per bar
+        Expected number of ticks per bar (initializes E[T])
     initial_expectation : float, optional
-        Initial expected imbalance threshold
+        DEPRECATED. The AFML threshold is computed dynamically.
     alpha : float, default 0.1
-        EWMA decay factor for updating expected imbalance
+        EWMA decay factor for updating expectations
+    initial_p_buy : float, default 0.5
+        Initial buy probability P[b=1]
+    min_bars_warmup : int, default 10
+        Number of bars before starting EWMA updates
     """
 
     def __init__(
@@ -389,15 +401,27 @@ class ImbalanceBarSamplerVectorized(BarSampler):
         expected_ticks_per_bar: int,
         initial_expectation: float | None = None,
         alpha: float = 0.1,
+        initial_p_buy: float = 0.5,
+        min_bars_warmup: int = 10,
     ):
         if expected_ticks_per_bar <= 0:
             raise ValueError("expected_ticks_per_bar must be positive")
         if not 0 < alpha <= 1:
             raise ValueError("alpha must be in (0, 1]")
+        if not 0 <= initial_p_buy <= 1:
+            raise ValueError("initial_p_buy must be in [0, 1]")
+        if min_bars_warmup < 0:
+            raise ValueError("min_bars_warmup must be non-negative")
 
         self.expected_ticks_per_bar = expected_ticks_per_bar
-        self.initial_expectation = initial_expectation
+        self.initial_expectation = initial_expectation  # Deprecated, kept for backward compat
         self.alpha = alpha
+        self.initial_p_buy = initial_p_buy
+        self.min_bars_warmup = min_bars_warmup
+
+        # Will be estimated from data
+        self._initial_v_buy: float | None = None
+        self._initial_v: float | None = None
 
     def sample(self, data: pl.DataFrame, include_incomplete: bool = False) -> pl.DataFrame:
         """Sample imbalance bars using vectorized operations where possible."""
@@ -409,38 +433,51 @@ class ImbalanceBarSamplerVectorized(BarSampler):
         if len(data) == 0:
             return pl.DataFrame()
 
-        # Estimate initial expectation if not provided
-        if self.initial_expectation is None:
-            avg_volume = float(data["volume"].mean())
-            imbalance_fraction = 0.1  # 10% imbalance assumption
-            self.initial_expectation = float(
-                self.expected_ticks_per_bar * avg_volume * imbalance_fraction,
-            )
+        # Extract arrays
+        volumes = data["volume"].to_numpy().astype(np.float64)
+        sides = data["side"].to_numpy().astype(np.float64)
 
-        # Calculate signed volumes (vectorized)
-        df_with_imbalance = data.with_columns(
-            [(pl.col("volume") * pl.col("side")).alias("signed_volume")],
-        )
+        # Estimate initial values from data if not already set
+        warmup_size = min(1000, len(volumes))
+        warmup_volumes = volumes[:warmup_size]
+        warmup_sides = sides[:warmup_size]
 
-        # For imbalance bars with adaptive thresholds, we need some sequential logic
-        # But we can still optimize the bar creation part
-        volumes = df_with_imbalance["volume"].to_numpy()
-        sides = df_with_imbalance["side"].to_numpy()
+        if self._initial_v is None:
+            self._initial_v = float(np.mean(warmup_volumes))
 
-        # Use the existing Numba function for finding bar boundaries
+        if self._initial_v_buy is None:
+            buy_mask = warmup_sides > 0
+            if np.any(buy_mask):
+                self._initial_v_buy = float(np.mean(warmup_volumes[buy_mask]))
+            else:
+                self._initial_v_buy = self._initial_v
+
+        # Use the AFML-compliant Numba function for finding bar boundaries
         from .imbalance import _calculate_imbalance_bars_nb
 
-        bar_indices, expected_imbalances, cumulative_thetas = _calculate_imbalance_bars_nb(
+        (
+            bar_indices,
+            expected_thetas,
+            cumulative_thetas,
+            expected_ts,
+            p_buys,
+            v_pluses,
+            e_vs,
+        ) = _calculate_imbalance_bars_nb(
             volumes,
             sides,
-            self.initial_expectation,
+            float(self.expected_ticks_per_bar),
+            self.initial_p_buy,
+            self._initial_v_buy,
+            self._initial_v,
             self.alpha,
+            self.min_bars_warmup,
         )
 
         if len(bar_indices) == 0:
             if include_incomplete and len(data) > 0:
                 # Return single incomplete bar
-                return self._create_incomplete_imbalance_bar(data)
+                return self._create_incomplete_imbalance_bar(data, volumes, sides)
             return self._empty_imbalance_bars_df()
 
         # Vectorized bar creation using bar boundaries
@@ -453,8 +490,13 @@ class ImbalanceBarSamplerVectorized(BarSampler):
             bar_segment = data.slice(start_idx, segment_length).with_columns(
                 [
                     pl.lit(i).alias("bar_id"),
-                    pl.lit(expected_imbalances[i]).alias("expected_imbalance"),
+                    pl.lit(expected_thetas[i]).alias("expected_imbalance"),
                     pl.lit(cumulative_thetas[i]).alias("cumulative_theta"),
+                    # AFML diagnostic columns
+                    pl.lit(expected_ts[i]).alias("expected_t"),
+                    pl.lit(p_buys[i]).alias("p_buy"),
+                    pl.lit(v_pluses[i]).alias("v_plus"),
+                    pl.lit(e_vs[i]).alias("e_v"),
                 ],
             )
             bars_data.append(bar_segment)
@@ -462,15 +504,29 @@ class ImbalanceBarSamplerVectorized(BarSampler):
 
         # Handle incomplete bar
         if include_incomplete and start_idx < len(data):
+            # Calculate current cumulative theta for incomplete bar
+            incomplete_volumes = volumes[start_idx:]
+            incomplete_sides = sides[start_idx:]
+            incomplete_theta = float(np.sum(incomplete_volumes * incomplete_sides))
+
+            # Use last values or initial
+            last_expected_t = (
+                expected_ts[-1] if len(expected_ts) > 0 else float(self.expected_ticks_per_bar)
+            )
+            last_p_buy = p_buys[-1] if len(p_buys) > 0 else self.initial_p_buy
+            last_v_plus = v_pluses[-1] if len(v_pluses) > 0 else last_p_buy * self._initial_v_buy
+            last_e_v = e_vs[-1] if len(e_vs) > 0 else self._initial_v
+            incomplete_expected = last_expected_t * abs(2 * last_v_plus - last_e_v)
+
             incomplete_segment = data.slice(start_idx).with_columns(
                 [
                     pl.lit(len(bar_indices)).alias("bar_id"),
-                    pl.lit(
-                        expected_imbalances[-1]
-                        if len(expected_imbalances) > 0
-                        else self.initial_expectation,
-                    ).alias("expected_imbalance"),
-                    pl.lit(0.0).alias("cumulative_theta"),  # Will be recalculated
+                    pl.lit(incomplete_expected).alias("expected_imbalance"),
+                    pl.lit(incomplete_theta).alias("cumulative_theta"),
+                    pl.lit(last_expected_t).alias("expected_t"),
+                    pl.lit(last_p_buy).alias("p_buy"),
+                    pl.lit(last_v_plus).alias("v_plus"),
+                    pl.lit(last_e_v).alias("e_v"),
                 ],
             )
             bars_data.append(incomplete_segment)
@@ -506,6 +562,11 @@ class ImbalanceBarSamplerVectorized(BarSampler):
                     .alias("sell_volume"),
                     pl.col("expected_imbalance").first().alias("expected_imbalance"),
                     pl.col("cumulative_theta").first().alias("cumulative_theta"),
+                    # AFML diagnostic columns
+                    pl.col("expected_t").first().alias("expected_t"),
+                    pl.col("p_buy").first().alias("p_buy"),
+                    pl.col("v_plus").first().alias("v_plus"),
+                    pl.col("e_v").first().alias("e_v"),
                 ],
             )
             .with_columns(
@@ -520,8 +581,25 @@ class ImbalanceBarSamplerVectorized(BarSampler):
 
         return bars
 
-    def _create_incomplete_imbalance_bar(self, data: pl.DataFrame) -> pl.DataFrame:
+    def _create_incomplete_imbalance_bar(
+        self,
+        data: pl.DataFrame,
+        volumes: np.ndarray,
+        sides: np.ndarray,
+    ) -> pl.DataFrame:
         """Create single incomplete bar for all remaining data."""
+        # Compute cumulative theta
+        cumulative_theta = float(np.sum(volumes * sides))
+
+        # Use initial values for AFML parameters
+        expected_t = float(self.expected_ticks_per_bar)
+        p_buy = self.initial_p_buy
+        v_plus = (
+            p_buy * self._initial_v_buy if self._initial_v_buy else p_buy * float(np.mean(volumes))
+        )
+        e_v = self._initial_v if self._initial_v else float(np.mean(volumes))
+        expected_imbalance = expected_t * abs(2 * v_plus - e_v)
+
         return data.select(
             [
                 pl.col("timestamp").first().alias("timestamp"),
@@ -533,8 +611,13 @@ class ImbalanceBarSamplerVectorized(BarSampler):
                 pl.len().alias("tick_count"),
                 pl.col("volume").filter(pl.col("side") > 0).sum().fill_null(0).alias("buy_volume"),
                 pl.col("volume").filter(pl.col("side") < 0).sum().fill_null(0).alias("sell_volume"),
-                pl.lit(self.initial_expectation).alias("expected_imbalance"),
-                pl.lit(0.0).alias("cumulative_theta"),
+                pl.lit(expected_imbalance).alias("expected_imbalance"),
+                pl.lit(cumulative_theta).alias("cumulative_theta"),
+                # AFML diagnostic columns
+                pl.lit(expected_t).alias("expected_t"),
+                pl.lit(p_buy).alias("p_buy"),
+                pl.lit(v_plus).alias("v_plus"),
+                pl.lit(e_v).alias("e_v"),
             ],
         ).with_columns(
             [
@@ -558,6 +641,11 @@ class ImbalanceBarSamplerVectorized(BarSampler):
                 "imbalance": [],
                 "cumulative_theta": [],
                 "expected_imbalance": [],
+                # AFML diagnostic columns
+                "expected_t": [],
+                "p_buy": [],
+                "v_plus": [],
+                "e_v": [],
             },
         )
 

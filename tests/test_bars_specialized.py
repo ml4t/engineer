@@ -443,9 +443,9 @@ class TestImbalanceBarSampler:
         # Should still produce bars
         assert len(bars) > 0
 
-        # initial_expectation should have been set
-        assert sampler.initial_expectation is not None
-        assert sampler.initial_expectation > 0
+        # NOTE: initial_expectation is now computed dynamically per AFML methodology
+        # and is not stored on the sampler instance. The threshold adapts based on
+        # the data, so we just verify bars are produced successfully.
 
 
 # =============================================================================

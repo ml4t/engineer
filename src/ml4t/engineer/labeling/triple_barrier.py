@@ -251,7 +251,7 @@ def triple_barrier_labels(
     """
     # Convert LabelingConfig to BarrierConfig if needed
     if hasattr(config, "to_barrier_config"):
-        config = config.to_barrier_config()
+        config = config.to_barrier_config()  # type: ignore[operator]
     if price_col not in data.columns:
         raise DataValidationError(f"Price column '{price_col}' not found in data")
 

@@ -516,8 +516,11 @@ class MLDatasetBuilder:
         result: dict[str, dict[float, float]] = {}
         for col in self._feature_columns:
             series = train_features[col].drop_nulls()
-            # Note: quantile on numeric columns returns numeric types
-            result[col] = {q: float(series.quantile(q)) for q in quantiles}
+            # Note: quantile on numeric columns returns numeric types (never None after drop_nulls)
+            result[col] = {
+                q: float(series.quantile(q))  # type: ignore[arg-type]
+                for q in quantiles
+            }
 
         return result
 
@@ -555,8 +558,11 @@ class MLDatasetBuilder:
         train_labels = self.labels.gather(train_indices).drop_nulls()
 
         quantiles = [i / n_quantiles for i in range(1, n_quantiles)]
-        # Note: quantile on numeric columns returns numeric types
-        return [float(train_labels.quantile(q)) for q in quantiles]
+        # Note: quantile on numeric columns returns numeric types (never None after drop_nulls)
+        return [
+            float(train_labels.quantile(q))  # type: ignore[arg-type]
+            for q in quantiles
+        ]
 
     def __len__(self) -> int:
         """Return number of samples."""

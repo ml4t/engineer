@@ -4,8 +4,9 @@ This example demonstrates how to use the new pipeline API to chain
 multiple technical analysis indicators together.
 """
 
-import ml4t_features as qf
 import polars as pl
+
+from ml4t.engineer import pipeline
 from ml4t.engineer.features.ta import create_ta_pipeline_step, rsi, sma, ta_step
 
 # Create sample data
@@ -35,7 +36,7 @@ print("\n" + "=" * 50)
 print("Method 1: Pipeline with custom functions")
 print("=" * 50)
 
-pipeline1 = qf.pipeline.Pipeline(
+pipeline1 = pipeline.Pipeline(
     steps=[
         # Calculate returns
         ("returns", lambda df: df.with_columns(returns=pl.col("close").pct_change())),
@@ -70,7 +71,7 @@ print("=" * 50)
 sma_step = ta_step(sma, output_name="sma_50", values="close", period=50)
 rsi_step = ta_step(rsi, output_name="rsi_21", values="close", period=21)
 
-pipeline2 = qf.pipeline.Pipeline(
+pipeline2 = pipeline.Pipeline(
     steps=[
         ("sma", sma_step),
         ("rsi", rsi_step),
@@ -87,7 +88,7 @@ print("\n" + "=" * 50)
 print("Method 3: Pipeline with create_ta_pipeline_step")
 print("=" * 50)
 
-pipeline3 = qf.pipeline.Pipeline(
+pipeline3 = pipeline.Pipeline(
     steps=[
         (
             "ema_12",

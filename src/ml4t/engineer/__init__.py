@@ -12,6 +12,40 @@ Agent Navigation:
 
 from pathlib import Path as _Path
 
+from . import (
+    core,
+    dataset,
+    discovery,
+    features,
+    labeling,
+    outcome,
+    pipeline,
+    preprocessing,
+    relationships,
+    store,
+    validation,
+    visualization,
+)
+from .api import compute_features
+from .dataset import (
+    DatasetInfo,
+    FoldResult,
+    MLDatasetBuilder,
+    create_dataset_builder,
+)
+from .discovery import FeatureCatalog
+from .discovery.catalog import features as feature_catalog
+from .preprocessing import (
+    BaseScaler,
+    MinMaxScaler,
+    NotFittedError,
+    PreprocessingPipeline,
+    Preprocessor,
+    RobustScaler,
+    StandardScaler,
+    TransformType,
+)
+
 __version__ = "0.3.0"
 
 
@@ -59,39 +93,6 @@ def get_agent_docs() -> dict[str, _Path]:
 
     return docs
 
-from . import (
-    core,
-    dataset,
-    discovery,
-    features,
-    labeling,
-    outcome,
-    pipeline,
-    preprocessing,
-    relationships,
-    store,
-    validation,
-    visualization,
-)
-from .api import compute_features
-from .dataset import (
-    DatasetInfo,
-    FoldResult,
-    MLDatasetBuilder,
-    create_dataset_builder,
-)
-from .discovery import FeatureCatalog
-from .discovery.catalog import features as feature_catalog
-from .preprocessing import (
-    BaseScaler,
-    MinMaxScaler,
-    NotFittedError,
-    PreprocessingPipeline,
-    Preprocessor,
-    RobustScaler,
-    StandardScaler,
-    TransformType,
-)
 
 __all__ = [
     # Main API

@@ -269,8 +269,8 @@ class StandardScaler(BaseScaler):
                 # Convert to float, handling None/NaN
                 # Note: mean/std on numeric columns return numeric types, but Polars
                 # type signature includes non-numeric possibilities for mixed dtype Series
-                mean_val = float(mean_raw) if mean_raw is not None else 0.0
-                std_val = float(std_raw) if std_raw is not None else 1.0
+                mean_val = float(mean_raw) if mean_raw is not None else 0.0  # type: ignore[arg-type]
+                std_val = float(std_raw) if std_raw is not None else 1.0  # type: ignore[arg-type]
 
                 # Apply with_mean/with_std settings
                 if not self.with_mean:
@@ -342,8 +342,8 @@ class MinMaxScaler(BaseScaler):
         for col in columns:
             series = X[col].drop_nulls()
             # Note: min/max on numeric columns return numeric types
-            min_val = float(series.min())
-            max_val = float(series.max())
+            min_val = float(series.min())  # type: ignore[arg-type]
+            max_val = float(series.max())  # type: ignore[arg-type]
 
             # Handle constant column (min == max)
             range_val = max_val - min_val
@@ -419,10 +419,10 @@ class RobustScaler(BaseScaler):
             series = X[col].drop_nulls()
 
             # Note: median/quantile on numeric columns return numeric types
-            median_val = float(series.median()) if self.with_centering else 0.0
+            median_val = float(series.median()) if self.with_centering else 0.0  # type: ignore[arg-type]
             if self.with_scaling:
-                q1 = float(series.quantile(q_low))
-                q3 = float(series.quantile(q_high))
+                q1 = float(series.quantile(q_low))  # type: ignore[arg-type]
+                q3 = float(series.quantile(q_high))  # type: ignore[arg-type]
                 iqr_val = q3 - q1
                 if iqr_val == 0.0:
                     iqr_val = 1.0
@@ -589,16 +589,18 @@ class PreprocessingPipeline:
         """Compute statistics needed for transform."""
         series = X[feature].drop_nulls()
 
+        # Note: Polars aggregation types include non-numeric possibilities but
+        # we know these are numeric columns, so type: ignore is appropriate
         if transform == TransformType.STANDARDIZE:
-            mean_val = float(series.mean()) if series.mean() is not None else 0.0
-            std_val = float(series.std()) if series.std() is not None else 1.0
+            mean_val = float(series.mean()) if series.mean() is not None else 0.0  # type: ignore[arg-type]
+            std_val = float(series.std()) if series.std() is not None else 1.0  # type: ignore[arg-type]
             if std_val == 0.0:
                 std_val = 1.0
             return {"mean": mean_val, "std": std_val}
 
         elif transform == TransformType.NORMALIZE:
-            min_val = float(series.min())
-            max_val = float(series.max())
+            min_val = float(series.min())  # type: ignore[arg-type]
+            max_val = float(series.max())  # type: ignore[arg-type]
             range_val = max_val - min_val
             if range_val == 0.0:
                 range_val = 1.0
@@ -606,13 +608,13 @@ class PreprocessingPipeline:
 
         elif transform == TransformType.WINSORIZE:
             q_low, q_high = self._winsorize_limits
-            lower = float(series.quantile(q_low))
-            upper = float(series.quantile(q_high))
+            lower = float(series.quantile(q_low))  # type: ignore[arg-type]
+            upper = float(series.quantile(q_high))  # type: ignore[arg-type]
             return {"lower": lower, "upper": upper}
 
         elif transform == TransformType.LOG:
             # For log, we need to handle non-positive values
-            min_val = float(series.min())
+            min_val = float(series.min())  # type: ignore[arg-type]
             # Offset to ensure positive values
             offset = max(0.0, -min_val + 1e-10)
             return {"offset": offset}

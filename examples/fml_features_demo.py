@@ -12,11 +12,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import ml4t_features as qf
 import numpy as np
 import polars as pl
 import seaborn as sns
 
+from ml4t.engineer import pipeline
 from ml4t.engineer.bars import ImbalanceBarSampler, VolumeBarSampler
 from ml4t.engineer.features import fractional_diff
 from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
@@ -219,7 +219,7 @@ def demonstrate_pipeline(data):
     print("=" * 60)
 
     # Create a complete FML pipeline
-    pipeline = qf.pipeline.Pipeline(
+    fml_pipeline = pipeline.Pipeline(
         steps=[
             # Step 1: Create volume bars
             (
@@ -290,7 +290,7 @@ def demonstrate_pipeline(data):
 
     # Run pipeline
     print("\nRunning pipeline...")
-    ml_ready_data = pipeline.run(data)
+    ml_ready_data = fml_pipeline.run(data)
 
     print("\nPipeline results:")
     print(f"  Input rows: {len(data):,}")
