@@ -266,6 +266,12 @@ def trend_scanning_labels(
     --------
     fixed_time_horizon_labels : Simple fixed-horizon labeling
     triple_barrier_labels : Path-dependent labeling with barriers
+
+    Notes
+    -----
+    **Important**: Data is automatically sorted by timestamp before scanning.
+    This is required because the algorithm scans forward in row order.
+    The result is returned sorted chronologically.
     """
     from scipy import stats
 
@@ -277,6 +283,15 @@ def trend_scanning_labels(
         raise ValueError("step must be at least 1")
     if price_col not in data.columns:
         raise DataValidationError(f"Column '{price_col}' not found in data")
+
+    # Sort data chronologically for correct forward scanning
+    timestamp_col = None
+    for col in _DEFAULT_TIMESTAMP_COLS:
+        if col in data.columns:
+            timestamp_col = col
+            break
+    if timestamp_col:
+        data = data.sort(timestamp_col)
 
     # Extract prices as numpy array for faster computation
     prices = data[price_col].to_numpy()
