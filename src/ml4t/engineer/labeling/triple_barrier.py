@@ -28,8 +28,7 @@ from ml4t.engineer.labeling.uniqueness import (
 if TYPE_CHECKING:
     from ml4t.engineer.config import LabelingConfig
 
-# Common timestamp column names for chronological ordering
-_DEFAULT_TIMESTAMP_COLS = ["timestamp", "date", "datetime", "time"]
+from ml4t.engineer.labeling.utils import resolve_timestamp_col
 
 
 def _prepare_barrier_arrays(
@@ -266,14 +265,9 @@ def triple_barrier_labels(
 
     # Sort data chronologically for correct forward scanning
     # Triple barrier scans forward in row order to find barrier touches
-    sort_col = timestamp_col
-    if sort_col is None:
-        for col in _DEFAULT_TIMESTAMP_COLS:
-            if col in data.columns:
-                sort_col = col
-                break
-    if sort_col:
-        data = data.sort(sort_col)
+    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
+    if resolved_ts_col:
+        data = data.sort(resolved_ts_col)
 
     # Determine events
     if "event_time" in data.columns:

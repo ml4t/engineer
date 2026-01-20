@@ -35,8 +35,7 @@ from typing import Literal
 
 import polars as pl
 
-# Common timestamp column names for chronological ordering
-_DEFAULT_TIMESTAMP_COLS = ["timestamp", "date", "datetime", "time"]
+from ml4t.engineer.labeling.utils import resolve_timestamp_col
 
 
 def rolling_percentile_binary_labels(
@@ -48,6 +47,7 @@ def rolling_percentile_binary_labels(
     price_col: str = "close",
     session_col: str | None = None,
     min_samples: int | None = None,
+    timestamp_col: str | None = None,
 ) -> pl.DataFrame:
     """Create binary labels using rolling historical percentiles.
 
@@ -83,6 +83,9 @@ def rolling_percentile_binary_labels(
         If provided, forward returns won't cross session boundaries
     min_samples : int, optional
         Minimum samples for rolling calculation (default: 1008 = ~3.5 days of 5-min bars)
+    timestamp_col : str | None, default None
+        Column to use for chronological sorting. If None, auto-detects from
+        column dtype (pl.Datetime, pl.Date). Required for correct label computation.
         Lower values allow earlier threshold computation but with less statistical confidence
 
     Returns
@@ -132,13 +135,9 @@ def rolling_percentile_binary_labels(
 
     # Sort data chronologically for correct shift and rolling operations
     # Polars .over() and .shift() preserve row order, so unsorted data produces wrong labels
-    timestamp_col = None
-    for col in _DEFAULT_TIMESTAMP_COLS:
-        if col in data.columns:
-            timestamp_col = col
-            break
-    if timestamp_col:
-        data = data.sort(timestamp_col)
+    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
+    if resolved_ts_col:
+        data = data.sort(resolved_ts_col)
 
     result = data.clone()
 

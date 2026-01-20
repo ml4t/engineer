@@ -15,12 +15,10 @@ import numpy as np
 import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
+from ml4t.engineer.labeling.utils import resolve_timestamp_col
 
 # Common grouping column names for different asset classes
 _DEFAULT_GROUP_COLS = ["symbol", "product", "ticker"]
-
-# Common timestamp column names for chronological ordering
-_DEFAULT_TIMESTAMP_COLS = ["timestamp", "date", "datetime", "time"]
 
 
 def _resolve_group_cols(
@@ -75,6 +73,7 @@ def fixed_time_horizon_labels(
     method: str = "returns",
     price_col: str = "close",
     group_col: str | list[str] | None = None,
+    timestamp_col: str | None = None,
 ) -> pl.DataFrame:
     """Generate forward-looking labels based on fixed time horizon.
 
@@ -100,6 +99,10 @@ def fixed_time_horizon_labels(
         common column names: 'symbol', 'product' (futures), or uses composite
         grouping if 'position' column exists (e.g., for futures contract months).
         Pass an empty list explicitly to disable grouping.
+    timestamp_col : str | None, default None
+        Column to use for chronological sorting. If None, auto-detects from
+        column dtype (pl.Datetime, pl.Date). Warns if multiple datetime columns
+        found. Required for correct label computation on unsorted data.
 
     Returns
     -------
@@ -154,17 +157,13 @@ def fixed_time_horizon_labels(
     # This prevents labels from leaking across asset/contract boundaries
     group_cols = _resolve_group_cols(data, group_col)
 
-    # Detect timestamp column for chronological sorting
+    # Resolve timestamp column for chronological sorting
     # Polars .over() preserves row order, so unsorted data produces wrong labels
-    timestamp_col = None
-    for col in _DEFAULT_TIMESTAMP_COLS:
-        if col in data.columns:
-            timestamp_col = col
-            break
+    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
 
     # Sort data chronologically within groups for correct shift operations
-    if timestamp_col:
-        sort_cols = group_cols + [timestamp_col] if group_cols else [timestamp_col]
+    if resolved_ts_col:
+        sort_cols = group_cols + [resolved_ts_col] if group_cols else [resolved_ts_col]
         data = data.sort(sort_cols)
 
     # Get price column
@@ -204,6 +203,7 @@ def trend_scanning_labels(
     max_window: int = 50,
     step: int = 1,
     price_col: str = "close",
+    timestamp_col: str | None = None,
 ) -> pl.DataFrame:
     """Generate labels using De Prado's trend scanning method.
 
@@ -226,6 +226,9 @@ def trend_scanning_labels(
         Step size for window scanning
     price_col : str, default "close"
         Name of the price column to use
+    timestamp_col : str | None, default None
+        Column to use for chronological sorting. If None, auto-detects from
+        column dtype (pl.Datetime, pl.Date). Required for correct scanning.
 
     Returns
     -------
@@ -285,13 +288,9 @@ def trend_scanning_labels(
         raise DataValidationError(f"Column '{price_col}' not found in data")
 
     # Sort data chronologically for correct forward scanning
-    timestamp_col = None
-    for col in _DEFAULT_TIMESTAMP_COLS:
-        if col in data.columns:
-            timestamp_col = col
-            break
-    if timestamp_col:
-        data = data.sort(timestamp_col)
+    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
+    if resolved_ts_col:
+        data = data.sort(resolved_ts_col)
 
     # Extract prices as numpy array for faster computation
     prices = data[price_col].to_numpy()
