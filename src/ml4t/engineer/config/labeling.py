@@ -26,6 +26,7 @@ Examples
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field, field_validator
@@ -141,9 +142,13 @@ class LabelingConfig(BaseConfig):
         None,
         description="Lower barrier distance (positive) or column name for dynamic barriers",
     )
-    max_holding_period: int | str = Field(
+    max_holding_period: int | str | timedelta = Field(
         10,
-        description="Maximum holding period in bars or column name",
+        description=(
+            "Maximum holding period: int (bars), duration string ('1h', '4h', '1d'), "
+            "timedelta, or column name. Time-based values are converted to per-event "
+            "bar counts during labeling, allowing adaptive horizons for irregular data."
+        ),
     )
     side: int | str | None = Field(
         1,
@@ -253,7 +258,7 @@ class LabelingConfig(BaseConfig):
         cls,
         upper_barrier: float | str | None = 0.02,
         lower_barrier: float | str | None = 0.01,
-        max_holding_period: int | str = 20,
+        max_holding_period: int | str | timedelta = 20,
         side: int | str | None = 1,
         trailing_stop: bool | float | str = False,
         **kwargs: Any,
@@ -266,8 +271,11 @@ class LabelingConfig(BaseConfig):
             Take profit barrier (2% = 0.02) or column name
         lower_barrier : float | str | None
             Stop loss barrier (1% = 0.01) or column name
-        max_holding_period : int | str
-            Maximum bars to hold position
+        max_holding_period : int | str | timedelta
+            Maximum holding period:
+            - int: Number of bars
+            - str: Duration string ('4h', '1d') or column name
+            - timedelta: Python timedelta object
         side : int | str | None
             Position direction: 1 (long), -1 (short)
         trailing_stop : bool | float | str
@@ -282,6 +290,13 @@ class LabelingConfig(BaseConfig):
         --------
         >>> config = LabelingConfig.triple_barrier(0.02, 0.01, 20)
         >>> config.to_yaml("triple_barrier.yaml")
+
+        >>> # Time-based max holding period
+        >>> config = LabelingConfig.triple_barrier(0.02, 0.01, "4h")
+
+        >>> # Using timedelta
+        >>> from datetime import timedelta
+        >>> config = LabelingConfig.triple_barrier(0.02, 0.01, timedelta(hours=4))
         """
         return cls(
             method="triple_barrier",
@@ -299,7 +314,7 @@ class LabelingConfig(BaseConfig):
         atr_tp_multiple: float = 2.0,
         atr_sl_multiple: float = 1.0,
         atr_period: int = 14,
-        max_holding_period: int | str = 20,
+        max_holding_period: int | str | timedelta = 20,
         side: int | str | None = 1,
         trailing_stop: bool = False,
         **kwargs: Any,
@@ -316,8 +331,11 @@ class LabelingConfig(BaseConfig):
             ATR multiplier for stop loss (e.g., 1.0 = 1x ATR)
         atr_period : int
             ATR calculation period (default: 14)
-        max_holding_period : int | str
-            Maximum bars to hold position
+        max_holding_period : int | str | timedelta
+            Maximum holding period:
+            - int: Number of bars
+            - str: Duration string ('4h', '1d') or column name
+            - timedelta: Python timedelta object
         side : int | str | None
             Position direction: 1 (long), -1 (short)
         trailing_stop : bool
@@ -332,6 +350,9 @@ class LabelingConfig(BaseConfig):
         --------
         >>> config = LabelingConfig.atr_barrier(2.0, 1.0, 14)
         >>> config.to_yaml("atr_barrier.yaml")
+
+        >>> # Time-based max holding period
+        >>> config = LabelingConfig.atr_barrier(2.0, 1.0, 14, max_holding_period="4h")
         """
         return cls(
             method="atr_barrier",

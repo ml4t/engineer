@@ -26,28 +26,45 @@ Example:
     ...     session_col="session_date"
     ... )
 
+    >>> # Time-based horizon: 1-hour forward returns
+    >>> labels = rolling_percentile_binary_labels(
+    ...     df,
+    ...     horizon="1h",
+    ...     percentile=95,
+    ...     direction="long",
+    ...     lookback_window="5d",  # 5-day rolling window
+    ... )
+
 Reference:
     Based on methodology from Wyden Long-Short Trading System.
     See: .claude/reference/LABELING_AND_SCORING_METHODOLOGY.md
 """
 
+from __future__ import annotations
+
 from typing import Literal
 
 import polars as pl
 
-from ml4t.engineer.labeling.utils import resolve_timestamp_col
+from ml4t.engineer.labeling.utils import (
+    get_future_price_at_time,
+    is_duration_string,
+    parse_duration,
+    resolve_timestamp_col,
+)
 
 
 def rolling_percentile_binary_labels(
     data: pl.DataFrame,
-    horizon: int,
+    horizon: int | str,
     percentile: float,
     direction: Literal["long", "short"] = "long",
-    lookback_window: int = 252 * 24 * 12,  # ~1 year hourly
+    lookback_window: int | str = 252 * 24 * 12,  # ~1 year hourly
     price_col: str = "close",
     session_col: str | None = None,
     min_samples: int | None = None,
     timestamp_col: str | None = None,
+    tolerance: str | None = None,
 ) -> pl.DataFrame:
     """Create binary labels using rolling historical percentiles.
 
@@ -64,8 +81,10 @@ def rolling_percentile_binary_labels(
     ----------
     data : pl.DataFrame
         Input data with OHLCV and optionally session_date
-    horizon : int
-        Forward-looking horizon in bars
+    horizon : int | str
+        Forward-looking horizon:
+        - int: Number of bars
+        - str: Duration string (e.g., '1h', '30m', '1d')
     percentile : float
         Percentile for thresholding (0-100)
         - Long: High percentiles (e.g., 95, 98) → top returns
@@ -74,8 +93,10 @@ def rolling_percentile_binary_labels(
         Trading direction:
         - "long": Labels profitable long entries (high positive returns)
         - "short": Labels profitable short entries (high negative returns)
-    lookback_window : int, default ~1 year
-        Rolling window size for percentile computation (in bars)
+    lookback_window : int | str, default ~1 year
+        Rolling window size for percentile computation:
+        - int: Number of bars
+        - str: Duration string (e.g., '5d', '1w'). Polars rolling supports duration strings.
     price_col : str, default "close"
         Price column for return computation
     session_col : str, optional
@@ -85,8 +106,10 @@ def rolling_percentile_binary_labels(
         Minimum samples for rolling calculation (default: 1008 = ~3.5 days of 5-min bars)
     timestamp_col : str | None, default None
         Column to use for chronological sorting. If None, auto-detects from
-        column dtype (pl.Datetime, pl.Date). Required for correct label computation.
-        Lower values allow earlier threshold computation but with less statistical confidence
+        column dtype (pl.Datetime, pl.Date). Required for time-based horizons.
+    tolerance : str | None, default None
+        Maximum time gap allowed for time-based horizons (e.g., '2m').
+        Only used when horizon is a duration string.
 
     Returns
     -------
@@ -98,7 +121,7 @@ def rolling_percentile_binary_labels(
 
     Examples
     --------
-    >>> # Long labels: Top 5% of returns (95th percentile)
+    >>> # Bar-based: Top 5% of 30-bar returns
     >>> labels_long = rolling_percentile_binary_labels(
     ...     df,
     ...     horizon=30,
@@ -108,6 +131,15 @@ def rolling_percentile_binary_labels(
     ... )
     >>> print(labels_long["label_long_p95_h30"].mean())  # Should be ~0.05
 
+    >>> # Time-based: 1-hour forward returns with 5-day lookback
+    >>> labels = rolling_percentile_binary_labels(
+    ...     df,
+    ...     horizon="1h",
+    ...     percentile=95,
+    ...     direction="long",
+    ...     lookback_window="5d",
+    ... )
+
     >>> # Short labels: Bottom 5% of returns (5th percentile)
     >>> labels_short = rolling_percentile_binary_labels(
     ...     df,
@@ -116,7 +148,6 @@ def rolling_percentile_binary_labels(
     ...     direction="short",
     ...     session_col="session_date"
     ... )
-    >>> print(labels_short["label_short_p5_h30"].mean())  # Should be ~0.05
 
     Notes
     -----
@@ -126,23 +157,59 @@ def rolling_percentile_binary_labels(
     - Adaptive: Thresholds widen in high volatility, tighten in low volatility
     - No lookahead bias: Only uses past data for percentile computation
 
+    **Time-based horizons**: When horizon is a duration string, uses join_asof
+    to get future prices. This is useful for irregular data like trade bars.
+
+    **Time-based lookback**: Polars rolling functions natively support duration
+    strings for the window parameter, allowing time-based rolling windows.
+
     **Important**: Data is automatically sorted by timestamp before labeling.
     This is required because Polars .over() and .shift() preserve row order.
     The result is returned sorted chronologically.
     """
-    if min_samples is None:
-        min_samples = min(1008, lookback_window // 10)  # 1008 = ~3.5 days of 5-min bars
+    # Determine if time-based
+    is_time_based_horizon = isinstance(horizon, str) and is_duration_string(horizon)
+    is_time_based_lookback = isinstance(lookback_window, str) and is_duration_string(lookback_window)
 
     # Sort data chronologically for correct shift and rolling operations
-    # Polars .over() and .shift() preserve row order, so unsorted data produces wrong labels
     resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
     if resolved_ts_col:
         data = data.sort(resolved_ts_col)
 
+    # Validate timestamp column for time-based operations
+    if (is_time_based_horizon or is_time_based_lookback) and resolved_ts_col is None:
+        raise ValueError(
+            "Time-based horizon or lookback_window requires a timestamp column. "
+            "Provide timestamp_col parameter or ensure data has a datetime column."
+        )
+
     result = data.clone()
 
-    # Step 1: Compute forward returns (session-aware if session_col provided)
-    if session_col is not None:
+    # Create label suffix for column naming
+    if is_time_based_horizon:
+        horizon_label = horizon.lower().replace(" ", "")  # type: ignore[union-attr]
+    else:
+        horizon_label = str(horizon)
+
+    # Step 1: Compute forward returns
+    if is_time_based_horizon:
+        # Time-based forward returns using join_asof
+        td = parse_duration(horizon)  # type: ignore[arg-type]
+        future_prices, valid_mask = get_future_price_at_time(
+            data=data,
+            time_horizon=td,
+            price_col=price_col,
+            timestamp_col=resolved_ts_col,
+            tolerance=tolerance,
+            group_cols=None,  # No grouping for now (session_col is different)
+        )
+        current_prices = data[price_col]
+        forward_returns = (future_prices - current_prices) / current_prices
+
+        # Mask invalid joins if tolerance specified
+        if tolerance is not None:
+            forward_returns = pl.when(valid_mask).then(forward_returns).otherwise(pl.lit(None))
+    elif session_col is not None:
         # Session-aware forward returns (don't cross session boundaries)
         temp_df = pl.DataFrame(
             {
@@ -150,7 +217,6 @@ def rolling_percentile_binary_labels(
                 "price": data[price_col],
             }
         )
-
         forward_returns = temp_df.with_columns(
             [
                 (pl.col("price").shift(-horizon) / pl.col("price") - 1)
@@ -159,29 +225,64 @@ def rolling_percentile_binary_labels(
             ]
         )["forward_return"]
     else:
-        # Simple forward returns (may cross any boundaries)
+        # Simple bar-based forward returns
         forward_returns = data[price_col].shift(-horizon) / data[price_col] - 1
 
-    result = result.with_columns(forward_returns.alias(f"forward_return_{horizon}"))
+    forward_return_col = f"forward_return_{horizon_label}"
+    result = result.with_columns(forward_returns.alias(forward_return_col))
 
     # Step 2: Compute rolling percentile threshold
-    # Use quantile (0-1 scale) not percentile (0-100 scale)
     quantile = percentile / 100.0
 
-    # CRITICAL: Use result[f"forward_return_{horizon}"] to ensure rolling window
-    # sees the data correctly (forward_returns variable might not be in right context)
-    rolling_threshold = result[f"forward_return_{horizon}"].rolling_quantile(
-        window_size=lookback_window,
-        quantile=quantile,
-        min_samples=min_samples,  # Updated from min_periods (deprecated)
-        center=False,  # Only look backward (no lookahead bias)
-    )
+    # Determine min_samples default
+    if min_samples is None:
+        if isinstance(lookback_window, int):
+            min_samples = min(1008, lookback_window // 10)
+        else:
+            # For time-based lookback, use a reasonable default
+            min_samples = 100
 
-    threshold_col_name = f"threshold_p{int(percentile)}_h{horizon}"
+    # Compute rolling threshold
+    # Polars rolling_quantile supports duration strings for window_size when
+    # using rolling() context with index_column
+    if is_time_based_lookback and resolved_ts_col:
+        # Use Polars native time-based rolling via rolling() context
+        # This requires setting an index column and using the rolling context
+        rolling_result = (
+            result
+            .rolling(
+                index_column=resolved_ts_col,
+                period=lookback_window,  # type: ignore[arg-type]
+            )
+            .agg(
+                pl.col(forward_return_col).quantile(quantile).alias("_rolling_threshold")
+            )
+        )
+        # Join back to get the threshold column
+        rolling_threshold = result.join(
+            rolling_result,
+            on=resolved_ts_col,
+            how="left",
+        )["_rolling_threshold"]
+    else:
+        # Bar-based rolling (original implementation)
+        if not isinstance(lookback_window, int):
+            raise ValueError(
+                f"lookback_window must be an integer for bar-based rolling, "
+                f"got '{lookback_window}'. For time-based, ensure timestamp_col is set."
+            )
+        rolling_threshold = result[forward_return_col].rolling_quantile(
+            window_size=lookback_window,
+            quantile=quantile,
+            min_samples=min_samples,
+            center=False,
+        )
+
+    threshold_col_name = f"threshold_p{int(percentile)}_h{horizon_label}"
     result = result.with_columns(rolling_threshold.alias(threshold_col_name))
 
     # Step 3: Create binary labels based on direction
-    forward_ret_col = result[f"forward_return_{horizon}"]
+    forward_ret_col = result[forward_return_col]
     threshold_col = result[threshold_col_name]
 
     if direction == "long":
@@ -194,7 +295,7 @@ def rolling_percentile_binary_labels(
         msg = f"Invalid direction: {direction}. Must be 'long' or 'short'."
         raise ValueError(msg)
 
-    label_col_name = f"label_{direction}_p{int(percentile)}_h{horizon}"
+    label_col_name = f"label_{direction}_p{int(percentile)}_h{horizon_label}"
     result = result.with_columns(label.alias(label_col_name))
 
     return result

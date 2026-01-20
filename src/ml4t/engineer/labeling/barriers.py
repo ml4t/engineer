@@ -3,8 +3,11 @@
 Defines various barrier types for the generalized labeling framework.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 
@@ -26,8 +29,13 @@ class BarrierConfig:
         Lower barrier distance (positive value) or column name for dynamic barriers.
         For long positions: stop loss below entry price.
         For short positions: stop loss above entry price.
-    max_holding_period : int or str
-        Maximum holding period in bars or column name
+    max_holding_period : int or str or timedelta
+        Maximum holding period:
+        - int: Number of bars
+        - str: Duration string (e.g., '4h', '1d') or column name
+        - timedelta: Python timedelta object
+
+        Time-based values are converted to per-event bar counts during labeling.
     side : int or str or None
         Position side: 1 (long), -1 (short), 0/None (symmetric, assumes long-like)
     trailing_stop : float or str or None
@@ -44,11 +52,28 @@ class BarrierConfig:
 
     >>> # Short position: profit at 98, stop at 101 (for entry at 100)
     >>> config = BarrierConfig(upper_barrier=0.02, lower_barrier=0.01, side=-1)
+
+    >>> # Time-based max holding period (4 hours)
+    >>> config = BarrierConfig(
+    ...     upper_barrier=0.02,
+    ...     lower_barrier=0.01,
+    ...     max_holding_period="4h",  # Duration string
+    ...     side=1,
+    ... )
+
+    >>> # Using timedelta
+    >>> from datetime import timedelta
+    >>> config = BarrierConfig(
+    ...     upper_barrier=0.02,
+    ...     lower_barrier=0.01,
+    ...     max_holding_period=timedelta(hours=4),
+    ...     side=1,
+    ... )
     """
 
     upper_barrier: float | str | None = None
     lower_barrier: float | str | None = None
-    max_holding_period: int | str = 10
+    max_holding_period: int | str | timedelta = 10
     side: int | str | None = None
     trailing_stop: bool | float | str = False
     weight_scheme: str | Callable[..., Any] = "equal"

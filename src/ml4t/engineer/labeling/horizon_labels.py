@@ -11,11 +11,18 @@ References
        Chapter 3: Labeling and Chapter 18: Entropy Features.
 """
 
+from __future__ import annotations
+
 import numpy as np
 import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
-from ml4t.engineer.labeling.utils import resolve_timestamp_col
+from ml4t.engineer.labeling.utils import (
+    get_future_price_at_time,
+    is_duration_string,
+    parse_duration,
+    resolve_timestamp_col,
+)
 
 # Common grouping column names for different asset classes
 _DEFAULT_GROUP_COLS = ["symbol", "product", "ticker"]
@@ -69,24 +76,27 @@ def _resolve_group_cols(
 
 def fixed_time_horizon_labels(
     data: pl.DataFrame,
-    horizon: int = 1,
+    horizon: int | str = 1,
     method: str = "returns",
     price_col: str = "close",
     group_col: str | list[str] | None = None,
     timestamp_col: str | None = None,
+    tolerance: str | None = None,
 ) -> pl.DataFrame:
     """Generate forward-looking labels based on fixed time horizon.
 
-    Creates labels by looking ahead a fixed number of periods and computing
-    the return or direction of price movement. Commonly used for supervised
-    learning in financial forecasting.
+    Creates labels by looking ahead a fixed number of periods (bars) or a
+    fixed time duration and computing the return or direction of price
+    movement. Commonly used for supervised learning in financial forecasting.
 
     Parameters
     ----------
     data : pl.DataFrame
         Input data with price information
-    horizon : int, default 1
-        Number of periods to look ahead
+    horizon : int | str, default 1
+        Horizon for forward-looking labels:
+        - int: Number of bars to look ahead
+        - str: Duration string (e.g., '1h', '30m', '1d') for time-based horizon
     method : str, default "returns"
         Labeling method:
         - "returns": (price[t+h] - price[t]) / price[t]
@@ -101,8 +111,11 @@ def fixed_time_horizon_labels(
         Pass an empty list explicitly to disable grouping.
     timestamp_col : str | None, default None
         Column to use for chronological sorting. If None, auto-detects from
-        column dtype (pl.Datetime, pl.Date). Warns if multiple datetime columns
-        found. Required for correct label computation on unsorted data.
+        column dtype (pl.Datetime, pl.Date). Required for time-based horizons.
+    tolerance : str | None, default None
+        Maximum time gap allowed for time-based horizons (e.g., '2m').
+        Only used when horizon is a duration string. If the nearest future
+        price is beyond this tolerance, the label will be null.
 
     Returns
     -------
@@ -112,14 +125,22 @@ def fixed_time_horizon_labels(
 
     Examples
     --------
-    >>> # Simple returns over 5-period horizon
+    >>> # Bar-based: 5-period forward returns (unchanged API)
     >>> labeled = fixed_time_horizon_labels(df, horizon=5, method="returns")
+    >>>
+    >>> # Time-based: 1-hour forward returns
+    >>> labeled = fixed_time_horizon_labels(df, horizon="1h", method="returns")
+    >>>
+    >>> # Time-based with tolerance for irregular data
+    >>> labeled = fixed_time_horizon_labels(
+    ...     df, horizon="15m", tolerance="2m", method="returns"
+    ... )
     >>>
     >>> # Binary classification (up/down)
     >>> labeled = fixed_time_horizon_labels(df, horizon=1, method="binary")
     >>>
     >>> # Log returns for ML training
-    >>> labeled = fixed_time_horizon_labels(df, horizon=10, method="log_returns")
+    >>> labeled = fixed_time_horizon_labels(df, horizon="1d", method="log_returns")
 
     Notes
     -----
@@ -128,6 +149,16 @@ def fixed_time_horizon_labels(
     - Cannot be used for live prediction (requires future data)
     - Best for supervised learning model training
     - Last `horizon` rows will have null labels
+
+    **Time-based horizons**: When horizon is a duration string (e.g., '1h'),
+    the function uses ``join_asof`` to find the price at approximately that
+    time in the future. This is useful for:
+    - Irregular data (trade bars) where you want time-based returns
+    - Multi-frequency workflows where time semantics matter
+    - Calendar-aware operations across trading breaks
+
+    **Bar-based horizons**: When horizon is an integer, the function uses
+    simple shift operations for maximum performance.
 
     **Important**: Data is automatically sorted by [group_cols, timestamp] before
     computing labels. This is required because Polars ``.over()`` preserves row
@@ -144,15 +175,54 @@ def fixed_time_horizon_labels(
     triple_barrier_labels : Path-dependent labeling with profit/loss targets
     trend_scanning_labels : De Prado's trend scanning method
     """
-    if horizon <= 0:
-        raise ValueError("horizon must be positive")
-
     if method not in ["returns", "log_returns", "binary"]:
         raise ValueError(f"Unknown method: {method}. Use 'returns', 'log_returns', or 'binary'")
 
     if price_col not in data.columns:
         raise DataValidationError(f"Column '{price_col}' not found in data")
 
+    # Determine if time-based or bar-based
+    is_time_based = isinstance(horizon, str) and is_duration_string(horizon)
+
+    if is_time_based:
+        return _time_based_horizon_labels(
+            data=data,
+            horizon=horizon,  # type: ignore[arg-type]
+            method=method,
+            price_col=price_col,
+            group_col=group_col,
+            timestamp_col=timestamp_col,
+            tolerance=tolerance,
+        )
+    else:
+        # Bar-based: validate horizon is positive int
+        if isinstance(horizon, str):
+            raise ValueError(
+                f"Invalid horizon: '{horizon}'. For bar-based labels use an integer, "
+                f"for time-based labels use a duration string like '1h', '30m'."
+            )
+        if horizon <= 0:
+            raise ValueError("horizon must be positive")
+
+        return _bar_based_horizon_labels(
+            data=data,
+            horizon=horizon,
+            method=method,
+            price_col=price_col,
+            group_col=group_col,
+            timestamp_col=timestamp_col,
+        )
+
+
+def _bar_based_horizon_labels(
+    data: pl.DataFrame,
+    horizon: int,
+    method: str,
+    price_col: str,
+    group_col: str | list[str] | None,
+    timestamp_col: str | None,
+) -> pl.DataFrame:
+    """Bar-based horizon labels using shift operations (original implementation)."""
     # Determine grouping columns for multi-asset/multi-position data
     # This prevents labels from leaking across asset/contract boundaries
     group_cols = _resolve_group_cols(data, group_col)
@@ -192,6 +262,76 @@ def fixed_time_horizon_labels(
             .cast(pl.Int8)
         )
         label_name = f"label_direction_{horizon}p"
+
+    # Add label column to data
+    return data.with_columns(label.alias(label_name))
+
+
+def _time_based_horizon_labels(
+    data: pl.DataFrame,
+    horizon: str,
+    method: str,
+    price_col: str,
+    group_col: str | list[str] | None,
+    timestamp_col: str | None,
+    tolerance: str | None,
+) -> pl.DataFrame:
+    """Time-based horizon labels using join_asof."""
+    # Resolve timestamp column (required for time-based)
+    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
+    if resolved_ts_col is None:
+        raise ValueError(
+            "Time-based horizon requires a timestamp column. "
+            "Provide timestamp_col parameter or ensure data has a datetime column."
+        )
+
+    # Determine grouping columns
+    group_cols = _resolve_group_cols(data, group_col)
+
+    # Sort data chronologically within groups
+    sort_cols = group_cols + [resolved_ts_col] if group_cols else [resolved_ts_col]
+    data = data.sort(sort_cols)
+
+    # Parse duration for label naming
+    td = parse_duration(horizon)
+    # Create a clean label suffix (e.g., "1h" -> "1h", "1d2h" -> "1d2h")
+    label_suffix = horizon.lower().replace(" ", "")
+
+    # Get future prices using join_asof
+    future_prices, valid_mask = get_future_price_at_time(
+        data=data,
+        time_horizon=td,
+        price_col=price_col,
+        timestamp_col=resolved_ts_col,
+        tolerance=tolerance,
+        group_cols=group_cols if group_cols else None,
+    )
+
+    # Current prices
+    current_prices = data[price_col]
+
+    # Compute label based on method
+    if method == "returns":
+        label = (future_prices - current_prices) / current_prices
+        label_name = f"label_return_{label_suffix}"
+    elif method == "log_returns":
+        label = (future_prices / current_prices).log()
+        label_name = f"label_log_return_{label_suffix}"
+    elif method == "binary":
+        # 1 if price goes up, -1 if down, 0 if no change
+        label = (
+            pl.when(future_prices > current_prices)
+            .then(pl.lit(1))
+            .when(future_prices < current_prices)
+            .then(pl.lit(-1))
+            .otherwise(pl.lit(0))
+            .cast(pl.Int8)
+        )
+        label_name = f"label_direction_{label_suffix}"
+
+    # Mask invalid joins (beyond tolerance)
+    if tolerance is not None:
+        label = pl.when(valid_mask).then(label).otherwise(pl.lit(None))
 
     # Add label column to data
     return data.with_columns(label.alias(label_name))

@@ -28,13 +28,19 @@ from ml4t.engineer.labeling.uniqueness import (
 if TYPE_CHECKING:
     from ml4t.engineer.config import LabelingConfig
 
-from ml4t.engineer.labeling.utils import resolve_timestamp_col
+from ml4t.engineer.labeling.utils import (
+    is_duration_string,
+    parse_duration,
+    resolve_timestamp_col,
+    time_horizon_to_bars,
+)
 
 
 def _prepare_barrier_arrays(
     data: pl.DataFrame,
     config: BarrierConfig,
     event_indices: npt.NDArray[np.intp],
+    timestamp_col: str | None = None,
 ) -> tuple[
     npt.NDArray[np.float64],
     npt.NDArray[np.float64],
@@ -42,7 +48,21 @@ def _prepare_barrier_arrays(
     npt.NDArray[np.int32],
     npt.NDArray[np.float64],
 ]:
-    """Prepare barrier arrays from config."""
+    """Prepare barrier arrays from config.
+
+    Parameters
+    ----------
+    data : pl.DataFrame
+        Input data
+    config : BarrierConfig
+        Barrier configuration
+    event_indices : np.ndarray
+        Indices of events to label
+    timestamp_col : str | None
+        Timestamp column for time-based max_holding_period conversion
+    """
+    from datetime import timedelta
+
     n_events = len(event_indices)
 
     # Upper barriers
@@ -65,15 +85,44 @@ def _prepare_barrier_arrays(
             raise DataValidationError(f"Lower barrier column '{config.lower_barrier}' not found")
         lower_barriers = data[config.lower_barrier].to_numpy()[event_indices]
 
-    # Max periods
-    if isinstance(config.max_holding_period, int):
-        max_periods = np.full(n_events, config.max_holding_period, dtype=np.int64)
-    else:
-        if config.max_holding_period not in data.columns:
+    # Max periods - now supports int, timedelta, duration string, or column name
+    max_hp = config.max_holding_period
+
+    if isinstance(max_hp, int):
+        # Integer: fixed bar count
+        max_periods = np.full(n_events, max_hp, dtype=np.int64)
+    elif isinstance(max_hp, timedelta):
+        # timedelta: convert to per-event bar counts
+        if timestamp_col is None:
             raise DataValidationError(
-                f"Max holding period column '{config.max_holding_period}' not found"
+                "timestamp_col required for time-based max_holding_period (timedelta). "
+                "Provide timestamp_col parameter to triple_barrier_labels."
             )
-        max_periods = data[config.max_holding_period].to_numpy()[event_indices].astype(np.int64)
+        timestamps = data[timestamp_col].to_numpy().astype("datetime64[ns]").view("int64")
+        max_periods = time_horizon_to_bars(timestamps, max_hp, event_indices)
+    elif isinstance(max_hp, str) and is_duration_string(max_hp):
+        # Duration string (e.g., "1h", "30m"): convert to per-event bar counts
+        if timestamp_col is None:
+            raise DataValidationError(
+                f"timestamp_col required for time-based max_holding_period ('{max_hp}'). "
+                "Provide timestamp_col parameter to triple_barrier_labels."
+            )
+        td = parse_duration(max_hp)
+        timestamps = data[timestamp_col].to_numpy().astype("datetime64[ns]").view("int64")
+        max_periods = time_horizon_to_bars(timestamps, td, event_indices)
+    elif isinstance(max_hp, str):
+        # Column name
+        if max_hp not in data.columns:
+            raise DataValidationError(
+                f"Max holding period column '{max_hp}' not found. "
+                f"If you intended a duration, use format like '1h', '30m', '1d'."
+            )
+        max_periods = data[max_hp].to_numpy()[event_indices].astype(np.int64)
+    else:
+        raise DataValidationError(
+            f"Invalid max_holding_period type: {type(max_hp)}. "
+            f"Expected int, timedelta, duration string ('1h'), or column name."
+        )
 
     # Sides
     if config.side is None:
@@ -301,8 +350,9 @@ def triple_barrier_labels(
         lows = closes
 
     # Prepare barriers and apply labeling
+    # Pass resolved_ts_col for time-based max_holding_period conversion
     upper_barriers, lower_barriers, max_periods, sides, trailing_stops = _prepare_barrier_arrays(
-        data, config, event_indices
+        data, config, event_indices, timestamp_col=resolved_ts_col
     )
     labels, label_indices, label_prices, label_returns, bar_durations = _apply_triple_barrier_nb(
         closes,
