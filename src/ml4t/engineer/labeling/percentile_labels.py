@@ -35,6 +35,9 @@ from typing import Literal
 
 import polars as pl
 
+# Common timestamp column names for chronological ordering
+_DEFAULT_TIMESTAMP_COLS = ["timestamp", "date", "datetime", "time"]
+
 
 def rolling_percentile_binary_labels(
     data: pl.DataFrame,
@@ -119,9 +122,23 @@ def rolling_percentile_binary_labels(
     - Class balance approximately matches percentile (p95 → ~5% positives)
     - Adaptive: Thresholds widen in high volatility, tighten in low volatility
     - No lookahead bias: Only uses past data for percentile computation
+
+    **Important**: Data is automatically sorted by timestamp before labeling.
+    This is required because Polars .over() and .shift() preserve row order.
+    The result is returned sorted chronologically.
     """
     if min_samples is None:
         min_samples = min(1008, lookback_window // 10)  # 1008 = ~3.5 days of 5-min bars
+
+    # Sort data chronologically for correct shift and rolling operations
+    # Polars .over() and .shift() preserve row order, so unsorted data produces wrong labels
+    timestamp_col = None
+    for col in _DEFAULT_TIMESTAMP_COLS:
+        if col in data.columns:
+            timestamp_col = col
+            break
+    if timestamp_col:
+        data = data.sort(timestamp_col)
 
     result = data.clone()
 

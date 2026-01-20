@@ -28,6 +28,9 @@ from ml4t.engineer.labeling.uniqueness import (
 if TYPE_CHECKING:
     from ml4t.engineer.config import LabelingConfig
 
+# Common timestamp column names for chronological ordering
+_DEFAULT_TIMESTAMP_COLS = ["timestamp", "date", "datetime", "time"]
+
 
 def _prepare_barrier_arrays(
     data: pl.DataFrame,
@@ -238,6 +241,12 @@ def triple_barrier_labels(
         Original data with added columns: label, label_time, label_price, label_return,
         label_bars, label_duration, barrier_hit, and optionally label_uniqueness, sample_weight
 
+    Notes
+    -----
+    **Important**: Data is automatically sorted by timestamp before labeling.
+    This is required because the algorithm scans forward in row order to find
+    barrier touches. The result is returned sorted chronologically.
+
     Examples
     --------
     >>> # Using legacy BarrierConfig
@@ -254,6 +263,17 @@ def triple_barrier_labels(
         config = config.to_barrier_config()  # type: ignore[operator]
     if price_col not in data.columns:
         raise DataValidationError(f"Price column '{price_col}' not found in data")
+
+    # Sort data chronologically for correct forward scanning
+    # Triple barrier scans forward in row order to find barrier touches
+    sort_col = timestamp_col
+    if sort_col is None:
+        for col in _DEFAULT_TIMESTAMP_COLS:
+            if col in data.columns:
+                sort_col = col
+                break
+    if sort_col:
+        data = data.sort(sort_col)
 
     # Determine events
     if "event_time" in data.columns:
