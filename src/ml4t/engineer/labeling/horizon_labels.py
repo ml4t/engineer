@@ -19,6 +19,9 @@ from ml4t.engineer.core.exceptions import DataValidationError
 # Common grouping column names for different asset classes
 _DEFAULT_GROUP_COLS = ["symbol", "product", "ticker"]
 
+# Common timestamp column names for chronological ordering
+_DEFAULT_TIMESTAMP_COLS = ["timestamp", "date", "datetime", "time"]
+
 
 def _resolve_group_cols(
     data: pl.DataFrame,
@@ -123,6 +126,11 @@ def fixed_time_horizon_labels(
     - Best for supervised learning model training
     - Last `horizon` rows will have null labels
 
+    **Important**: Data is automatically sorted by [group_cols, timestamp] before
+    computing labels. This is required because Polars ``.over()`` preserves row
+    order and does not sort within groups. The result is returned sorted
+    chronologically within each group.
+
     References
     ----------
     .. [1] De Prado, M.L. (2018). Advances in Financial Machine Learning. Wiley.
@@ -142,12 +150,25 @@ def fixed_time_horizon_labels(
     if price_col not in data.columns:
         raise DataValidationError(f"Column '{price_col}' not found in data")
 
-    # Get price column
-    prices = pl.col(price_col)
-
     # Determine grouping columns for multi-asset/multi-position data
     # This prevents labels from leaking across asset/contract boundaries
     group_cols = _resolve_group_cols(data, group_col)
+
+    # Detect timestamp column for chronological sorting
+    # Polars .over() preserves row order, so unsorted data produces wrong labels
+    timestamp_col = None
+    for col in _DEFAULT_TIMESTAMP_COLS:
+        if col in data.columns:
+            timestamp_col = col
+            break
+
+    # Sort data chronologically within groups for correct shift operations
+    if timestamp_col:
+        sort_cols = group_cols + [timestamp_col] if group_cols else [timestamp_col]
+        data = data.sort(sort_cols)
+
+    # Get price column
+    prices = pl.col(price_col)
 
     if group_cols:
         future_prices = prices.shift(-horizon).over(group_cols)
