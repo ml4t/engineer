@@ -5,18 +5,17 @@
 
 **High-performance feature engineering for financial machine learning.**
 
-ml4t-engineer provides 107+ technical indicators, triple-barrier labeling, and alternative bar sampling with a Polars-first implementation that's 10-100x faster than pandas alternatives.
+ml4t-engineer provides 120 technical indicators, triple-barrier labeling, and alternative bar sampling. Built on Polars with Numba JIT compilation, achieving performance comparable to TA-Lib's C implementation.
 
 ## Features
 
-- **107+ Technical Indicators**: Momentum, trend, volatility, volume, and more
-- **TA-Lib Validated**: 59 indicators validated against TA-Lib at 1e-6 tolerance
-- **Triple-Barrier Labeling**: AFML-compliant labeling with ATR-based barriers
-- **Alternative Bars**: Volume, dollar, tick, and imbalance bars
-- **Microstructure Metrics**: Kyle's Lambda, VPIN, Amihud, Roll spread
+- **120 Technical Indicators**: Momentum, trend, volatility, microstructure, and more
+- **TA-Lib Validated**: 60 indicators validated against TA-Lib at 1e-6 tolerance
+- **Triple-Barrier Labeling**: AFML-compliant labeling with fixed or ATR-based barriers
+- **Alternative Bars**: Volume, dollar, tick, and imbalance bar sampling
+- **Microstructure Metrics**: Kyle's Lambda, VPIN, Amihud illiquidity, Roll spread
 - **ML-Specific Features**: Fractional differencing, entropy, Hurst exponent
-- **Polars-First**: 10-100x faster than pandas, ~0.8x TA-Lib C speed
-- **Type-Safe**: Type hints throughout
+- **Polars + Numba**: Optimized for large datasets with lazy evaluation support
 
 ## Installation
 
@@ -27,19 +26,24 @@ pip install ml4t-engineer
 With optional dependencies:
 
 ```bash
-pip install ml4t-engineer[talib]      # TA-Lib backend
-pip install ml4t-engineer[numba]      # Numba acceleration
-pip install ml4t-engineer[all]        # All optional dependencies
+pip install ml4t-engineer[ta]        # TA-Lib backend for validation
+pip install ml4t-engineer[store]     # DuckDB feature store
+pip install ml4t-engineer[viz]       # Plotting (matplotlib, plotly)
+pip install ml4t-engineer[calendars] # Trading calendars
+pip install ml4t-engineer[all]       # All optional dependencies
 ```
 
 ## Quick Start
 
 ```python
 import polars as pl
-from ml4t.engineer import compute_features, list_features
+from ml4t.engineer import compute_features
+from ml4t.engineer.core.registry import get_registry
 
 # See available features
-print(list_features("momentum"))  # RSI, MACD, Stochastic, etc.
+registry = get_registry()
+print(registry.list_all())                    # All 120 features
+print(registry.list_by_category("momentum"))  # 31 momentum indicators
 
 # Load OHLCV data
 df = pl.read_parquet("ohlcv.parquet")
@@ -57,54 +61,67 @@ result = compute_features(df, [
 
 ## Feature Categories
 
-| Category | Count | Examples |
-|----------|-------|----------|
-| Momentum | 31 | RSI, MACD, Stochastic, CCI, ADX, MFI |
-| Trend | 10 | SMA, EMA, WMA, DEMA, TEMA, KAMA |
-| Volatility | 15 | ATR, Bollinger, Yang-Zhang, GARCH |
-| Volume | 3 | OBV, AD, ADOSC |
-| Statistics | 8 | Variance, Linear Regression, Correlation |
-| Math | 3 | MAX, MIN, SUM |
-| Price Transform | 5 | Typical Price, Weighted Close |
-| Microstructure | 12 | Kyle Lambda, VPIN, Amihud, Roll |
-| ML | 11 | Fractional Diff, Entropy, Hurst |
+| Category        | Count | Examples                                      |
+|-----------------|-------|-----------------------------------------------|
+| Momentum        | 31    | RSI, MACD, Stochastic, CCI, ADX, MFI          |
+| Microstructure  | 15    | Kyle Lambda, VPIN, Amihud, Roll spread        |
+| Volatility      | 15    | ATR, Bollinger, Yang-Zhang, Parkinson, GARCH  |
+| Statistics      | 14    | Variance, Linear Regression, Correlation      |
+| ML              | 14    | Fractional Diff, Entropy, Lag features        |
+| Trend           | 10    | SMA, EMA, WMA, DEMA, TEMA, KAMA               |
+| Risk            | 6     | Max Drawdown, Sortino, CVaR, Tail Ratio       |
+| Price Transform | 5     | Typical Price, Weighted Close, Median Price   |
+| Regime          | 4     | Hurst Exponent, Choppiness Index              |
+| Volume          | 3     | OBV, AD, ADOSC                                |
+| Math            | 3     | MAX, MIN, SUM                                 |
 
 ## Triple-Barrier Labeling
 
 ```python
-from ml4t.engineer.labeling import triple_barrier_labels, atr_barriers
+from ml4t.engineer.labeling import triple_barrier_labels, atr_triple_barrier_labels
 
 # Fixed barriers
 labels = triple_barrier_labels(
     df,
-    upper_barrier=0.02,  # 2% profit target
-    lower_barrier=0.01,  # 1% stop loss
-    max_holding=20,       # 20 bar horizon
+    upper_barrier=0.02,    # 2% profit target
+    lower_barrier=0.01,    # 1% stop loss
+    max_holding_period=20, # 20 bar horizon
 )
 
 # Dynamic ATR-based barriers
-labels = atr_barriers(
+labels = atr_triple_barrier_labels(
     df,
     atr_period=14,
-    upper_multiplier=2.0,  # 2x ATR profit target
-    lower_multiplier=1.0,  # 1x ATR stop loss
-    max_holding=20,
+    upper_atr_mult=2.0,    # 2x ATR profit target
+    lower_atr_mult=1.0,    # 1x ATR stop loss
+    max_holding_period=20,
+)
+
+# Time-based horizons (new in 0.1.0a7)
+labels = triple_barrier_labels(
+    df,
+    upper_barrier=0.02,
+    lower_barrier=0.01,
+    max_holding_period="4h",  # 4 hours instead of bar count
 )
 ```
 
 ## Alternative Bar Sampling
 
 ```python
-from ml4t.engineer.bars import volume_bars, dollar_bars, tick_imbalance_bars
+from ml4t.engineer.bars import VolumeBarSampler, DollarBarSampler, TickImbalanceBarSampler
 
 # Volume bars (equal volume per bar)
-vbars = volume_bars(tick_data, volume_threshold=1000)
+sampler = VolumeBarSampler(volume_threshold=1000)
+vbars = sampler.sample(tick_data)
 
 # Dollar bars (equal dollar volume per bar)
-dbars = dollar_bars(tick_data, dollar_threshold=1_000_000)
+sampler = DollarBarSampler(dollar_threshold=1_000_000)
+dbars = sampler.sample(tick_data)
 
 # Tick imbalance bars (information-driven)
-ibars = tick_imbalance_bars(tick_data, expected_imbalance=100)
+sampler = TickImbalanceBarSampler(expected_imbalance=100)
+ibars = sampler.sample(tick_data)
 ```
 
 ## Preprocessing
@@ -112,12 +129,12 @@ ibars = tick_imbalance_bars(tick_data, expected_imbalance=100)
 ```python
 from ml4t.engineer import Preprocessor, StandardScaler, RobustScaler
 
-# Leakage-safe preprocessing
+# Leakage-safe preprocessing pipeline
 preprocessor = Preprocessor([
     StandardScaler(),
 ])
 
-# Fit on train only, transform both
+# Fit on training data only, transform both
 X_train_scaled = preprocessor.fit_transform(X_train)
 X_test_scaled = preprocessor.transform(X_test)
 ```
@@ -147,35 +164,62 @@ result = compute_features(df, "features.yaml")
 
 ## Performance
 
-| Benchmark | ml4t-engineer | pandas-ta | Speedup |
-|-----------|---------------|-----------|---------|
-| RSI (1M rows) | 12ms | 850ms | 70x |
-| MACD (1M rows) | 18ms | 1200ms | 67x |
-| Bollinger (1M rows) | 15ms | 920ms | 61x |
-| Triple-barrier (1M rows) | 20ms | N/A | - |
+Performance is comparable to TA-Lib's C implementation:
 
-*Benchmarks on M1 MacBook Pro with Polars 0.20+*
+| Indicator | 100K rows | vs TA-Lib |
+|-----------|-----------|-----------|
+| RSI       | 0.4ms     | ~1x       |
+| MACD      | 0.8ms     | ~1x       |
+| SMA       | 0.2ms     | ~1x       |
+
+For 1M rows, RSI computes in ~5ms. The implementation uses Numba JIT compilation for numerical operations and Polars for data handling.
+
+*Benchmarks on Linux with Intel i7. Times may vary based on hardware and JIT warm-up.*
+
+## ML-Ready Features
+
+33 features produce bounded outputs suitable for direct ML consumption without preprocessing:
+
+```python
+# Get normalized (ML-ready) features
+normalized = registry.list_normalized()
+# Returns: ['rsi', 'stochastic', 'mfi', 'willr', 'cci', 'adx', ...]
+
+# Check if a feature is normalized
+meta = registry.get("rsi")
+print(meta.normalized)  # True (0-100 range)
+```
+
+See [ML-Readiness Guide](docs/user-guide/ml-readiness.md) for the complete list.
 
 ## API Reference
 
 ### Core Functions
 
 ```python
-from ml4t.engineer import (
-    compute_features,   # Compute features from config
-    list_features,      # List available features
-    list_categories,    # List feature categories
-    describe_feature,   # Get feature metadata
-)
+from ml4t.engineer import compute_features
+from ml4t.engineer.core.registry import get_registry
+
+# Registry for feature discovery
+registry = get_registry()
+registry.list_all()                    # All features
+registry.list_by_category("momentum")  # By category
+registry.list_ta_lib_compatible()      # TA-Lib validated
+registry.list_normalized()             # ML-ready features
+registry.get("rsi")                    # Feature metadata
 ```
 
 ### Labeling
 
 ```python
 from ml4t.engineer.labeling import (
-    triple_barrier_labels,  # Triple-barrier method
-    atr_barriers,           # ATR-based barriers
-    meta_labels,            # Meta-labeling
+    triple_barrier_labels,        # Triple-barrier method
+    atr_triple_barrier_labels,    # ATR-based barriers
+    fixed_time_horizon_labels,    # Simple forward returns
+    rolling_percentile_binary_labels,  # Adaptive thresholds
+    meta_labels,                  # Meta-labeling
+    calculate_sample_weights,     # Sample uniqueness weights
+    sequential_bootstrap,         # Sequential bootstrap
 )
 ```
 
@@ -183,10 +227,10 @@ from ml4t.engineer.labeling import (
 
 ```python
 from ml4t.engineer.bars import (
-    volume_bars,           # Volume bars
-    dollar_bars,           # Dollar bars
-    tick_imbalance_bars,   # Tick imbalance bars
-    volume_imbalance_bars, # Volume imbalance bars
+    VolumeBarSampler,             # Volume bars
+    DollarBarSampler,             # Dollar bars
+    TickImbalanceBarSampler,      # Tick imbalance bars
+    VolumeRunBarSampler,          # Volume run bars
 )
 ```
 
@@ -209,15 +253,23 @@ ml4t-engineer is part of the ML4T library ecosystem:
 from ml4t.data import DataManager
 from ml4t.engineer import compute_features
 from ml4t.engineer.labeling import triple_barrier_labels
-from ml4t.diagnostic import Evaluator
+from ml4t.diagnostic.evaluation import FeatureOutcome  # Feature analysis
 from ml4t.backtest import Engine
 
 # Complete workflow
 data = DataManager().fetch("SPY", "2020-01-01", "2023-12-31")
 features = compute_features(data, ["rsi", "macd", "atr"])
 labels = triple_barrier_labels(data, 0.02, 0.01, 20)
-# ... train model, evaluate, backtest
+# ... train model, evaluate with diagnostic, backtest
 ```
+
+## Validation
+
+The library includes comprehensive validation:
+
+- **60 TA-Lib Compatible Features**: Validated at 1e-6 tolerance against TA-Lib C library
+- **Labeling Validation**: Triple-barrier and sample weights verified against AFML formulas and mlfinpy
+- **3,000+ Unit Tests**: Covering edge cases and numerical accuracy
 
 ## Development
 
@@ -227,32 +279,16 @@ git clone https://github.com/applied-ai/ml4t-engineer.git
 cd ml4t-engineer
 
 # Install with dev dependencies
-uv pip install -e ".[dev]"
+uv sync
 
 # Run tests
-uv run pytest tests/ -v
+uv run pytest tests/ -q
 
 # Type checking
-uv run ty check src/
+uv run ty check
 
 # Linting
 uv run ruff check src/
-```
-
-## Testing
-
-```bash
-# Run all tests
-uv run pytest tests/
-
-# Run specific test file
-uv run pytest tests/test_api.py
-
-# Run with coverage
-uv run pytest tests/ --cov=ml4t.engineer
-
-# TA-Lib validation tests (requires TA-Lib)
-uv run pytest tests/test_talib_validation.py
 ```
 
 ## References
@@ -264,7 +300,3 @@ uv run pytest tests/test_talib_validation.py
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
-## Contributing
-
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.

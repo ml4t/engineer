@@ -6,9 +6,14 @@ This module provides systematic feature selection with multiple criteria:
 - Correlation filtering (redundancy removal)
 - Drift filtering (stability)
 
+.. note::
+
+    Requires ``ml4t-diagnostic`` for feature-outcome analysis.
+    Install with: ``pip install ml4t-diagnostic``
+
 Example:
     >>> from ml4t.engineer.selection import FeatureSelector
-    >>> from ml4t.engineer.outcome import FeatureOutcome
+    >>> from ml4t.diagnostic.evaluation import FeatureOutcome  # Requires ml4t-diagnostic
     >>> from ml4t.engineer.relationships import compute_correlation_matrix
     >>>
     >>> # Analyze features

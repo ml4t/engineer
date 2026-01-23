@@ -15,16 +15,15 @@ Package-level navigation for feature engineering library.
 
 | Directory | Purpose | AGENT.md |
 |-----------|---------|----------|
-| `features/` | 107 technical indicators (10 categories) | [features/AGENT.md](features/AGENT.md) |
+| `features/` | 120 technical indicators (10 categories) | [features/AGENT.md](features/AGENT.md) |
 | `labeling/` | ML label generation methods | [labeling/AGENT.md](labeling/AGENT.md) |
 | `bars/` | Alternative bar sampling | [bars/AGENT.md](bars/AGENT.md) |
 | `core/` | Registry, types, validation, decorators | See below |
 | `config/` | Pydantic v2 configurations | See below |
-| `outcome/` | IC analysis, drift detection | See below |
 | `selection/` | Feature selection methods | See below |
 | `store/` | DuckDB feature storage | See below |
 | `validation/` | Cross-validation utilities | See below |
-| `visualization/` | Plotly charts | See below |
+| `visualization/` | Plot export utilities | See below |
 
 ## core/ - Foundation
 
@@ -45,15 +44,6 @@ Package-level navigation for feature engineering library.
 | `labeling.py` | Labeling config | `LabelingConfig`, `BarrierConfig` |
 | `preprocessing_config.py` | Scaler config | `PreprocessingConfig`, `ScalerConfig` |
 | `base.py` | Base config classes | `BaseConfig` |
-
-## outcome/ - Analysis
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| `drift.py` | 1808 | Feature drift detection, PSI, concept drift |
-| `feature_outcome.py` | 1016 | IC analysis, importance scoring |
-| `plot_ic.py` | 430 | IC visualization |
-| `plot_importance.py` | 419 | Importance charts |
 
 ## selection/ - Feature Selection
 
@@ -95,11 +85,19 @@ metadata = registry.get("rsi")
 ## File Size Tiers (for refactoring reference)
 
 **Very Large (>1000 lines)** - Consider splitting:
-- `outcome/drift.py` (1808)
 - `labeling/core.py` (1694)
-- `outcome/feature_outcome.py` (1016)
 
 **Large (500-1000 lines)**:
 - `config/feature_config.py`, `preprocessing.py`, `features/risk.py`
 - `selection/systematic.py`, `features/ml/rolling_entropy.py`
 - `bars/run.py`, `features/cross_asset.py`, `dataset.py`
+
+## Note: Feature Outcome Analysis
+
+IC analysis, importance scoring, and drift detection have moved to ``ml4t-diagnostic``.
+Install with: ``pip install ml4t-diagnostic``
+
+```python
+from ml4t.diagnostic.evaluation import FeatureOutcome, analyze_drift
+from ml4t.diagnostic.visualization import plot_importance_summary
+```

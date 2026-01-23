@@ -18,7 +18,6 @@ from . import (
     discovery,
     features,
     labeling,
-    outcome,
     pipeline,
     preprocessing,
     relationships,
@@ -60,7 +59,7 @@ def get_agent_docs() -> dict[str, _Path]:
     dict[str, Path]
         Mapping of doc names to paths. Keys include:
         - 'root': Package overview and directory map
-        - 'features': Feature category index (107 indicators)
+        - 'features': Feature category index (120 indicators)
         - 'features/{category}': Category-specific signatures
         - 'labeling': ML label generation methods
         - 'bars': Alternative bar sampling
@@ -122,7 +121,6 @@ __all__ = [
     "discovery",
     "features",
     "labeling",
-    "outcome",
     "pipeline",
     "preprocessing",
     "relationships",

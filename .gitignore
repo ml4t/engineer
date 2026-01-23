@@ -10,3 +10,4 @@ htmlcov/
 CLAUDE.md
 .claude/
 .venv-mlfinpy/
+.idea/

@@ -24,9 +24,14 @@ multiple filtering criteria:
 The FeatureSelector class supports both individual filters and automated pipelines
 that execute multiple filters in sequence.
 
+.. note::
+
+    This module requires ``ml4t-diagnostic`` for feature-outcome analysis.
+    Install with: ``pip install ml4t-diagnostic``
+
 Example - Basic Usage:
     >>> from ml4t.engineer.selection import FeatureSelector
-    >>> from ml4t.engineer.outcome import FeatureOutcome
+    >>> from ml4t.diagnostic.evaluation import FeatureOutcome  # Requires ml4t-diagnostic
     >>> from ml4t.engineer.relationships import compute_correlation_matrix
     >>>
     >>> # Run feature-outcome analysis
@@ -69,11 +74,14 @@ Example - With Drift:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import polars as pl
 
-from ml4t.engineer.outcome.feature_outcome import FeatureOutcomeResult
+# FeatureOutcomeResult is now in ml4t-diagnostic
+# Import at runtime only when needed to avoid hard dependency
+if TYPE_CHECKING:
+    from ml4t.diagnostic.evaluation import FeatureOutcomeResult
 
 
 @dataclass
@@ -171,10 +179,16 @@ class FeatureSelector:
     This class provides a comprehensive feature selection workflow that combines
     IC analysis, importance scoring, correlation filtering, and drift detection.
 
+    .. note::
+
+        Requires ``ml4t-diagnostic`` package for feature-outcome analysis.
+        Install with: ``pip install ml4t-diagnostic``
+
     Parameters
     ----------
     outcome_results : FeatureOutcomeResult
-        Results from feature-outcome analysis (IC, importance, drift)
+        Results from feature-outcome analysis (IC, importance, drift).
+        Obtained from ``ml4t.diagnostic.evaluation.FeatureOutcome``.
     correlation_matrix : pl.DataFrame, optional
         Feature correlation matrix from compute_correlation_matrix()
     initial_features : list[str], optional
@@ -193,7 +207,7 @@ class FeatureSelector:
 
     def __init__(
         self,
-        outcome_results: FeatureOutcomeResult,
+        outcome_results: "FeatureOutcomeResult",
         correlation_matrix: pl.DataFrame | None = None,
         initial_features: list[str] | None = None,
     ):

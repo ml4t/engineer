@@ -1,6 +1,6 @@
 # features/ - Technical Indicators
 
-107 features in 10 categories. All use `@feature` decorator for registry.
+120 features in 10 categories. All use `@feature` decorator for registry.
 
 ## Categories
 
@@ -56,7 +56,7 @@ def feature_name(
 
 ## TA-Lib Compatibility
 
-59 features are validated against TA-Lib at 1e-6 tolerance:
+60 features are validated against TA-Lib at 1e-6 tolerance:
 - All momentum indicators (RSI, MACD, ADX, STOCH, etc.)
 - All trend indicators (SMA, EMA, WMA, etc.)
 - Basic volatility (ATR, NATR, Bollinger)

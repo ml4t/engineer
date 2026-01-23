@@ -1,4 +1,7 @@
-"""Tests for systematic feature selection."""
+"""Tests for systematic feature selection.
+
+These tests require ml4t-diagnostic to be installed for the test fixtures.
+"""
 
 from __future__ import annotations
 
@@ -8,17 +11,32 @@ import numpy as np
 import polars as pl
 import pytest
 
-from ml4t.engineer.outcome.drift import DriftSummaryResult, FeatureDriftResult, PSIResult
-from ml4t.engineer.outcome.feature_outcome import (
-    FeatureICResults,
-    FeatureImportanceResults,
-    FeatureOutcomeResult,
-)
+# Feature selection tests require ml4t-diagnostic for the outcome data classes
+try:
+    from ml4t.diagnostic.evaluation.drift import (
+        DriftSummaryResult,
+        FeatureDriftResult,
+        PSIResult,
+    )
+    from ml4t.diagnostic.evaluation.feature_outcome import (
+        FeatureICResults,
+        FeatureImportanceResults,
+        FeatureOutcomeResult,
+    )
+    HAS_DIAGNOSTIC = True
+except ImportError:
+    HAS_DIAGNOSTIC = False
+
 from ml4t.engineer.selection import FeatureSelector
 from ml4t.engineer.selection.systematic import SelectionReport, SelectionStep
 
 if TYPE_CHECKING:
     pass
+
+pytestmark = pytest.mark.skipif(
+    not HAS_DIAGNOSTIC,
+    reason="ml4t-diagnostic required for feature selection tests"
+)
 
 
 @pytest.fixture

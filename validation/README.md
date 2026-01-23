@@ -4,16 +4,20 @@ Cross-framework validation tests verifying ml4t-engineer calculations.
 
 ## Feature Coverage
 
-| Category | Features | Validation Method | Confidence |
-|----------|----------|-------------------|------------|
-| Momentum | 15 | TA-Lib C library | **100%** |
-| Trend | 18 | TA-Lib C library | **100%** |
-| Volatility | 12 | TA-Lib C library | **100%** |
-| Volume | 8 | TA-Lib C library | **100%** |
-| Statistics | 12 | TA-Lib C library | **100%** |
-| **Labeling** | 8 | AFML formulas + mlfinpy | **100%** |
-| Microstructure | 13 | Unit tests | Unit tests only |
-| ML utilities | 11 | N/A (utilities) | N/A |
+| Category | TA-Lib Compatible | Test Functions | Validation Method | Confidence |
+|----------|-------------------|----------------|-------------------|------------|
+| Momentum | 29 | 30+ | TA-Lib C library | **100%** |
+| Trend | 9 | 15+ | TA-Lib C library | **100%** |
+| Volatility | 4 | 10+ | TA-Lib C library | **100%** |
+| Volume | 3 | 8+ | TA-Lib C library | **100%** |
+| Statistics | 7 | 12+ | TA-Lib C library | **100%** |
+| Price Transform | 5 | 10+ | TA-Lib C library | **100%** |
+| Math | 3 | 5+ | TA-Lib C library | **100%** |
+| **Labeling** | - | 65+ | AFML formulas + mlfinpy | **100%** |
+| Microstructure | - | 30+ | Unit tests | Unit tests only |
+| ML utilities | - | 20+ | N/A (utilities) | N/A |
+
+**Total TA-Lib Compatible**: 60 features (marked `ta_lib_compatible=True` in registry)
 
 ### Labeling Validation (De Prado)
 

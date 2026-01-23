@@ -1,6 +1,6 @@
 # ml4t-engineer
 
-Feature engineering for financial ML. 107 indicators, triple-barrier labeling, alternative bars.
+Feature engineering for financial ML. 120 indicators, triple-barrier labeling, alternative bars.
 
 ## Quick Start
 
@@ -13,7 +13,7 @@ result = compute_features(df, ["rsi", "macd", "atr"])
 
 | Path | Purpose | Key Exports |
 |------|---------|-------------|
-| `features/` | 107 technical indicators | `compute_features()`, `list_features()` |
+| `features/` | 120 technical indicators | `compute_features()`, `list_features()` |
 | `labeling/` | ML label generation | `triple_barrier_labels()`, `rolling_percentile_binary_labels()` |
 | `bars/` | Alternative bar sampling | `volume_bars()`, `dollar_bars()`, `tick_imbalance_bars()` |
 | `core/` | Registry, types, validation | `get_registry()`, `FeatureMetadata` |
@@ -47,7 +47,7 @@ from ml4t.engineer.bars import volume_bars, dollar_bars, tick_imbalance_bars
 
 ```python
 # List available features
-list_features()              # All 107 features
+list_features()              # All 120 features
 list_features("momentum")    # 31 momentum indicators
 
 # Compute with custom parameters
@@ -72,9 +72,9 @@ describe_feature("rsi")  # Returns dict with params, formula, range
 
 ## Performance
 
-- **Speed**: 10-100x faster than pandas, ~0.8x TA-Lib C
-- **Validation**: 59 TA-Lib indicators at 1e-6 tolerance
-- **Labeling**: 50,000 labels/second
+- **Speed**: Polars-native implementation, ~1x TA-Lib for RSI, streaming at 11M rows/second
+- **Validation**: 60 TA-Lib compatible features at 1e-6 tolerance
+- **Throughput**: ~480K indicator calculations/second (batch mode)
 
 ## Navigation
 
