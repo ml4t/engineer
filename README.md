@@ -263,13 +263,34 @@ labels = triple_barrier_labels(data, 0.02, 0.01, 20)
 # ... train model, evaluate with diagnostic, backtest
 ```
 
+## Ecosystem
+
+- **ml4t-data**: Market data acquisition and storage
+- **ml4t-engineer**: Feature engineering and indicators (this library)
+- **ml4t-diagnostic**: Statistical validation and evaluation
+- **ml4t-backtest**: Event-driven backtesting
+- **ml4t-live**: Live trading platform
+
+## Testing
+
+```bash
+# Run tests (3,100+ tests)
+uv run pytest tests/ -q
+
+# Type checking
+uv run ty check
+
+# Linting
+uv run ruff check src/
+```
+
 ## Validation
 
 The library includes comprehensive validation:
 
-- **60 TA-Lib Compatible Features**: Validated at 1e-6 tolerance against TA-Lib C library
+- **59 TA-Lib Compatible Features**: Validated at 1e-6 tolerance against TA-Lib C library
 - **Labeling Validation**: Triple-barrier and sample weights verified against AFML formulas and mlfinpy
-- **3,000+ Unit Tests**: Covering edge cases and numerical accuracy
+- **3,100+ Unit Tests**: Covering edge cases and numerical accuracy
 
 ## Development
 
