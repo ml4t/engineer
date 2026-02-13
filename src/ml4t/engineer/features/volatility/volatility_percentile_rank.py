@@ -11,7 +11,8 @@ from ml4t.engineer.core.validation import (
     category="volatility",
     description="Volatility Percentile Rank - current vol vs historical distribution",
     lookback=0,
-    normalized=False,
+    normalized=True,
+    value_range=(0.0, 100.0),
     formula="",
     ta_lib_compatible=False,
 )

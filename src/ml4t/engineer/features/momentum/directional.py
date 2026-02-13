@@ -431,7 +431,8 @@ def minus_di(
     category="momentum",
     description="Directional Movement Index - strength of directional movement",
     lookback=0,
-    normalized=False,
+    normalized=True,
+    value_range=(0.0, 100.0),
     formula="",
     ta_lib_compatible=True,
 )

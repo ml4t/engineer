@@ -220,7 +220,8 @@ def aroonosc_polars(high_column: str, low_column: str, timeperiod: int = 14) -> 
     category="momentum",
     description="Aroon - identifies trend changes and strength",
     lookback=0,
-    normalized=False,
+    normalized=True,
+    value_range=(0.0, 100.0),
     formula="",
     ta_lib_compatible=True,
 )

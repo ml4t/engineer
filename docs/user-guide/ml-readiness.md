@@ -6,8 +6,8 @@ This guide explains the `normalized` field in feature metadata and how to prepar
 
 Features in ml4t-engineer have a `normalized` metadata field that indicates whether a feature produces bounded outputs suitable for direct ML consumption:
 
-- **`normalized=True`** (33 features): Output is bounded (typically 0-100 or -1 to 1). ML-ready without preprocessing.
-- **`normalized=False`** (87 features): Output is unbounded (raw prices, volumes, spreads). Requires preprocessing.
+- **`normalized=True`** (37 features): Output is bounded (typically 0-100 or -1 to 1). ML-ready without preprocessing.
+- **`normalized=False`** (83 features): Output is unbounded (raw prices, volumes, spreads). Requires preprocessing.
 
 ## Why Normalization Matters
 
@@ -19,9 +19,9 @@ Machine learning models (especially neural networks and distance-based methods) 
 
 ## Normalized Features (ML-Ready)
 
-These 33 features produce bounded outputs and can be used directly in ML models:
+These 37 features produce bounded outputs and can be used directly in ML models:
 
-### Momentum (17 features)
+### Momentum (19 features)
 | Feature | Output Range | Description |
 |---------|-------------|-------------|
 | `rsi` | 0-100 | Relative Strength Index |
@@ -35,16 +35,19 @@ These 33 features produce bounded outputs and can be used directly in ML models:
 | `cmo` | -100 to 100 | Chande Momentum Oscillator |
 | `adx` | 0-100 | Average Directional Index |
 | `adxr` | 0-100 | ADX Rating |
+| `dx` | 0-100 | Directional Movement Index |
 | `plus_di` | 0-100 | Plus Directional Indicator |
 | `minus_di` | 0-100 | Minus Directional Indicator |
+| `aroon` | 0-100 | Aroon Indicator (up/down) |
 | `aroonosc` | -100 to 100 | Aroon Oscillator |
 | `bop` | -1 to 1 | Balance of Power |
 | `imi` | 0-100 | Intraday Momentum Index |
 
-### Volatility (1 feature)
+### Volatility (2 features)
 | Feature | Output Range | Description |
 |---------|-------------|-------------|
 | `natr` | 0-100% | Normalized ATR (percentage of price) |
+| `volatility_percentile_rank` | 0-100 | Current volatility vs historical distribution |
 
 ### Regime (4 features)
 | Feature | Output Range | Description |
@@ -69,12 +72,13 @@ These 33 features produce bounded outputs and can be used directly in ML models:
 | `bid_ask_imbalance` | -1 to 1 | Order flow imbalance |
 | `book_depth_ratio` | 0-1 | Depth asymmetry |
 
-### ML Utilities (3 features)
+### ML Utilities (4 features)
 | Feature | Output Range | Description |
 |---------|-------------|-------------|
 | `rolling_entropy` | 0-1 | Shannon entropy (normalized) |
 | `rolling_entropy_lz` | 0-1 | Lempel-Ziv complexity |
 | `rolling_entropy_plugin` | 0-1 | Plugin entropy estimator |
+| `percentile_rank_features` | 0-100 | Rank-based normalization |
 
 ### Risk (2 features)
 | Feature | Output Range | Description |
