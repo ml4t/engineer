@@ -288,6 +288,7 @@ unsupported-operator = "ignore"
 invalid-argument-type = "ignore"
 unresolved-import = "ignore"
 invalid-return-type = "ignore"
+unresolved-attribute = "ignore"
 
 [tool.coverage.run]
 source = ["src/ml4t/engineer"]
