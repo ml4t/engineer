@@ -23,6 +23,7 @@ try:
         FeatureImportanceResults,
         FeatureOutcomeResult,
     )
+
     HAS_DIAGNOSTIC = True
 except ImportError:
     HAS_DIAGNOSTIC = False
@@ -34,8 +35,7 @@ if TYPE_CHECKING:
     pass
 
 pytestmark = pytest.mark.skipif(
-    not HAS_DIAGNOSTIC,
-    reason="ml4t-diagnostic required for feature selection tests"
+    not HAS_DIAGNOSTIC, reason="ml4t-diagnostic required for feature selection tests"
 )
 
 

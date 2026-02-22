@@ -18,7 +18,6 @@ visualizations, use::
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -60,7 +59,7 @@ def plot_feature_analysis_summary(*args: Any, **kwargs: Any) -> Any:
 
 
 def export_plot(
-    fig: "Figure",
+    fig: Figure,
     output_path: str | Path,
     dpi: int = 300,
     bbox_inches: str = "tight",

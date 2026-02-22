@@ -207,7 +207,7 @@ class FeatureSelector:
 
     def __init__(
         self,
-        outcome_results: "FeatureOutcomeResult",
+        outcome_results: FeatureOutcomeResult,
         correlation_matrix: pl.DataFrame | None = None,
         initial_features: list[str] | None = None,
     ):

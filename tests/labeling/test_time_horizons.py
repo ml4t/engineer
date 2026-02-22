@@ -25,7 +25,6 @@ from ml4t.engineer.labeling.utils import (
     time_horizon_to_bars,
 )
 
-
 # =============================================================================
 # Test Fixtures
 # =============================================================================
@@ -44,14 +43,16 @@ def regular_5min_data() -> pl.DataFrame:
     np.random.seed(42)
     prices = 100.0 + np.cumsum(np.random.randn(n_bars) * 0.1)
 
-    return pl.DataFrame({
-        "timestamp": timestamps,
-        "open": prices + np.random.randn(n_bars) * 0.05,
-        "high": prices + np.abs(np.random.randn(n_bars) * 0.1),
-        "low": prices - np.abs(np.random.randn(n_bars) * 0.1),
-        "close": prices,
-        "volume": np.random.randint(1000, 10000, n_bars),
-    }).with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
+    return pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": prices + np.random.randn(n_bars) * 0.05,
+            "high": prices + np.abs(np.random.randn(n_bars) * 0.1),
+            "low": prices - np.abs(np.random.randn(n_bars) * 0.1),
+            "close": prices,
+            "volume": np.random.randint(1000, 10000, n_bars),
+        }
+    ).with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
 
 @pytest.fixture
@@ -69,11 +70,13 @@ def irregular_trade_data() -> pl.DataFrame:
 
     prices = 100.0 + np.cumsum(np.random.randn(n_trades) * 0.2)
 
-    return pl.DataFrame({
-        "timestamp": timestamps,
-        "close": prices,
-        "volume": np.random.randint(100, 1000, n_trades),
-    }).with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
+    return pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "close": prices,
+            "volume": np.random.randint(100, 1000, n_trades),
+        }
+    ).with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
 
 @pytest.fixture
@@ -89,17 +92,21 @@ def multi_session_data() -> pl.DataFrame:
         timestamps = [base_time + timedelta(minutes=5 * i) for i in range(n_bars)]
         prices = 100.0 + day * 2 + np.cumsum(np.random.randn(n_bars) * 0.1)
 
-        session_df = pl.DataFrame({
-            "timestamp": timestamps,
-            "close": prices,
-            "session_date": [date(2024, 1, 1 + day)] * n_bars,
-        })
+        session_df = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "close": prices,
+                "session_date": [date(2024, 1, 1 + day)] * n_bars,
+            }
+        )
         sessions.append(session_df)
 
-    return pl.concat(sessions).with_columns([
-        pl.col("timestamp").cast(pl.Datetime("us")),
-        pl.col("session_date").cast(pl.Date),
-    ])
+    return pl.concat(sessions).with_columns(
+        [
+            pl.col("timestamp").cast(pl.Datetime("us")),
+            pl.col("session_date").cast(pl.Date),
+        ]
+    )
 
 
 # =============================================================================
@@ -110,42 +117,48 @@ def multi_session_data() -> pl.DataFrame:
 class TestDurationParsing:
     """Tests for is_duration_string and parse_duration utilities."""
 
-    @pytest.mark.parametrize("value,expected", [
-        ("1h", True),
-        ("30m", True),
-        ("1d", True),
-        ("1w", True),
-        ("15s", True),
-        ("1d2h30m", True),
-        ("2h30m15s", True),
-        ("1H", True),  # Case insensitive
-        ("30M", True),
-        # Invalid - column names
-        ("close", False),
-        ("volume", False),
-        ("max_holding_period", False),
-        ("my_column", False),
-        # Invalid - no digits
-        ("h", False),
-        ("dm", False),
-        # Invalid - malformed
-        ("1x", False),
-        ("abc123", False),
-        ("", False),
-    ])
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("1h", True),
+            ("30m", True),
+            ("1d", True),
+            ("1w", True),
+            ("15s", True),
+            ("1d2h30m", True),
+            ("2h30m15s", True),
+            ("1H", True),  # Case insensitive
+            ("30M", True),
+            # Invalid - column names
+            ("close", False),
+            ("volume", False),
+            ("max_holding_period", False),
+            ("my_column", False),
+            # Invalid - no digits
+            ("h", False),
+            ("dm", False),
+            # Invalid - malformed
+            ("1x", False),
+            ("abc123", False),
+            ("", False),
+        ],
+    )
     def test_is_duration_string(self, value: str, expected: bool):
         """Test duration string detection."""
         assert is_duration_string(value) == expected
 
-    @pytest.mark.parametrize("value,expected_seconds", [
-        ("1h", 3600),
-        ("30m", 1800),
-        ("1d", 86400),
-        ("1w", 604800),
-        ("15s", 15),
-        ("1d2h30m", 86400 + 7200 + 1800),
-        ("2h30m15s", 7200 + 1800 + 15),
-    ])
+    @pytest.mark.parametrize(
+        "value,expected_seconds",
+        [
+            ("1h", 3600),
+            ("30m", 1800),
+            ("1d", 86400),
+            ("1w", 604800),
+            ("15s", 15),
+            ("1d2h30m", 86400 + 7200 + 1800),
+            ("2h30m15s", 7200 + 1800 + 15),
+        ],
+    )
     def test_parse_duration(self, value: str, expected_seconds: int):
         """Test duration string parsing."""
         td = parse_duration(value)
@@ -170,7 +183,9 @@ class TestTimeHorizonToBars:
 
     def test_regular_5min_bars(self, regular_5min_data: pl.DataFrame):
         """Test conversion on regular 5-minute bars."""
-        timestamps = regular_5min_data["timestamp"].to_numpy().astype("datetime64[ns]").view("int64")
+        timestamps = (
+            regular_5min_data["timestamp"].to_numpy().astype("datetime64[ns]").view("int64")
+        )
 
         # 15 minutes = 3 bars of 5-minute data
         bar_counts = time_horizon_to_bars(timestamps, "15m")
@@ -186,7 +201,9 @@ class TestTimeHorizonToBars:
 
     def test_with_timedelta(self, regular_5min_data: pl.DataFrame):
         """Test using timedelta instead of string."""
-        timestamps = regular_5min_data["timestamp"].to_numpy().astype("datetime64[ns]").view("int64")
+        timestamps = (
+            regular_5min_data["timestamp"].to_numpy().astype("datetime64[ns]").view("int64")
+        )
 
         bar_counts_str = time_horizon_to_bars(timestamps, "1h")
         bar_counts_td = time_horizon_to_bars(timestamps, timedelta(hours=1))
@@ -195,7 +212,9 @@ class TestTimeHorizonToBars:
 
     def test_minimum_bar_count(self, regular_5min_data: pl.DataFrame):
         """Test that minimum bar count is 1."""
-        timestamps = regular_5min_data["timestamp"].to_numpy().astype("datetime64[ns]").view("int64")
+        timestamps = (
+            regular_5min_data["timestamp"].to_numpy().astype("datetime64[ns]").view("int64")
+        )
 
         # Very short horizon
         bar_counts = time_horizon_to_bars(timestamps, "1s")
@@ -273,10 +292,12 @@ class TestFixedTimeHorizonLabels:
     def test_time_based_requires_timestamp(self):
         """Test that time-based horizon requires timestamp column."""
         # Data without datetime column
-        df = pl.DataFrame({
-            "close": [100, 101, 102, 103, 104],
-            "volume": [1000, 1100, 1200, 1300, 1400],
-        })
+        df = pl.DataFrame(
+            {
+                "close": [100, 101, 102, 103, 104],
+                "volume": [1000, 1100, 1200, 1300, 1400],
+            }
+        )
 
         with pytest.raises(ValueError, match="timestamp column"):
             fixed_time_horizon_labels(df, horizon="1h", method="returns")

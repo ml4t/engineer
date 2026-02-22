@@ -9,13 +9,12 @@ These tests require ml4t-diagnostic to be installed for the mock fixtures.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 # These tests require ml4t-diagnostic for the data classes
 try:
     from ml4t.diagnostic.evaluation import FeatureOutcome  # noqa: F401
+
     HAS_DIAGNOSTIC = True
 except ImportError:
     HAS_DIAGNOSTIC = False
@@ -24,7 +23,7 @@ from ml4t.engineer.visualization import export_plot
 
 pytestmark = pytest.mark.skipif(
     not HAS_DIAGNOSTIC,
-    reason="Visualization tests require ml4t-diagnostic. Install with: pip install ml4t-diagnostic"
+    reason="Visualization tests require ml4t-diagnostic. Install with: pip install ml4t-diagnostic",
 )
 
 

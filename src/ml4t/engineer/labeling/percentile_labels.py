@@ -169,7 +169,9 @@ def rolling_percentile_binary_labels(
     """
     # Determine if time-based
     is_time_based_horizon = isinstance(horizon, str) and is_duration_string(horizon)
-    is_time_based_lookback = isinstance(lookback_window, str) and is_duration_string(lookback_window)
+    is_time_based_lookback = isinstance(lookback_window, str) and is_duration_string(
+        lookback_window
+    )
 
     # Sort data chronologically for correct shift and rolling operations
     resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
@@ -248,16 +250,10 @@ def rolling_percentile_binary_labels(
     if is_time_based_lookback and resolved_ts_col:
         # Use Polars native time-based rolling via rolling() context
         # This requires setting an index column and using the rolling context
-        rolling_result = (
-            result
-            .rolling(
-                index_column=resolved_ts_col,
-                period=lookback_window,  # type: ignore[arg-type]
-            )
-            .agg(
-                pl.col(forward_return_col).quantile(quantile).alias("_rolling_threshold")
-            )
-        )
+        rolling_result = result.rolling(
+            index_column=resolved_ts_col,
+            period=lookback_window,  # type: ignore[arg-type]
+        ).agg(pl.col(forward_return_col).quantile(quantile).alias("_rolling_threshold"))
         # Join back to get the threshold column
         rolling_threshold = result.join(
             rolling_result,

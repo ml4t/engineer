@@ -98,8 +98,7 @@ def parse_duration(value: str) -> timedelta:
     """
     if not is_duration_string(value):
         raise ValueError(
-            f"Invalid duration string: '{value}'. "
-            f"Expected format like '1h', '30m', '1d2h30m'."
+            f"Invalid duration string: '{value}'. Expected format like '1h', '30m', '1d2h30m'."
         )
 
     match = _DURATION_PATTERN.match(value.strip())
@@ -271,11 +270,13 @@ def get_future_price_at_time(
     target_ts = pl.col(ts_col) + pl.duration(microseconds=total_us)
 
     # Create future lookup table
-    lookup = data.select([
-        pl.col(ts_col).alias("_lookup_ts"),
-        pl.col(price_col).alias("_future_price"),
-        *(pl.col(c) for c in (group_cols or [])),
-    ])
+    lookup = data.select(
+        [
+            pl.col(ts_col).alias("_lookup_ts"),
+            pl.col(price_col).alias("_future_price"),
+            *(pl.col(c) for c in (group_cols or [])),
+        ]
+    )
 
     # Add target timestamp to data
     data_with_target = data.with_columns(target_ts.alias("_target_ts"))
@@ -338,10 +339,7 @@ def resolve_timestamp_col(
             # Fall through to auto-detection
 
     # Dtype-based detection (more robust than name matching)
-    datetime_cols = [
-        col for col in data.columns
-        if data[col].dtype in _DATETIME_TYPES
-    ]
+    datetime_cols = [col for col in data.columns if data[col].dtype in _DATETIME_TYPES]
 
     if len(datetime_cols) == 1:
         return datetime_cols[0]

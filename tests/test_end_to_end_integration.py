@@ -22,6 +22,7 @@ import pytest
 # These tests require ml4t-diagnostic
 try:
     from ml4t.diagnostic.evaluation import FeatureOutcome  # noqa: F401
+
     HAS_DIAGNOSTIC = True
 except ImportError:
     HAS_DIAGNOSTIC = False
@@ -29,9 +30,8 @@ except ImportError:
 pytestmark = pytest.mark.skipif(
     not HAS_DIAGNOSTIC,
     reason=(
-        "These integration tests require ml4t-diagnostic. "
-        "Install with: pip install ml4t-diagnostic"
-    )
+        "These integration tests require ml4t-diagnostic. Install with: pip install ml4t-diagnostic"
+    ),
 )
 
 

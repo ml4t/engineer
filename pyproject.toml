@@ -193,6 +193,20 @@ Repository = "https://github.com/stefan-jansen/ml4t-engineer"
 Issues = "https://github.com/stefan-jansen/ml4t-engineer/issues"
 Changelog = "https://github.com/stefan-jansen/ml4t-engineer/blob/main/CHANGELOG.md"
 
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.3.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-benchmark>=4.0.0",
+    "hypothesis>=6.80.0",
+    "ruff>=0.8.0",
+    "ty",
+    "pre-commit>=3.3.0",
+    "twine>=6.0.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -237,8 +251,11 @@ ignore = [
     "E501",   # Line too long
     "B008",   # Function call in default argument
     "B905",   # zip without explicit strict
-    "UP038",  # isinstance tuple syntax (prefer (A, B) over A | B for clarity)
+    "SIM108", # Ternary operator (prefer readability of if/else blocks)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402", "ARG002", "B017", "F841"]
 
 [tool.mypy]
 python_version = "3.11"
