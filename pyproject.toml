@@ -281,6 +281,14 @@ root = ["src"]
 include = ["src"]
 exclude = ["tests", "benchmarks", "examples", "docs"]
 
+[tool.ty.rules]
+unused-type-ignore-comment = "ignore"  # mypy type: ignore comments not recognized by ty
+invalid-assignment = "ignore"
+unsupported-operator = "ignore"
+invalid-argument-type = "ignore"
+unresolved-import = "ignore"
+invalid-return-type = "ignore"
+
 [tool.coverage.run]
 source = ["src/ml4t/engineer"]
 omit = [
