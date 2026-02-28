@@ -42,7 +42,7 @@ Reference:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 
@@ -50,8 +50,11 @@ from ml4t.engineer.labeling.utils import (
     get_future_price_at_time,
     is_duration_string,
     parse_duration,
-    resolve_timestamp_col,
+    resolve_labeling_columns,
 )
+
+if TYPE_CHECKING:
+    from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 
 def rolling_percentile_binary_labels(
@@ -60,11 +63,15 @@ def rolling_percentile_binary_labels(
     percentile: float,
     direction: Literal["long", "short"] = "long",
     lookback_window: int | str = 252 * 24 * 12,  # ~1 year hourly
-    price_col: str = "close",
+    price_col: str | None = None,
     session_col: str | None = None,
     min_samples: int | None = None,
+    group_col: str | list[str] | None = None,
     timestamp_col: str | None = None,
     tolerance: str | None = None,
+    *,
+    config: LabelingConfig | None = None,
+    contract: DataContractConfig | None = None,
 ) -> pl.DataFrame:
     """Create binary labels using rolling historical percentiles.
 
@@ -97,19 +104,27 @@ def rolling_percentile_binary_labels(
         Rolling window size for percentile computation:
         - int: Number of bars
         - str: Duration string (e.g., '5d', '1w'). Polars rolling supports duration strings.
-    price_col : str, default "close"
+    price_col : str | None, default None
         Price column for return computation
     session_col : str, optional
         Session column for session-aware forward returns (e.g., "session_date")
         If provided, forward returns won't cross session boundaries
     min_samples : int, optional
         Minimum samples for rolling calculation (default: 1008 = ~3.5 days of 5-min bars)
+    group_col : str | list[str] | None, default None
+        Column(s) to group by for panel-aware labeling. If None, auto-detects from
+        common symbol columns when present.
     timestamp_col : str | None, default None
         Column to use for chronological sorting. If None, auto-detects from
         column dtype (pl.Datetime, pl.Date). Required for time-based horizons.
     tolerance : str | None, default None
         Maximum time gap allowed for time-based horizons (e.g., '2m').
         Only used when horizon is a duration string.
+    config : LabelingConfig | None, default None
+        Optional column contract source. If provided, `price_col`, `timestamp_col`,
+        and `group_col` default to config values when omitted.
+    contract : DataContractConfig | None, default None
+        Optional shared dataframe contract. Used after config and before defaults.
 
     Returns
     -------
@@ -173,17 +188,19 @@ def rolling_percentile_binary_labels(
         lookback_window
     )
 
-    # Sort data chronologically for correct shift and rolling operations
-    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
-    if resolved_ts_col:
-        data = data.sort(resolved_ts_col)
+    resolved_price_col, resolved_ts_col, resolved_group_cols = resolve_labeling_columns(
+        data=data,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        group_col=group_col,
+        config=config,
+        contract=contract,
+        require_timestamp=is_time_based_horizon or is_time_based_lookback,
+    )
 
-    # Validate timestamp column for time-based operations
-    if (is_time_based_horizon or is_time_based_lookback) and resolved_ts_col is None:
-        raise ValueError(
-            "Time-based horizon or lookback_window requires a timestamp column. "
-            "Provide timestamp_col parameter or ensure data has a datetime column."
-        )
+    sort_cols = resolved_group_cols + ([resolved_ts_col] if resolved_ts_col else [])
+    if sort_cols:
+        data = data.sort(sort_cols)
 
     result = data.clone()
 
@@ -200,35 +217,39 @@ def rolling_percentile_binary_labels(
         future_prices, valid_mask = get_future_price_at_time(
             data=data,
             time_horizon=td,
-            price_col=price_col,
+            price_col=resolved_price_col,
             timestamp_col=resolved_ts_col,
             tolerance=tolerance,
-            group_cols=None,  # No grouping for now (session_col is different)
+            group_cols=resolved_group_cols if resolved_group_cols else None,
         )
-        current_prices = data[price_col]
+        current_prices = data[resolved_price_col]
         forward_returns = (future_prices - current_prices) / current_prices
 
         # Mask invalid joins if tolerance specified
         if tolerance is not None:
             forward_returns = pl.when(valid_mask).then(forward_returns).otherwise(pl.lit(None))
     elif session_col is not None:
-        # Session-aware forward returns (don't cross session boundaries)
-        temp_df = pl.DataFrame(
-            {
-                session_col: data[session_col],
-                "price": data[price_col],
-            }
+        if session_col not in data.columns:
+            raise ValueError(f"Session column '{session_col}' not found in data")
+
+        session_groups = (
+            [*resolved_group_cols, session_col] if resolved_group_cols else [session_col]
         )
-        forward_returns = temp_df.with_columns(
-            [
-                (pl.col("price").shift(-horizon) / pl.col("price") - 1)
-                .over(session_col)
-                .alias("forward_return")
-            ]
+
+        # Session-aware forward returns (don't cross session boundaries)
+        forward_returns = result.with_columns(
+            (pl.col(resolved_price_col).shift(-horizon) / pl.col(resolved_price_col) - 1)
+            .over(session_groups)
+            .alias("forward_return")
         )["forward_return"]
     else:
         # Simple bar-based forward returns
-        forward_returns = data[price_col].shift(-horizon) / data[price_col] - 1
+        forward_expr = pl.col(resolved_price_col).shift(-horizon) / pl.col(resolved_price_col) - 1
+        if resolved_group_cols:
+            forward_expr = forward_expr.over(resolved_group_cols)
+        forward_returns = result.with_columns(forward_expr.alias("forward_return"))[
+            "forward_return"
+        ]
 
     forward_return_col = f"forward_return_{horizon_label}"
     result = result.with_columns(forward_returns.alias(forward_return_col))
@@ -249,15 +270,19 @@ def rolling_percentile_binary_labels(
     # using rolling() context with index_column
     if is_time_based_lookback and resolved_ts_col:
         # Use Polars native time-based rolling via rolling() context
-        # This requires setting an index column and using the rolling context
         rolling_result = result.rolling(
             index_column=resolved_ts_col,
             period=lookback_window,  # type: ignore[arg-type]
+            group_by=resolved_group_cols if resolved_group_cols else None,
         ).agg(pl.col(forward_return_col).quantile(quantile).alias("_rolling_threshold"))
+
+        join_keys = (
+            [*resolved_group_cols, resolved_ts_col] if resolved_group_cols else [resolved_ts_col]
+        )
         # Join back to get the threshold column
         rolling_threshold = result.join(
             rolling_result,
-            on=resolved_ts_col,
+            on=join_keys,
             how="left",
         )["_rolling_threshold"]
     else:
@@ -267,12 +292,17 @@ def rolling_percentile_binary_labels(
                 f"lookback_window must be an integer for bar-based rolling, "
                 f"got '{lookback_window}'. For time-based, ensure timestamp_col is set."
             )
-        rolling_threshold = result[forward_return_col].rolling_quantile(
+        rolling_threshold_expr = pl.col(forward_return_col).rolling_quantile(
             window_size=lookback_window,
             quantile=quantile,
             min_samples=min_samples,
             center=False,
         )
+        if resolved_group_cols:
+            rolling_threshold_expr = rolling_threshold_expr.over(resolved_group_cols)
+        rolling_threshold = result.with_columns(rolling_threshold_expr.alias("_rolling_threshold"))[
+            "_rolling_threshold"
+        ]
 
     threshold_col_name = f"threshold_p{int(percentile)}_h{horizon_label}"
     result = result.with_columns(rolling_threshold.alias(threshold_col_name))
@@ -299,12 +329,18 @@ def rolling_percentile_binary_labels(
 
 def rolling_percentile_multi_labels(
     data: pl.DataFrame,
-    horizons: list[int],
+    horizons: list[int | str],
     percentiles: list[float],
     direction: Literal["long", "short"] = "long",
-    lookback_window: int = 252 * 24 * 12,
-    price_col: str = "close",
+    lookback_window: int | str = 252 * 24 * 12,
+    price_col: str | None = None,
     session_col: str | None = None,
+    group_col: str | list[str] | None = None,
+    timestamp_col: str | None = None,
+    tolerance: str | None = None,
+    *,
+    config: LabelingConfig | None = None,
+    contract: DataContractConfig | None = None,
 ) -> pl.DataFrame:
     """Create binary labels for multiple horizons and percentiles.
 
@@ -315,18 +351,28 @@ def rolling_percentile_multi_labels(
     ----------
     data : pl.DataFrame
         Input data with OHLCV and optionally session_date
-    horizons : list[int]
-        List of forward-looking horizons (e.g., [15, 30, 60])
+    horizons : list[int | str]
+        List of forward-looking horizons (e.g., [15, 30, "1h"])
     percentiles : list[float]
         List of percentiles (e.g., [95, 98] for long, [5, 10] for short)
     direction : {"long", "short"}, default "long"
         Trading direction
-    lookback_window : int, default ~1 year
+    lookback_window : int | str, default ~1 year
         Rolling window size for percentile computation
-    price_col : str, default "close"
+    price_col : str | None, default None
         Price column
     session_col : str, optional
         Session column for session-aware returns
+    group_col : str | list[str] | None, default None
+        Column(s) to group by for panel-aware labeling.
+    timestamp_col : str | None, default None
+        Timestamp column for time-based horizons/lookbacks.
+    tolerance : str | None, default None
+        Maximum time gap for time-based horizons.
+    config : LabelingConfig | None, default None
+        Optional column contract source.
+    contract : DataContractConfig | None, default None
+        Optional shared dataframe contract. Used after config and before defaults.
 
     Returns
     -------
@@ -360,6 +406,11 @@ def rolling_percentile_multi_labels(
             lookback_window=lookback_window,
             price_col=price_col,
             session_col=session_col,
+            group_col=group_col,
+            timestamp_col=timestamp_col,
+            tolerance=tolerance,
+            config=config,
+            contract=contract,
         )
 
         # Subsequent calls for same horizon - skip if forward_return already exists
@@ -373,6 +424,11 @@ def rolling_percentile_multi_labels(
                 lookback_window=lookback_window,
                 price_col=price_col,
                 session_col=session_col,
+                group_col=group_col,
+                timestamp_col=timestamp_col,
+                tolerance=tolerance,
+                config=config,
+                contract=contract,
             )
 
     return result

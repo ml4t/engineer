@@ -18,8 +18,9 @@ import seaborn as sns
 
 from ml4t.engineer import pipeline
 from ml4t.engineer.bars import ImbalanceBarSampler, VolumeBarSampler
+from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.features import fractional_diff
-from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
+from ml4t.engineer.labeling import triple_barrier_labels
 
 
 def load_or_create_data():
@@ -177,7 +178,7 @@ def demonstrate_labeling(bars_with_ffd):
     )
 
     # Apply triple-barrier labeling
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier="upper_barrier",
         lower_barrier="lower_barrier",
         max_holding_period=10,
@@ -259,7 +260,7 @@ def demonstrate_pipeline(data):
                 "labeling",
                 lambda df: triple_barrier_labels(
                     df,
-                    BarrierConfig(
+                    LabelingConfig.triple_barrier(
                         upper_barrier="upper_barrier",
                         lower_barrier="lower_barrier",
                         max_holding_period=10,

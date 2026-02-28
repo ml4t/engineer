@@ -2,7 +2,7 @@
 """Numba JIT-compiled operations for triple barrier labeling.
 
 These are internal functions used by the triple barrier implementation.
-Do not import directly - use the public API from labeling.core or labeling.
+Do not import directly - use the public API from labeling modules.
 """
 
 import numpy as np

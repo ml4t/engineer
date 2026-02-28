@@ -5,12 +5,19 @@ from __future__ import annotations
 import re
 import warnings
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
 
+from ml4t.engineer.core.exceptions import DataValidationError
+
+if TYPE_CHECKING:
+    from ml4t.engineer.config import DataContractConfig, LabelingConfig
+
 # Datetime types for timestamp detection
 _DATETIME_TYPES = (pl.Datetime, pl.Date)
+_DEFAULT_GROUP_COLS = ("symbol", "product", "ticker", "asset", "asset_id")
 
 # Duration string regex pattern (e.g., "1h", "30m", "1d2h30m")
 _DURATION_PATTERN = re.compile(
@@ -222,8 +229,8 @@ def get_future_price_at_time(
 ) -> tuple[pl.Series, pl.Series]:
     """Get price at future time using join_asof.
 
-    For irregular data (e.g., trade bars), retrieves the price at approximately
-    `time_horizon` in the future using nearest-match joining.
+    For irregular data (e.g., trade bars), retrieves the first available price
+    at or after `time_horizon` in the future.
 
     Parameters
     ----------
@@ -255,7 +262,7 @@ def get_future_price_at_time(
     ts_col = resolve_timestamp_col(data, timestamp_col)
     if ts_col is None:
         raise ValueError(
-            "No timestamp column found. Provide timestamp_col parameter "
+            "Timestamp column not found. Provide timestamp_col parameter "
             "or ensure data has a datetime column."
         )
 
@@ -285,7 +292,7 @@ def get_future_price_at_time(
     join_kwargs: dict = {
         "left_on": "_target_ts",
         "right_on": "_lookup_ts",
-        "strategy": "backward",  # Get price at or before target time
+        "strategy": "forward",  # Get first price at or after target time
     }
 
     if tolerance is not None:
@@ -307,6 +314,8 @@ def get_future_price_at_time(
 def resolve_timestamp_col(
     data: pl.DataFrame,
     timestamp_col: str | None,
+    *,
+    warn_on_missing_specified: bool = True,
 ) -> str | None:
     """Resolve timestamp column for chronological sorting.
 
@@ -329,14 +338,14 @@ def resolve_timestamp_col(
     if timestamp_col is not None:
         if timestamp_col in data.columns:
             return timestamp_col
-        else:
+        if warn_on_missing_specified:
             warnings.warn(
                 f"Specified timestamp_col '{timestamp_col}' not found in data. "
                 f"Available columns: {data.columns}",
                 UserWarning,
                 stacklevel=3,
             )
-            # Fall through to auto-detection
+        # Fall through to auto-detection
 
     # Dtype-based detection (more robust than name matching)
     datetime_cols = [col for col in data.columns if data[col].dtype in _DATETIME_TYPES]
@@ -356,3 +365,96 @@ def resolve_timestamp_col(
 
     # No datetime columns found
     return None
+
+
+def resolve_group_cols(
+    data: pl.DataFrame,
+    group_col: str | list[str] | None,
+) -> list[str]:
+    """Resolve grouping columns for panel-aware labeling."""
+    if group_col is not None:
+        if isinstance(group_col, str):
+            if group_col not in data.columns:
+                raise DataValidationError(
+                    f"group_col '{group_col}' not found in data columns: {data.columns}",
+                )
+            return [group_col]
+
+        missing = [col for col in group_col if col not in data.columns]
+        if missing:
+            raise DataValidationError(
+                f"group_col values {missing} not found in data columns: {data.columns}",
+            )
+        return group_col
+
+    detected_cols: list[str] = []
+    for col in _DEFAULT_GROUP_COLS:
+        if col in data.columns:
+            detected_cols.append(col)
+            break
+
+    if "position" in data.columns and detected_cols and detected_cols[0] in ("product", "symbol"):
+        detected_cols.append("position")
+
+    return detected_cols
+
+
+def resolve_labeling_columns(
+    data: pl.DataFrame,
+    *,
+    price_col: str | None = None,
+    timestamp_col: str | None = None,
+    group_col: str | list[str] | None = None,
+    config: LabelingConfig | None = None,
+    contract: DataContractConfig | None = None,
+    require_timestamp: bool = False,
+) -> tuple[str, str | None, list[str]]:
+    """Resolve columns using explicit args > labeling config > shared contract > defaults."""
+    config_fields_set = set(getattr(config, "model_fields_set", set())) if config is not None else set()
+    timestamp_is_explicit = timestamp_col is not None
+
+    if contract is None and config is not None:
+        nested_contract = getattr(config, "data_contract", None)
+        if nested_contract is not None:
+            contract = nested_contract
+
+    if config is not None:
+        if price_col is None and "price_col" in config_fields_set:
+            price_col = config.price_col
+        if timestamp_col is None and "timestamp_col" in config_fields_set:
+            timestamp_col = config.timestamp_col
+            timestamp_is_explicit = True
+        if group_col is None and "group_col" in config_fields_set and config.group_col is not None:
+            group_col = config.group_col
+    if contract is not None:
+        if price_col is None:
+            price_col = contract.price_col
+        if timestamp_col is None:
+            timestamp_col = contract.timestamp_col
+            timestamp_is_explicit = True
+        if group_col is None and contract.symbol_col is not None:
+            group_col = contract.symbol_col
+
+    if price_col is None and config is not None:
+        price_col = config.price_col
+    if timestamp_col is None and config is not None:
+        timestamp_col = config.timestamp_col
+
+    resolved_price_col = price_col or "close"
+    if resolved_price_col not in data.columns:
+        raise DataValidationError(
+            f"Price column '{resolved_price_col}' not found in data columns: {data.columns}",
+        )
+
+    resolved_timestamp_col = resolve_timestamp_col(
+        data,
+        timestamp_col,
+        warn_on_missing_specified=timestamp_is_explicit,
+    )
+    if require_timestamp and resolved_timestamp_col is None:
+        raise DataValidationError(
+            "Timestamp column not found. Provide timestamp_col or ensure data has a datetime column.",
+        )
+
+    resolved_group_cols = resolve_group_cols(data, group_col)
+    return resolved_price_col, resolved_timestamp_col, resolved_group_cols

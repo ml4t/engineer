@@ -32,15 +32,15 @@ try:
     import mlfinpy  # noqa: F401
     from mlfinpy.labeling.labeling import (
         add_vertical_barrier,
-        get_events,
         get_bins,
+        get_events,
     )
     HAS_MLFINPY = True
 except ImportError:
     HAS_MLFINPY = False
 
-from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
-
+from ml4t.engineer.config import LabelingConfig
+from ml4t.engineer.labeling import triple_barrier_labels
 
 pytestmark = pytest.mark.skipif(
     not HAS_MLFINPY,
@@ -121,7 +121,7 @@ class TestTripleBarrierComparison:
             .alias("event_time")
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=10,
@@ -171,7 +171,7 @@ class TestTripleBarrierComparison:
         mlfinpy_labels = get_bins(mlfinpy_events, pandas_close)
 
         # ml4t approach
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.03,  # 1.5 * 2% = 3%
             lower_barrier=0.02,  # 1.0 * 2% = 2%
             max_holding_period=5,
@@ -214,7 +214,7 @@ class TestTripleBarrierComparison:
         mlfinpy_labels = get_bins(mlfinpy_events, pandas_close)
 
         # ml4t
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,
             lower_barrier=0.05,
             max_holding_period=3,
@@ -254,7 +254,7 @@ class TestReturnCalculations:
         mlfinpy_labels = get_bins(mlfinpy_events, pandas_close)
 
         # ml4t
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,
             lower_barrier=0.10,
             max_holding_period=20,
@@ -352,7 +352,7 @@ class TestEdgeCases:
         )
 
         # ml4t equivalent (use np.inf for lower barrier)
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=None,  # Disabled
             max_holding_period=20,

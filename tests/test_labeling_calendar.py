@@ -6,12 +6,12 @@ import numpy as np
 import polars as pl
 import pytest
 
+from ml4t.engineer.config import DataContractConfig, LabelingConfig
 from ml4t.engineer.labeling.calendar import (
     PandasMarketCalendar,
     SimpleTradingCalendar,
     calendar_aware_labels,
 )
-from ml4t.engineer.labeling.core import BarrierConfig
 
 # ============================================================================
 # Fixtures
@@ -223,7 +223,7 @@ class TestCalendarAwareLabels:
 
     def test_basic_functionality_auto_calendar(self, sample_daily_data):
         """Test basic labeling with auto calendar detection."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=5,
@@ -241,12 +241,24 @@ class TestCalendarAwareLabels:
         assert "label_price" in result.columns
         assert len(result) == len(sample_daily_data)
 
+    def test_non_labeling_config_input_raises_actionable_error(self, sample_daily_data):
+        """Passing non-LabelingConfig should fail with migration guidance."""
+        class LegacyBarrierConfig:
+            pass
+
+        with pytest.raises(TypeError, match="Legacy BarrierConfig inputs are no longer supported"):
+            calendar_aware_labels(
+                sample_daily_data,
+                config=LegacyBarrierConfig(),  # type: ignore[arg-type]
+                calendar="auto",
+            )
+
     def test_with_simple_calendar(self, sample_intraday_data):
         """Test with SimpleTradingCalendar."""
         cal = SimpleTradingCalendar(gap_threshold_minutes=480)  # 8 hours
         cal.fit(sample_intraday_data, timestamp_col="timestamp")
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=5,
@@ -265,7 +277,7 @@ class TestCalendarAwareLabels:
 
     def test_auto_calendar_detection(self, sample_intraday_data):
         """Test automatic calendar detection from data."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=5,
@@ -284,7 +296,7 @@ class TestCalendarAwareLabels:
 
     def test_string_calendar_name(self, sample_daily_data):
         """Test with string calendar name (NYSE)."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=5,
@@ -313,7 +325,7 @@ class TestCalendarAwareLabels:
         cal = SimpleTradingCalendar(gap_threshold_minutes=480)  # 8 hours
         cal.fit(sample_intraday_data, timestamp_col="timestamp")
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=20,  # Long enough to cross sessions
@@ -333,7 +345,7 @@ class TestCalendarAwareLabels:
 
     def test_with_side_parameter(self, sample_daily_data):
         """Test calendar-aware labels with position side."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=5,
@@ -352,6 +364,84 @@ class TestCalendarAwareLabels:
         labels = result["label"].drop_nulls()
         assert len(labels) > 0
 
+    def test_uses_config_column_contract_for_panel_data(self):
+        """Config-driven price/timestamp/group mapping should be honored."""
+        from datetime import datetime, timedelta
+
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+            price_col="px",
+            timestamp_col="ts",
+            group_col="ticker",
+        )
+
+        result = calendar_aware_labels(data, config=config, calendar="auto")
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == pytest.approx(101.0)
+        assert b0["label_price"] == pytest.approx(999.0)
+
+    def test_uses_shared_contract_column_contract_for_panel_data(self):
+        """Shared DataContractConfig mapping should be honored."""
+        from datetime import datetime, timedelta
+
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+        )
+
+        result = calendar_aware_labels(data, config=config, calendar="auto", contract=contract)
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == pytest.approx(101.0)
+        assert b0["label_price"] == pytest.approx(999.0)
+
+    def test_uses_nested_data_contract_from_config_for_panel_data(self):
+        """LabelingConfig.data_contract should drive calendar-aware mapping."""
+        from datetime import datetime, timedelta
+
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+            data_contract=contract,
+        )
+
+        result = calendar_aware_labels(data, config=config, calendar="auto")
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == pytest.approx(101.0)
+        assert b0["label_price"] == pytest.approx(999.0)
+
 
 # ============================================================================
 # Integration Tests
@@ -363,7 +453,7 @@ class TestCalendarIntegration:
 
     def test_multiple_calendar_types(self, sample_daily_data):
         """Test that different calendar types produce valid results."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=5,
@@ -404,7 +494,7 @@ class TestCalendarIntegration:
         cal = SimpleTradingCalendar(gap_threshold_minutes=480)
         cal.fit(data_with_nan, timestamp_col="timestamp")
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=5,

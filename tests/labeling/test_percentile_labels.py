@@ -4,6 +4,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from ml4t.engineer.config import DataContractConfig, LabelingConfig
 from ml4t.engineer.labeling.percentile_labels import (
     compute_label_statistics,
     rolling_percentile_binary_labels,
@@ -139,6 +140,99 @@ class TestRollingPercentileBinaryLabels:
         positive_rate = labels.mean()
         assert 0 < positive_rate < 0.30
 
+    def test_uses_config_column_contract_for_panel_data(self) -> None:
+        """Config-driven price/timestamp/group mapping should be honored."""
+        from datetime import datetime, timedelta
+
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig(
+            method="percentile",
+            price_col="px",
+            timestamp_col="ts",
+            group_col="ticker",
+        )
+
+        result = rolling_percentile_binary_labels(
+            data,
+            horizon=1,
+            percentile=50,
+            direction="long",
+            lookback_window=1,
+            min_samples=1,
+            config=config,
+        )
+
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["forward_return_1"] == pytest.approx(0.01)
+        assert b0["forward_return_1"] == pytest.approx(-0.001)
+
+    def test_uses_shared_contract_column_mapping_for_panel_data(self) -> None:
+        """DataContract-driven price/timestamp/group mapping should be honored."""
+        from datetime import datetime, timedelta
+
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+
+        result = rolling_percentile_binary_labels(
+            data,
+            horizon=1,
+            percentile=50,
+            direction="long",
+            lookback_window=1,
+            min_samples=1,
+            contract=contract,
+        )
+
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["forward_return_1"] == pytest.approx(0.01)
+        assert b0["forward_return_1"] == pytest.approx(-0.001)
+
+    def test_uses_nested_data_contract_from_config_for_panel_data(self) -> None:
+        """LabelingConfig.data_contract should drive percentile mapping."""
+        from datetime import datetime, timedelta
+
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+        config = LabelingConfig(method="percentile", data_contract=contract)
+
+        result = rolling_percentile_binary_labels(
+            data,
+            horizon=1,
+            percentile=50,
+            direction="long",
+            lookback_window=1,
+            min_samples=1,
+            config=config,
+        )
+
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["forward_return_1"] == pytest.approx(0.01)
+        assert b0["forward_return_1"] == pytest.approx(-0.001)
+
 
 class TestRollingPercentileMultiLabels:
     """Tests for rolling_percentile_multi_labels function."""
@@ -184,6 +278,31 @@ class TestRollingPercentileMultiLabels:
         # Should have 4 label columns (2 horizons × 2 percentiles)
         label_cols = [c for c in result.columns if c.startswith("label_")]
         assert len(label_cols) == 4
+
+    def test_uses_shared_contract_column_mapping(self) -> None:
+        """Multi-label API should pass DataContractConfig through to binary calls."""
+        from datetime import datetime, timedelta
+
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+
+        result = rolling_percentile_multi_labels(
+            data,
+            horizons=[1],
+            percentiles=[50],
+            direction="long",
+            lookback_window=1,
+            contract=contract,
+        )
+
+        assert "forward_return_1" in result.columns
 
 
 class TestComputeLabelStatistics:

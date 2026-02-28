@@ -7,13 +7,18 @@ Provides session-aware barrier labeling that respects trading calendar gaps
 This prevents data leakage when labels would otherwise span non-trading periods.
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import polars as pl
 
-from ml4t.engineer.labeling.barriers import BarrierConfig
 from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
+from ml4t.engineer.labeling.utils import resolve_labeling_columns
+
+if TYPE_CHECKING:
+    from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 
 class TradingCalendar(Protocol):
@@ -51,7 +56,7 @@ class SimpleTradingCalendar:
         self.gap_threshold = timedelta(minutes=gap_threshold_minutes)
         self._data: pl.DataFrame | None = None
 
-    def fit(self, data: pl.DataFrame, timestamp_col: str = "timestamp") -> "SimpleTradingCalendar":
+    def fit(self, data: pl.DataFrame, timestamp_col: str = "timestamp") -> SimpleTradingCalendar:
         """Learn session breaks from data gaps.
 
         Parameters
@@ -152,10 +157,12 @@ class PandasMarketCalendar:
 
 def calendar_aware_labels(
     data: pl.DataFrame,
-    config: BarrierConfig,
+    config: LabelingConfig,
     calendar: str | TradingCalendar,
-    price_col: str = "close",
-    timestamp_col: str = "timestamp",
+    price_col: str | None = None,
+    timestamp_col: str | None = None,
+    group_col: str | list[str] | None = None,
+    contract: DataContractConfig | None = None,
 ) -> pl.DataFrame:
     """Apply triple-barrier labeling with session awareness.
 
@@ -166,17 +173,21 @@ def calendar_aware_labels(
     ----------
     data : pl.DataFrame
         Input data with OHLCV and timestamp
-    config : BarrierConfig
+    config : LabelingConfig
         Barrier configuration
     calendar : str or TradingCalendar
         Either:
         - Calendar name string (uses pandas_market_calendars)
         - TradingCalendar protocol implementation
         - "auto" to detect gaps automatically
-    price_col : str, default "close"
+    price_col : str | None, default None
         Price column name
-    timestamp_col : str, default "timestamp"
+    timestamp_col : str | None, default None
         Timestamp column name
+    group_col : str | list[str] | None, default None
+        Grouping column(s) for panel-aware session labeling.
+    contract : DataContractConfig | None, default None
+        Optional shared dataframe contract. Used after config and before defaults.
 
     Returns
     -------
@@ -188,21 +199,21 @@ def calendar_aware_labels(
     >>> # CME futures with pandas_market_calendars
     >>> labeled = calendar_aware_labels(
     ...     data,
-    ...     config=BarrierConfig(upper_barrier=0.02, lower_barrier=0.02),
+    ...     config=LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.02),
     ...     calendar="CME_Equity"  # Product-specific calendar
     ... )
 
     >>> # NYSE equities
     >>> labeled = calendar_aware_labels(
     ...     data,
-    ...     config=BarrierConfig(upper_barrier=0.01, lower_barrier=0.01),
+    ...     config=LabelingConfig.triple_barrier(upper_barrier=0.01, lower_barrier=0.01),
     ...     calendar="NYSE"
     ... )
 
     >>> # Auto-detect gaps
     >>> labeled = calendar_aware_labels(
     ...     data,
-    ...     config=BarrierConfig(upper_barrier=0.02, lower_barrier=0.02),
+    ...     config=LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.02),
     ...     calendar="auto"
     ... )
 
@@ -221,11 +232,32 @@ def calendar_aware_labels(
     - This may result in more timeout labels near session closes
     - For 24/7 markets, use standard triple_barrier_labels instead
     """
+    from ml4t.engineer.config import LabelingConfig as _LabelingConfig
+
+    if not isinstance(config, _LabelingConfig):
+        raise TypeError(
+            "calendar_aware_labels expects LabelingConfig. "
+            "Legacy BarrierConfig inputs are no longer supported; "
+            "use LabelingConfig.triple_barrier(...)."
+        )
+
+    resolved_price_col, resolved_ts_col, resolved_group_cols = resolve_labeling_columns(
+        data=data,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        group_col=group_col,
+        config=config,
+        contract=contract,
+        require_timestamp=True,
+    )
+    if config.method != "triple_barrier":
+        raise ValueError("calendar_aware_labels requires LabelingConfig.method='triple_barrier'.")
+
     # Create calendar instance if string provided
     if isinstance(calendar, str):
         if calendar == "auto":
             cal = SimpleTradingCalendar()
-            cal.fit(data, timestamp_col)
+            cal.fit(data, resolved_ts_col)
         else:
             # Always use pandas_market_calendars for string calendars
             cal = PandasMarketCalendar(calendar)
@@ -240,44 +272,33 @@ def calendar_aware_labels(
     else:
         gap_threshold_minutes = 30
 
-    data_with_session = (
-        data.with_columns([pl.col(timestamp_col).diff().alias("_time_diff")])
-        .with_columns(
-            [
-                # New session when gap > threshold
-                (pl.col("_time_diff") > pl.duration(minutes=int(gap_threshold_minutes)))
-                .fill_null(False)
-                .alias("_new_session")
-            ]
-        )
-        .with_columns([pl.col("_new_session").cum_sum().alias("session_id")])
+    time_diff_expr = pl.col(resolved_ts_col).diff()
+    if resolved_group_cols:
+        time_diff_expr = time_diff_expr.over(resolved_group_cols)
+
+    data_with_session = data.with_columns(time_diff_expr.alias("_time_diff")).with_columns(
+        (pl.col("_time_diff") > pl.duration(minutes=int(gap_threshold_minutes)))
+        .fill_null(False)
+        .alias("_new_session")
     )
 
-    # Apply labeling to each session separately
-    labeled_sessions = []
+    session_expr = pl.col("_new_session").cum_sum()
+    if resolved_group_cols:
+        session_expr = session_expr.over(resolved_group_cols)
 
-    for session_id in data_with_session["session_id"].unique().sort():
-        session_data = data_with_session.filter(pl.col("session_id") == session_id)
+    data_with_session = data_with_session.with_columns(session_expr.alias("session_id"))
 
-        # Apply barrier labeling to this session only
-        try:
-            session_labeled = triple_barrier_labels(
-                data=session_data.drop(["_time_diff", "_new_session", "session_id"]),
-                config=config,
-                price_col=price_col,
-                timestamp_col=timestamp_col,
-            )
-            labeled_sessions.append(session_labeled)
-        except Exception as e:
-            # If labeling fails for a session (e.g., too short), skip it
-            # or keep unlabeled
-            print(f"Warning: Session {session_id} labeling failed: {e}")
-            labeled_sessions.append(session_data.drop(["_time_diff", "_new_session", "session_id"]))
-
-    # Concatenate all sessions
-    result = pl.concat(labeled_sessions)
-
-    return result
+    session_group_cols = (
+        [*resolved_group_cols, "session_id"] if resolved_group_cols else ["session_id"]
+    )
+    labeled = triple_barrier_labels(
+        data=data_with_session.drop(["_time_diff", "_new_session"]),
+        config=config,
+        price_col=resolved_price_col,
+        timestamp_col=resolved_ts_col,
+        group_col=session_group_cols,
+    )
+    return labeled.drop("session_id")
 
 
 __all__ = [

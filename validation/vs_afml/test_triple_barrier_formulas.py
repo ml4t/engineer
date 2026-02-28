@@ -22,11 +22,10 @@ Reference:
 
 from __future__ import annotations
 
-import numpy as np
 import polars as pl
-import pytest
 
-from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
+from ml4t.engineer.config import LabelingConfig
+from ml4t.engineer.labeling import triple_barrier_labels
 
 
 class TestUpperBarrierHit:
@@ -43,7 +42,7 @@ class TestUpperBarrierHit:
         prices = [100.0, 101.0, 103.0, 104.0, 105.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit target
             lower_barrier=0.02,  # 2% stop loss
             max_holding_period=10,
@@ -64,7 +63,7 @@ class TestUpperBarrierHit:
         prices = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,  # 5% profit target
             lower_barrier=0.10,  # 10% stop loss (won't hit)
             max_holding_period=20,
@@ -87,7 +86,7 @@ class TestUpperBarrierHit:
         prices = [100.0, 99.0, 97.0, 96.0, 95.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit (at 98 for short)
             lower_barrier=0.02,  # 2% stop loss (at 102 for short)
             max_holding_period=10,
@@ -114,7 +113,7 @@ class TestLowerBarrierHit:
         prices = [100.0, 99.0, 97.0, 96.0, 95.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit target
             lower_barrier=0.02,  # 2% stop loss
             max_holding_period=10,
@@ -137,7 +136,7 @@ class TestLowerBarrierHit:
         prices = [100.0, 101.0, 103.0, 104.0, 105.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit (at 98 for short)
             lower_barrier=0.02,  # 2% stop loss (at 102 for short)
             max_holding_period=10,
@@ -165,7 +164,7 @@ class TestTimeBarrierHit:
         prices = [100.0, 100.5, 100.3, 100.7, 100.8]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% (won't hit)
             lower_barrier=0.02,  # 2% (won't hit)
             max_holding_period=4,  # Time barrier at bar 4
@@ -187,7 +186,7 @@ class TestTimeBarrierHit:
         prices = [100.0, 99.5, 99.7, 99.3, 99.2]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=4,
@@ -205,7 +204,7 @@ class TestTimeBarrierHit:
         prices = [100.0, 100.0, 100.0, 100.0, 100.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=4,
@@ -228,7 +227,7 @@ class TestReturnCalculation:
         prices = [100.0, 101.0, 103.0, 104.0, 105.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # Hit at 102, close is 103
             lower_barrier=0.02,
             max_holding_period=10,
@@ -249,7 +248,7 @@ class TestReturnCalculation:
         prices = [100.0, 99.0, 97.0, 96.0, 95.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # Profit target at 98
             lower_barrier=0.02,
             max_holding_period=10,
@@ -279,7 +278,7 @@ class TestBarrierPriority:
 
         df = pl.DataFrame({"close": close, "high": high, "low": low})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=10,
@@ -302,7 +301,7 @@ class TestBarrierPriority:
         close = [100.0, 99.0, 97.0, 105.0]
         df = pl.DataFrame({"close": close, "high": close, "low": close})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.03,  # 103
             lower_barrier=0.02,  # 98
             max_holding_period=10,
@@ -325,7 +324,7 @@ class TestMultipleEvents:
         prices = [100.0, 103.0, 100.0, 97.0, 100.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=3,
@@ -347,7 +346,7 @@ class TestMultipleEvents:
         prices = [100.0] * 20
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=5,
@@ -371,7 +370,7 @@ class TestEdgeCases:
         prices = [100.0, 101.0, 102.0, 101.0]  # Exactly 102
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=10,
@@ -390,7 +389,7 @@ class TestEdgeCases:
         prices = [100.0, 100.0, 100.0, 102.0, 105.0]  # Hits on bar 3
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=3,  # Allows checking bars 1, 2, 3
@@ -406,7 +405,7 @@ class TestEdgeCases:
         prices = [100.0, 101.0, 102.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,  # 5% (won't hit with this data)
             lower_barrier=0.05,
             max_holding_period=10,  # More than available data
@@ -425,7 +424,7 @@ class TestEdgeCases:
         prices = [100.0, 99.0, 97.0, 100.0]  # Hits lower first at 97
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,  # 5%
             lower_barrier=0.02,  # 2%
             max_holding_period=10,
@@ -443,7 +442,7 @@ class TestEdgeCases:
         prices = [100.0, 110.0, 120.0, 130.0, 140.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.50,  # 50%
             lower_barrier=0.50,  # 50%
             max_holding_period=3,  # Time barrier before price barriers
@@ -465,7 +464,7 @@ class TestSymmetricSide:
         prices = [100.0, 103.0, 105.0]
         df = pl.DataFrame({"close": prices, "high": prices, "low": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=10,
@@ -493,7 +492,7 @@ class TestOHLCBarrierChecking:
 
         df = pl.DataFrame({"close": close, "high": high, "low": low})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=10,
@@ -513,7 +512,7 @@ class TestOHLCBarrierChecking:
 
         df = pl.DataFrame({"close": close, "high": high, "low": low})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.02,
             max_holding_period=10,

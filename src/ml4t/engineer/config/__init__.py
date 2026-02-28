@@ -44,6 +44,7 @@ from ml4t.engineer.config.base import (
     ComputationalConfig,
     StatisticalTestConfig,
 )
+from ml4t.engineer.config.data_contract import DataContractConfig
 from ml4t.engineer.config.experiment import (
     ExperimentConfig,
     load_experiment_config,
@@ -110,6 +111,7 @@ __all__ = [
     "ComputationalConfig",  # Backward compatibility
     # Labeling and preprocessing configs
     "LabelingConfig",
+    "DataContractConfig",
     "PreprocessingConfig",
     # Experiment config loading
     "ExperimentConfig",
@@ -150,3 +152,16 @@ __all__ = [
     "ThresholdAnalysisConfig",
     "MLDiagnosticsConfig",
 ]
+
+_REMOVED_EXPORTS = {
+    "BarrierLabelingConfig": (
+        "ml4t.engineer.config.BarrierLabelingConfig has been removed. "
+        "Use ml4t.engineer.config.LabelingConfig instead."
+    )
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _REMOVED_EXPORTS:
+        raise ImportError(_REMOVED_EXPORTS[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

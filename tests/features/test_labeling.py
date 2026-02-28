@@ -4,8 +4,8 @@ import numpy as np
 import polars as pl
 import pytest
 
+from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.labeling import (
-    BarrierConfig,
     triple_barrier_labels,
 )
 
@@ -56,7 +56,7 @@ def trending_price_data():
 
 def test_triple_barrier_basic_functionality(sample_price_data):
     """Test triple barrier basic calculation."""
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
         max_holding_period=10,
@@ -77,7 +77,7 @@ def test_triple_barrier_basic_functionality(sample_price_data):
 
 def test_triple_barrier_label_values(sample_price_data):
     """Test that labels are in expected range."""
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
         max_holding_period=10,
@@ -93,7 +93,7 @@ def test_triple_barrier_label_values(sample_price_data):
 
 def test_triple_barrier_with_timestamp(sample_price_data):
     """Test triple barrier with timestamp column."""
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.03,
         lower_barrier=0.015,
         max_holding_period=15,
@@ -113,7 +113,7 @@ def test_triple_barrier_with_timestamp(sample_price_data):
 
 def test_triple_barrier_long_position(sample_price_data):
     """Test triple barrier with long position side."""
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
         max_holding_period=10,
@@ -132,7 +132,7 @@ def test_triple_barrier_long_position(sample_price_data):
 
 def test_triple_barrier_short_position(sample_price_data):
     """Test triple barrier with short position side."""
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
         max_holding_period=10,
@@ -162,7 +162,7 @@ def test_insufficient_data_triple_barrier():
     )
 
     # Should not raise, but results may be limited
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
         max_holding_period=10,
@@ -184,7 +184,7 @@ def test_constant_prices_triple_barrier():
         }
     )
 
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
         max_holding_period=10,
@@ -213,7 +213,7 @@ def test_nan_handling_triple_barrier(sample_price_data):
     )
 
     # Should not crash
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
         max_holding_period=10,
@@ -253,7 +253,7 @@ def test_registry_has_labeling_features():
 
 def test_all_features_execute(sample_price_data):
     """Test that triple_barrier can execute without errors."""
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.02,
         lower_barrier=0.01,
     )

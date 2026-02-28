@@ -10,6 +10,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from ml4t.engineer.config import DataContractConfig, LabelingConfig
 from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling.atr_barriers import atr_triple_barrier_labels
 
@@ -261,6 +262,65 @@ class TestIntegration:
 
         assert len(result) == len(sample_ohlc)
         assert "label" in result.columns
+
+    def test_uses_config_column_contract(self):
+        """Column mapping should come from LabelingConfig when omitted in call."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "open": [100.0, 1000.0, 100.0, 1000.0],
+                "high": [100.1, 1000.1, 101.1, 999.1],
+                "low": [99.9, 999.9, 100.9, 998.9],
+                "close": [100.0, 1000.0, 101.0, 999.0],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig.atr_barrier(
+            atr_tp_multiple=50.0,
+            atr_sl_multiple=50.0,
+            atr_period=1,
+            max_holding_period=1,
+            price_col="px",
+            timestamp_col="ts",
+            group_col="ticker",
+        )
+
+        result = atr_triple_barrier_labels(data, config=config)
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == pytest.approx(101.0)
+        assert b0["label_price"] == pytest.approx(999.0)
+
+    def test_uses_shared_contract_column_mapping(self):
+        """Column mapping should come from DataContractConfig when config is omitted."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "open": [100.0, 1000.0, 100.0, 1000.0],
+                "high": [100.1, 1000.1, 101.1, 999.1],
+                "low": [99.9, 999.9, 100.9, 998.9],
+                "close": [100.0, 1000.0, 101.0, 999.0],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+
+        result = atr_triple_barrier_labels(
+            data,
+            atr_tp_multiple=50.0,
+            atr_sl_multiple=50.0,
+            atr_period=1,
+            max_holding_bars=1,
+            contract=contract,
+        )
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == pytest.approx(101.0)
+        assert b0["label_price"] == pytest.approx(999.0)
 
 
 class TestDocumentationExamples:

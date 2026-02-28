@@ -6,7 +6,6 @@ Provides generalized labeling functionality including triple-barrier method.
 
 from ml4t.engineer.core.registry import FeatureMetadata
 from ml4t.engineer.labeling.atr_barriers import atr_triple_barrier_labels
-from ml4t.engineer.labeling.barriers import BarrierConfig
 from ml4t.engineer.labeling.calendar import (
     PandasMarketCalendar,
     SimpleTradingCalendar,
@@ -37,7 +36,6 @@ from ml4t.engineer.labeling.uniqueness import (
 
 __all__ = [
     "ALL_LABELING_FEATURES",
-    "BarrierConfig",
     "PandasMarketCalendar",
     "SimpleTradingCalendar",
     "TradingCalendar",
@@ -95,6 +93,13 @@ ALL_LABELING_FEATURES = [
     trend_scanning_feature,
 ]
 
+_REMOVED_EXPORTS = {
+    "BarrierConfig": (
+        "ml4t.engineer.labeling.BarrierConfig has been removed. "
+        "Use ml4t.engineer.config.LabelingConfig.triple_barrier(...) instead."
+    )
+}
+
 
 def register_labeling_features(registry: object = None) -> int:
     """
@@ -124,3 +129,9 @@ def register_labeling_features(registry: object = None) -> int:
             registry.register(feature)  # type: ignore[attr-defined]
 
     return len(ALL_LABELING_FEATURES)
+
+
+def __getattr__(name: str) -> object:
+    if name in _REMOVED_EXPORTS:
+        raise ImportError(_REMOVED_EXPORTS[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

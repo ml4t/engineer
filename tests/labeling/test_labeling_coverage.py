@@ -1,12 +1,11 @@
 """
-Additional tests for labeling/core.py to boost coverage.
+Additional tests for labeling APIs to boost coverage.
 
 Focuses on:
 - Edge cases in validation
 - Short position handling
 - Dynamic column configurations
 - Error handling branches
-- apply_triple_barrier function
 - Trend scanning edge cases
 """
 
@@ -17,17 +16,18 @@ import polars as pl
 import pytest
 from numpy.testing import assert_array_almost_equal
 
+from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.core.exceptions import DataValidationError
-from ml4t.engineer.labeling.barriers import BarrierConfig
-from ml4t.engineer.labeling.core import (
-    apply_triple_barrier,
+from ml4t.engineer.labeling.horizon_labels import (
+    fixed_time_horizon_labels,
+    trend_scanning_labels,
+)
+from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
+from ml4t.engineer.labeling.uniqueness import (
+    _build_concurrency,
     calculate_label_uniqueness,
     calculate_sample_weights,
-    compute_barrier_touches,
-    fixed_time_horizon_labels,
     sequential_bootstrap,
-    trend_scanning_labels,
-    triple_barrier_labels,
 )
 
 
@@ -36,13 +36,8 @@ class TestBuildConcurrency:
 
     def test_n_bars_none_uses_max_label_index(self):
         """Test that n_bars=None uses max(label_indices) + 1."""
-        # Note: build_concurrency expects int64 arrays via calculate_label_uniqueness
-        # but _build_concurrency_nb is called internally
         event_indices = np.array([0, 5, 10], dtype=np.int64)
         label_indices = np.array([3, 8, 15], dtype=np.int64)
-
-        # Use the internal function directly which expects int64
-        from ml4t.engineer.labeling.core import _build_concurrency
 
         concurrency = _build_concurrency(16, event_indices, label_indices)
 
@@ -54,8 +49,6 @@ class TestBuildConcurrency:
         event_indices = np.array([0, 2], dtype=np.int64)
         label_indices = np.array([5, 7], dtype=np.int64)
 
-        from ml4t.engineer.labeling.core import _build_concurrency
-
         concurrency = _build_concurrency(20, event_indices, label_indices)
 
         assert len(concurrency) == 20
@@ -64,8 +57,6 @@ class TestBuildConcurrency:
         """Test handling of out-of-bounds indices."""
         event_indices = np.array([0, 100], dtype=np.int64)  # 100 is out of bounds for n_bars=50
         label_indices = np.array([5, 105], dtype=np.int64)
-
-        from ml4t.engineer.labeling.core import _build_concurrency
 
         # Should handle gracefully without crashing
         concurrency = _build_concurrency(50, event_indices, label_indices)
@@ -211,149 +202,6 @@ class TestSequentialBootstrap:
         assert len(order) == 2
 
 
-class TestApplyTripleBarrier:
-    """Test the apply_triple_barrier function."""
-
-    def test_basic_long_position(self):
-        """Test basic long position barrier application."""
-        prices = np.array([100, 101, 102, 103, 104, 105], dtype=np.float64)
-
-        result = apply_triple_barrier(
-            prices,
-            event_idx=0,
-            upper_barrier=0.03,  # 3% TP at 103
-            lower_barrier=0.01,  # 1% SL at 99
-            max_period=10,
-            side=0,  # Symmetric
-        )
-
-        # Should hit upper barrier at price 103 (index 3)
-        assert result["label"] == 1
-        assert result["barrier_hit"] == "upper"
-        assert result["label_idx"] == 3
-
-    def test_basic_short_position(self):
-        """Test basic short position barrier application."""
-        prices = np.array([100, 99, 98, 97, 96, 95], dtype=np.float64)
-
-        result = apply_triple_barrier(
-            prices,
-            event_idx=0,
-            upper_barrier=0.03,  # 3% TP at 97 for short
-            lower_barrier=0.01,  # 1% SL at 101 for short
-            max_period=10,
-            side=-1,  # Short
-        )
-
-        # Should hit upper barrier (profit) when price drops to 97 (index 3)
-        assert result["label"] == 1
-        assert result["barrier_hit"] == "upper"
-
-    def test_stop_loss_hit(self):
-        """Test stop loss barrier hit."""
-        prices = np.array([100, 99, 98, 97, 96], dtype=np.float64)
-
-        result = apply_triple_barrier(
-            prices,
-            event_idx=0,
-            upper_barrier=0.10,  # 10% TP (won't hit)
-            lower_barrier=0.02,  # 2% SL at 98
-            max_period=10,
-            side=1,  # Long
-        )
-
-        # Should hit lower barrier
-        assert result["label"] == -1
-        assert result["barrier_hit"] == "lower"
-
-    def test_time_barrier_hit(self):
-        """Test time barrier hit when no price barriers are touched."""
-        prices = np.array([100, 100.5, 100.2, 100.3, 100.1], dtype=np.float64)
-
-        result = apply_triple_barrier(
-            prices,
-            event_idx=0,
-            upper_barrier=0.10,  # 10% TP (won't hit)
-            lower_barrier=0.10,  # 10% SL (won't hit)
-            max_period=3,
-        )
-
-        # Should timeout at max_period
-        assert result["label"] == 0
-        assert result["barrier_hit"] == "time"
-        # label_idx is event_idx + max_period - 1 (last bar within period)
-        assert result["label_idx"] == 2  # 0 + 3 - 1 = 2
-
-
-class TestComputeBarrierTouches:
-    """Test compute_barrier_touches function."""
-
-    def test_upper_touch_first(self):
-        """Test when upper barrier is touched first."""
-        prices = np.array([100, 101, 103, 99, 105], dtype=np.float64)
-
-        result = compute_barrier_touches(prices, upper_barrier=102.5, lower_barrier=99.5)
-
-        assert result["first_upper"] == 2  # Index where price >= 103
-        assert result["first_lower"] == 3  # Index where price <= 99
-        assert result["first_touch"] == 2  # Upper hit first
-        assert result["barrier_hit"] == "upper"
-
-    def test_lower_touch_first(self):
-        """Test when lower barrier is touched first."""
-        prices = np.array([100, 99, 98, 102, 105], dtype=np.float64)
-
-        result = compute_barrier_touches(prices, upper_barrier=102.5, lower_barrier=99.5)
-
-        assert result["first_lower"] == 1  # Index where price <= 99
-        assert result["first_touch"] == 1  # Lower hit first
-        assert result["barrier_hit"] == "lower"
-
-    def test_no_barrier_touch(self):
-        """Test when no barrier is touched."""
-        prices = np.array([100, 100.5, 100.2, 100.3], dtype=np.float64)
-
-        result = compute_barrier_touches(prices, upper_barrier=105, lower_barrier=95)
-
-        assert result["first_upper"] is None
-        assert result["first_lower"] is None
-        assert result["first_touch"] is None
-        assert result["barrier_hit"] is None
-
-    def test_only_upper_touched(self):
-        """Test when only upper barrier is touched."""
-        prices = np.array([100, 101, 103, 102], dtype=np.float64)
-
-        result = compute_barrier_touches(prices, upper_barrier=102.5, lower_barrier=95)
-
-        assert result["first_upper"] == 2
-        assert result["first_lower"] is None
-        assert result["first_touch"] == 2
-        assert result["barrier_hit"] == "upper"
-
-    def test_only_lower_touched(self):
-        """Test when only lower barrier is touched."""
-        prices = np.array([100, 99, 98, 99.5], dtype=np.float64)
-
-        result = compute_barrier_touches(prices, upper_barrier=105, lower_barrier=99.5)
-
-        assert result["first_upper"] is None
-        assert result["first_lower"] == 1
-        assert result["first_touch"] == 1
-        assert result["barrier_hit"] == "lower"
-
-    def test_simultaneous_touch(self):
-        """Test when both barriers are touched at same index."""
-        # This is edge case - price jumps through both barriers at same time
-        prices = np.array([100, 90], dtype=np.float64)  # Jumps down through lower
-
-        result = compute_barrier_touches(prices, upper_barrier=105, lower_barrier=95)
-
-        # Lower should be detected
-        assert result["first_touch"] == 1
-        assert result["barrier_hit"] == "lower"
-
-
 class TestTripleBarrierDynamicColumns:
     """Test triple_barrier_labels with dynamic column configurations."""
 
@@ -379,7 +227,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_upper_barrier_missing_column(self, sample_data):
         """Test error when dynamic upper barrier column is missing."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier="nonexistent_column",
             lower_barrier=0.01,
             max_holding_period=10,
@@ -390,7 +238,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_lower_barrier_missing_column(self, sample_data):
         """Test error when dynamic lower barrier column is missing."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier="nonexistent_column",
             max_holding_period=10,
@@ -401,7 +249,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_max_holding_period_missing_column(self, sample_data):
         """Test error when dynamic max_holding_period column is missing."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period="nonexistent_column",
@@ -412,7 +260,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_side_missing_column(self, sample_data):
         """Test error when dynamic side column is missing."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -424,7 +272,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_trailing_stop_missing_column(self, sample_data):
         """Test error when dynamic trailing_stop column is missing."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -436,7 +284,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_side_column(self, sample_data):
         """Test with dynamic side from column."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -450,7 +298,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_max_holding_period_column(self, sample_data):
         """Test with dynamic max_holding_period from column."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period="dynamic_period",
@@ -462,7 +310,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_dynamic_trailing_stop_column(self, sample_data):
         """Test with dynamic trailing_stop from column."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -475,7 +323,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_trailing_stop_true_uses_lower_barrier(self, sample_data):
         """Test that trailing_stop=True uses lower_barrier percentage."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,
             lower_barrier=0.02,
             max_holding_period=20,
@@ -488,7 +336,7 @@ class TestTripleBarrierDynamicColumns:
 
     def test_trailing_stop_true_no_lower_barrier(self, sample_data):
         """Test that trailing_stop=True with no lower_barrier uses default."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,
             lower_barrier=None,
             max_holding_period=20,
@@ -511,7 +359,7 @@ class TestShortPositionLabeling:
 
         df = pl.DataFrame({"timestamp": timestamps, "close": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit target
             lower_barrier=0.01,  # 1% stop loss
             max_holding_period=15,
@@ -534,7 +382,7 @@ class TestShortPositionLabeling:
 
         df = pl.DataFrame({"timestamp": timestamps, "close": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit target
             lower_barrier=0.01,  # 1% stop loss
             max_holding_period=15,
@@ -557,7 +405,7 @@ class TestShortPositionLabeling:
 
         df = pl.DataFrame({"timestamp": timestamps, "close": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,  # 10% profit target (won't hit)
             lower_barrier=0.05,  # 5% stop loss
             max_holding_period=25,
@@ -723,7 +571,7 @@ class TestEventBasedLabeling:
             }
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -753,7 +601,7 @@ class TestEventBasedLabeling:
             }
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -770,19 +618,17 @@ class TestNumericalEdgeCases:
 
     def test_zero_price_return_calculation(self):
         """Test that zero entry price is handled."""
-        # Edge case: if entry price is somehow 0
-        prices = np.array([0.0, 1.0, 2.0], dtype=np.float64)
-
-        result = apply_triple_barrier(
-            prices,
-            event_idx=0,
+        timestamps = [datetime(2024, 1, 1) + timedelta(minutes=i) for i in range(5)]
+        prices = [0.0, 1.0, 2.0, 1.5, 1.25]
+        df = pl.DataFrame({"timestamp": timestamps, "close": prices})
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.1,
             lower_barrier=0.1,
-            max_period=5,
+            max_holding_period=3,
         )
 
-        # Should handle gracefully (return 0 or timeout)
-        assert result is not None
+        result = triple_barrier_labels(df, config, price_col="close")
+        assert "label" in result.columns
 
     def test_very_small_barriers(self):
         """Test with very small barrier values."""
@@ -791,7 +637,7 @@ class TestNumericalEdgeCases:
 
         df = pl.DataFrame({"timestamp": timestamps, "close": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.0001,  # 0.01%
             lower_barrier=0.0001,
             max_holding_period=15,
@@ -808,7 +654,7 @@ class TestNumericalEdgeCases:
 
         df = pl.DataFrame({"timestamp": timestamps, "close": prices})
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=10.0,  # 1000%
             lower_barrier=10.0,
             max_holding_period=10,

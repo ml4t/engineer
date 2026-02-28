@@ -13,75 +13,33 @@ References
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import polars as pl
 
-from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling.utils import (
     get_future_price_at_time,
     is_duration_string,
     parse_duration,
-    resolve_timestamp_col,
+    resolve_labeling_columns,
 )
 
-# Common grouping column names for different asset classes
-_DEFAULT_GROUP_COLS = ["symbol", "product", "ticker"]
-
-
-def _resolve_group_cols(
-    data: pl.DataFrame,
-    group_col: str | list[str] | None,
-) -> list[str]:
-    """Resolve grouping columns for label computation.
-
-    Auto-detects grouping columns if not explicitly specified, handling:
-    - Equities: 'symbol' column
-    - Futures: 'product' column, plus 'position' for contract months
-    - Explicit specification via group_col parameter
-
-    Args:
-        data: Input DataFrame
-        group_col: User-specified grouping column(s), or None for auto-detection
-
-    Returns:
-        List of column names to group by (empty list means no grouping)
-    """
-    # Explicit specification
-    if group_col is not None:
-        if isinstance(group_col, str):
-            return [group_col] if group_col in data.columns else []
-        elif isinstance(group_col, list):
-            # Return only columns that exist
-            return [c for c in group_col if c in data.columns]
-
-    # Auto-detection: Find first matching default column
-    detected_cols = []
-    for col in _DEFAULT_GROUP_COLS:
-        if col in data.columns:
-            detected_cols.append(col)
-            break  # Use first match only
-
-    # Check for position column (futures contract months)
-    # If product + position exist, group by both to handle continuous futures correctly
-    if "position" in data.columns:
-        # Add position to grouping if not already covered
-        if detected_cols and detected_cols[0] in ["product", "symbol"]:
-            detected_cols.append("position")
-        elif not detected_cols:
-            # If only position exists, use it alone
-            detected_cols.append("position")
-
-    return detected_cols
+if TYPE_CHECKING:
+    from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 
 def fixed_time_horizon_labels(
     data: pl.DataFrame,
     horizon: int | str = 1,
     method: str = "returns",
-    price_col: str = "close",
+    price_col: str | None = None,
     group_col: str | list[str] | None = None,
     timestamp_col: str | None = None,
     tolerance: str | None = None,
+    *,
+    config: LabelingConfig | None = None,
+    contract: DataContractConfig | None = None,
 ) -> pl.DataFrame:
     """Generate forward-looking labels based on fixed time horizon.
 
@@ -102,7 +60,7 @@ def fixed_time_horizon_labels(
         - "returns": (price[t+h] - price[t]) / price[t]
         - "log_returns": log(price[t+h] / price[t])
         - "binary": 1 if price[t+h] > price[t] else -1
-    price_col : str, default "close"
+    price_col : str | None, default None
         Name of the price column to use
     group_col : str | list[str] | None, default None
         Column(s) to group by for per-asset labels. If None, auto-detects from
@@ -116,6 +74,11 @@ def fixed_time_horizon_labels(
         Maximum time gap allowed for time-based horizons (e.g., '2m').
         Only used when horizon is a duration string. If the nearest future
         price is beyond this tolerance, the label will be null.
+    config : LabelingConfig | None, default None
+        Optional column contract source. If provided, `price_col`, `timestamp_col`,
+        and `group_col` default to config values when omitted.
+    contract : DataContractConfig | None, default None
+        Optional shared dataframe contract. Used after config and before defaults.
 
     Returns
     -------
@@ -151,8 +114,8 @@ def fixed_time_horizon_labels(
     - Last `horizon` rows will have null labels
 
     **Time-based horizons**: When horizon is a duration string (e.g., '1h'),
-    the function uses ``join_asof`` to find the price at approximately that
-    time in the future. This is useful for:
+    the function uses ``join_asof`` to find the first available price at or
+    after that time in the future. This is useful for:
     - Irregular data (trade bars) where you want time-based returns
     - Multi-frequency workflows where time semantics matter
     - Calendar-aware operations across trading breaks
@@ -178,20 +141,31 @@ def fixed_time_horizon_labels(
     if method not in ["returns", "log_returns", "binary"]:
         raise ValueError(f"Unknown method: {method}. Use 'returns', 'log_returns', or 'binary'")
 
-    if price_col not in data.columns:
-        raise DataValidationError(f"Column '{price_col}' not found in data")
-
     # Determine if time-based or bar-based
     is_time_based = isinstance(horizon, str) and is_duration_string(horizon)
+    resolved_price_col, resolved_ts_col, resolved_group_cols = resolve_labeling_columns(
+        data=data,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        group_col=group_col,
+        config=config,
+        contract=contract,
+        require_timestamp=False,
+    )
+    if is_time_based and resolved_ts_col is None:
+        raise ValueError(
+            "Time-based horizon requires a timestamp column. "
+            "Provide timestamp_col parameter or ensure data has a datetime column.",
+        )
 
     if is_time_based:
         return _time_based_horizon_labels(
             data=data,
             horizon=horizon,  # type: ignore[arg-type]
             method=method,
-            price_col=price_col,
-            group_col=group_col,
-            timestamp_col=timestamp_col,
+            price_col=resolved_price_col,
+            group_cols=resolved_group_cols,
+            timestamp_col=resolved_ts_col,
             tolerance=tolerance,
         )
     else:
@@ -208,9 +182,9 @@ def fixed_time_horizon_labels(
             data=data,
             horizon=horizon,
             method=method,
-            price_col=price_col,
-            group_col=group_col,
-            timestamp_col=timestamp_col,
+            price_col=resolved_price_col,
+            group_cols=resolved_group_cols,
+            timestamp_col=resolved_ts_col,
         )
 
 
@@ -219,21 +193,13 @@ def _bar_based_horizon_labels(
     horizon: int,
     method: str,
     price_col: str,
-    group_col: str | list[str] | None,
+    group_cols: list[str],
     timestamp_col: str | None,
 ) -> pl.DataFrame:
     """Bar-based horizon labels using shift operations (original implementation)."""
-    # Determine grouping columns for multi-asset/multi-position data
-    # This prevents labels from leaking across asset/contract boundaries
-    group_cols = _resolve_group_cols(data, group_col)
-
-    # Resolve timestamp column for chronological sorting
-    # Polars .over() preserves row order, so unsorted data produces wrong labels
-    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
-
     # Sort data chronologically within groups for correct shift operations
-    if resolved_ts_col:
-        sort_cols = group_cols + [resolved_ts_col] if group_cols else [resolved_ts_col]
+    if timestamp_col:
+        sort_cols = group_cols + [timestamp_col] if group_cols else [timestamp_col]
         data = data.sort(sort_cols)
 
     # Get price column
@@ -252,9 +218,11 @@ def _bar_based_horizon_labels(
         label = (future_prices / prices).log()
         label_name = f"label_log_return_{horizon}p"
     elif method == "binary":
-        # 1 if price goes up, -1 if down, null if no change or no data
+        # 1 if price goes up, -1 if down, 0 if no change, null if no future data
         label = (
-            pl.when(future_prices > prices)
+            pl.when(future_prices.is_null())
+            .then(pl.lit(None))
+            .when(future_prices > prices)
             .then(1)
             .when(future_prices < prices)
             .then(-1)
@@ -272,24 +240,19 @@ def _time_based_horizon_labels(
     horizon: str,
     method: str,
     price_col: str,
-    group_col: str | list[str] | None,
+    group_cols: list[str],
     timestamp_col: str | None,
     tolerance: str | None,
 ) -> pl.DataFrame:
     """Time-based horizon labels using join_asof."""
-    # Resolve timestamp column (required for time-based)
-    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
-    if resolved_ts_col is None:
+    if timestamp_col is None:
         raise ValueError(
             "Time-based horizon requires a timestamp column. "
             "Provide timestamp_col parameter or ensure data has a datetime column."
         )
 
-    # Determine grouping columns
-    group_cols = _resolve_group_cols(data, group_col)
-
     # Sort data chronologically within groups
-    sort_cols = group_cols + [resolved_ts_col] if group_cols else [resolved_ts_col]
+    sort_cols = group_cols + [timestamp_col] if group_cols else [timestamp_col]
     data = data.sort(sort_cols)
 
     # Parse duration for label naming
@@ -302,7 +265,7 @@ def _time_based_horizon_labels(
         data=data,
         time_horizon=td,
         price_col=price_col,
-        timestamp_col=resolved_ts_col,
+        timestamp_col=timestamp_col,
         tolerance=tolerance,
         group_cols=group_cols if group_cols else None,
     )
@@ -318,9 +281,11 @@ def _time_based_horizon_labels(
         label = (future_prices / current_prices).log()
         label_name = f"label_log_return_{label_suffix}"
     elif method == "binary":
-        # 1 if price goes up, -1 if down, 0 if no change
+        # 1 if price goes up, -1 if down, 0 if no change, null if no future data
         label = (
-            pl.when(future_prices > current_prices)
+            pl.when(future_prices.is_null())
+            .then(pl.lit(None))
+            .when(future_prices > current_prices)
             .then(pl.lit(1))
             .when(future_prices < current_prices)
             .then(pl.lit(-1))
@@ -342,8 +307,11 @@ def trend_scanning_labels(
     min_window: int = 5,
     max_window: int = 50,
     step: int = 1,
-    price_col: str = "close",
+    price_col: str | None = None,
     timestamp_col: str | None = None,
+    *,
+    config: LabelingConfig | None = None,
+    contract: DataContractConfig | None = None,
 ) -> pl.DataFrame:
     """Generate labels using De Prado's trend scanning method.
 
@@ -364,11 +332,16 @@ def trend_scanning_labels(
         Maximum window size to scan
     step : int, default 1
         Step size for window scanning
-    price_col : str, default "close"
+    price_col : str | None, default None
         Name of the price column to use
     timestamp_col : str | None, default None
         Column to use for chronological sorting. If None, auto-detects from
         column dtype (pl.Datetime, pl.Date). Required for correct scanning.
+    config : LabelingConfig | None, default None
+        Optional column contract source. If provided, `price_col` and
+        `timestamp_col` default to config values when omitted.
+    contract : DataContractConfig | None, default None
+        Optional shared dataframe contract. Used after config and before defaults.
 
     Returns
     -------
@@ -424,16 +397,21 @@ def trend_scanning_labels(
         raise ValueError("max_window must be greater than min_window")
     if step < 1:
         raise ValueError("step must be at least 1")
-    if price_col not in data.columns:
-        raise DataValidationError(f"Column '{price_col}' not found in data")
+    resolved_price_col, resolved_ts_col, _ = resolve_labeling_columns(
+        data=data,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        group_col=[],
+        config=config,
+        contract=contract,
+    )
 
     # Sort data chronologically for correct forward scanning
-    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
     if resolved_ts_col:
         data = data.sort(resolved_ts_col)
 
     # Extract prices as numpy array for faster computation
-    prices = data[price_col].to_numpy()
+    prices = data[resolved_price_col].to_numpy()
     n = len(prices)
 
     # Initialize result arrays

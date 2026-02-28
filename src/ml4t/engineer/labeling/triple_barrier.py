@@ -18,7 +18,6 @@ import numpy.typing as npt
 import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
-from ml4t.engineer.labeling.barriers import BarrierConfig
 from ml4t.engineer.labeling.numba_ops import _apply_triple_barrier_nb
 from ml4t.engineer.labeling.uniqueness import (
     calculate_label_uniqueness,
@@ -26,19 +25,19 @@ from ml4t.engineer.labeling.uniqueness import (
 )
 
 if TYPE_CHECKING:
-    from ml4t.engineer.config import LabelingConfig
+    from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 from ml4t.engineer.labeling.utils import (
     is_duration_string,
     parse_duration,
-    resolve_timestamp_col,
+    resolve_labeling_columns,
     time_horizon_to_bars,
 )
 
 
 def _prepare_barrier_arrays(
     data: pl.DataFrame,
-    config: BarrierConfig,
+    config: LabelingConfig,
     event_indices: npt.NDArray[np.intp],
     timestamp_col: str | None = None,
 ) -> tuple[
@@ -54,7 +53,7 @@ def _prepare_barrier_arrays(
     ----------
     data : pl.DataFrame
         Input data
-    config : BarrierConfig
+    config : LabelingConfig
         Barrier configuration
     event_indices : np.ndarray
         Indices of events to label
@@ -245,80 +244,22 @@ def _build_labeling_result(
     return result
 
 
-def triple_barrier_labels(
+def _triple_barrier_labels_single_group(
     data: pl.DataFrame,
-    config: BarrierConfig | LabelingConfig,
-    price_col: str = "close",
-    high_col: str | None = None,
-    low_col: str | None = None,
-    timestamp_col: str | None = None,
-    calculate_uniqueness: bool = False,
+    config: LabelingConfig,
+    price_col: str,
+    high_col: str | None,
+    low_col: str | None,
+    timestamp_col: str | None,
+    calculate_uniqueness: bool,
     uniqueness_weight_scheme: Literal[
         "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
-    ] = "returns_uniqueness",
+    ],
 ) -> pl.DataFrame:
-    """Apply triple-barrier labeling to data.
+    """Apply triple barrier labeling to a single asset/group."""
+    if timestamp_col is not None:
+        data = data.sort(timestamp_col)
 
-    Labels price movements based on which barrier (upper, lower, or time) is touched first.
-    Optionally calculates label uniqueness and sample weights (De Prado's AFML Chapter 4).
-
-    Parameters
-    ----------
-    data : pl.DataFrame
-        Input data with price information
-    config : BarrierConfig | LabelingConfig
-        Barrier configuration. Accepts either:
-        - BarrierConfig: Legacy dataclass configuration
-        - LabelingConfig: Pydantic config with serialization (automatically converted)
-    price_col : str, default "close"
-        Name of the price column
-    high_col : str, optional
-        Name of the high price column for OHLC barrier checking
-    low_col : str, optional
-        Name of the low price column for OHLC barrier checking
-    timestamp_col : str, optional
-        Name of the timestamp column (uses row index if None)
-    calculate_uniqueness : bool, default False
-        If True, calculates label uniqueness scores and sample weights
-    uniqueness_weight_scheme : str, default "returns_uniqueness"
-        Weighting scheme: "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
-
-    Returns
-    -------
-    pl.DataFrame
-        Original data with added columns: label, label_time, label_price, label_return,
-        label_bars, label_duration, barrier_hit, and optionally label_uniqueness, sample_weight
-
-    Notes
-    -----
-    **Important**: Data is automatically sorted by timestamp before labeling.
-    This is required because the algorithm scans forward in row order to find
-    barrier touches. The result is returned sorted chronologically.
-
-    Examples
-    --------
-    >>> # Using legacy BarrierConfig
-    >>> config = BarrierConfig(upper_barrier=0.02, lower_barrier=0.01, max_periods=10, side=1)
-    >>> labeled = triple_barrier_labels(df, config, timestamp_col="datetime")
-    >>>
-    >>> # Using LabelingConfig (with serialization support)
-    >>> from ml4t.engineer.config import LabelingConfig
-    >>> config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
-    >>> labeled = triple_barrier_labels(df, config)
-    """
-    # Convert LabelingConfig to BarrierConfig if needed
-    if hasattr(config, "to_barrier_config"):
-        config = config.to_barrier_config()  # type: ignore[operator]
-    if price_col not in data.columns:
-        raise DataValidationError(f"Price column '{price_col}' not found in data")
-
-    # Sort data chronologically for correct forward scanning
-    # Triple barrier scans forward in row order to find barrier touches
-    resolved_ts_col = resolve_timestamp_col(data, timestamp_col)
-    if resolved_ts_col:
-        data = data.sort(resolved_ts_col)
-
-    # Determine events
     if "event_time" in data.columns:
         event_mask = data["event_time"].is_not_null()
         event_indices = np.where(event_mask.to_numpy())[0]
@@ -333,7 +274,6 @@ def triple_barrier_labels(
     else:
         event_indices = np.arange(len(data))
 
-    # Extract price data
     closes = data[price_col].to_numpy()
     if high_col is not None:
         if high_col not in data.columns:
@@ -349,10 +289,8 @@ def triple_barrier_labels(
     else:
         lows = closes
 
-    # Prepare barriers and apply labeling
-    # Pass resolved_ts_col for time-based max_holding_period conversion
     upper_barriers, lower_barriers, max_periods, sides, trailing_stops = _prepare_barrier_arrays(
-        data, config, event_indices, timestamp_col=resolved_ts_col
+        data, config, event_indices, timestamp_col=timestamp_col
     )
     labels, label_indices, label_prices, label_returns, bar_durations = _apply_triple_barrier_nb(
         closes,
@@ -366,7 +304,6 @@ def triple_barrier_labels(
         trailing_stops,
     )
 
-    # Calculate uniqueness if requested
     if calculate_uniqueness:
         uniqueness = calculate_label_uniqueness(
             event_indices=event_indices, label_indices=label_indices, n_bars=len(closes)
@@ -378,7 +315,6 @@ def triple_barrier_labels(
         uniqueness = None
         sample_weights = None
 
-    # Build result
     barrier_hit = _determine_barrier_hits(labels)
     label_times, time_durations = _calculate_time_durations(
         data, event_indices, label_indices, timestamp_col
@@ -399,16 +335,121 @@ def triple_barrier_labels(
     )
 
 
-# Re-export utility functions from barrier_utils for backward compatibility
-from ml4t.engineer.labeling.barrier_utils import (  # noqa: E402
-    apply_triple_barrier,
-    calculate_returns,
-    compute_barrier_touches,
-)
+def triple_barrier_labels(
+    data: pl.DataFrame,
+    config: LabelingConfig,
+    price_col: str | None = None,
+    high_col: str | None = None,
+    low_col: str | None = None,
+    timestamp_col: str | None = None,
+    group_col: str | list[str] | None = None,
+    calculate_uniqueness: bool = False,
+    uniqueness_weight_scheme: Literal[
+        "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
+    ] = "returns_uniqueness",
+    contract: DataContractConfig | None = None,
+) -> pl.DataFrame:
+    """Apply triple-barrier labeling to data.
+
+    Labels price movements based on which barrier (upper, lower, or time) is touched first.
+    Optionally calculates label uniqueness and sample weights (De Prado's AFML Chapter 4).
+
+    Parameters
+    ----------
+    data : pl.DataFrame
+        Input data with price information
+    config : LabelingConfig
+        Triple-barrier labeling configuration.
+    price_col : str | None, default None
+        Name of the price column
+    high_col : str, optional
+        Name of the high price column for OHLC barrier checking
+    low_col : str, optional
+        Name of the low price column for OHLC barrier checking
+    timestamp_col : str, optional
+        Name of the timestamp column (uses row index if None)
+    group_col : str | list[str] | None, default None
+        Grouping columns for panel labeling. If None, auto-detects common
+        asset identifier columns (e.g., symbol, product, ticker).
+    calculate_uniqueness : bool, default False
+        If True, calculates label uniqueness scores and sample weights
+    uniqueness_weight_scheme : str, default "returns_uniqueness"
+        Weighting scheme: "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
+    contract : DataContractConfig | None, default None
+        Optional shared dataframe contract. Used when explicit columns/config are omitted.
+
+    Returns
+    -------
+    pl.DataFrame
+        Original data with added columns: label, label_time, label_price, label_return,
+        label_bars, label_duration, barrier_hit, and optionally label_uniqueness, sample_weight
+
+    Notes
+    -----
+    **Important**: Data is automatically sorted by [group_col, timestamp] before labeling.
+    This is required because the algorithm scans forward in row order to find
+    barrier touches. The result is returned sorted chronologically.
+
+    Examples
+    --------
+    >>> from ml4t.engineer.config import LabelingConfig
+    >>> config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
+    >>> labeled = triple_barrier_labels(df, config)
+    """
+    from ml4t.engineer.config import LabelingConfig as _LabelingConfig
+
+    if not isinstance(config, _LabelingConfig):
+        raise TypeError(
+            "triple_barrier_labels expects LabelingConfig. "
+            "Legacy BarrierConfig inputs are no longer supported; "
+            "use LabelingConfig.triple_barrier(...)."
+        )
+
+    resolved_price_col, resolved_ts_col, group_cols = resolve_labeling_columns(
+        data=data,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        group_col=group_col,
+        config=config,
+        contract=contract,
+    )
+    if config.method != "triple_barrier":
+        raise DataValidationError(
+            "triple_barrier_labels requires LabelingConfig.method='triple_barrier'."
+        )
+
+    if group_cols:
+        sort_cols = group_cols + ([resolved_ts_col] if resolved_ts_col else [])
+        sorted_data = data.sort(sort_cols)
+        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True)
+
+        grouped_results = [
+            _triple_barrier_labels_single_group(
+                data=group_df,
+                config=config,
+                price_col=resolved_price_col,
+                high_col=high_col,
+                low_col=low_col,
+                timestamp_col=resolved_ts_col,
+                calculate_uniqueness=calculate_uniqueness,
+                uniqueness_weight_scheme=uniqueness_weight_scheme,
+            )
+            for group_df in grouped_frames
+        ]
+        return pl.concat(grouped_results, how="vertical")
+
+    return _triple_barrier_labels_single_group(
+        data=data,
+        config=config,
+        price_col=resolved_price_col,
+        high_col=high_col,
+        low_col=low_col,
+        timestamp_col=resolved_ts_col,
+        calculate_uniqueness=calculate_uniqueness,
+        uniqueness_weight_scheme=uniqueness_weight_scheme,
+    )
+
 
 __all__ = [
     "triple_barrier_labels",
-    "compute_barrier_touches",
-    "calculate_returns",
-    "apply_triple_barrier",
 ]

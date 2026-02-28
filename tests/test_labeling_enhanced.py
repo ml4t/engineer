@@ -7,13 +7,13 @@ import polars as pl
 import pytest
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
-from ml4t.engineer.labeling.barriers import BarrierConfig
-from ml4t.engineer.labeling.core import (
+from ml4t.engineer.config import LabelingConfig
+from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
+from ml4t.engineer.labeling.uniqueness import (
     _build_concurrency,
     calculate_label_uniqueness,
     calculate_sample_weights,
     sequential_bootstrap,
-    triple_barrier_labels,
 )
 
 
@@ -311,7 +311,7 @@ class TestEnhancedTripleBarrier:
 
     def test_enhanced_labeling_basic(self, sample_data):
         """Test basic enhanced triple barrier labeling."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -347,7 +347,7 @@ class TestEnhancedTripleBarrier:
 
     def test_uniqueness_affects_weights(self, sample_data):
         """Test that uniqueness actually affects sample weights."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=20,  # Longer periods for more overlap
@@ -376,7 +376,7 @@ class TestEnhancedTripleBarrier:
 
     def test_weight_schemes(self, sample_data):
         """Test different weight schemes produce different results."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -401,7 +401,7 @@ class TestEnhancedTripleBarrier:
 
     def test_no_uniqueness_calculation(self, sample_data):
         """Test that uniqueness calculation can be skipped."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=0.01,
             max_holding_period=10,
@@ -437,7 +437,7 @@ def test_integration_example():
     )
 
     # Step 1: Apply triple barrier labeling
-    config = BarrierConfig(
+    config = LabelingConfig.triple_barrier(
         upper_barrier=0.015,
         lower_barrier=0.01,
         max_holding_period=20,

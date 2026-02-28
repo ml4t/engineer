@@ -67,13 +67,14 @@ from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 
+from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.features.volatility import atr_polars
-from ml4t.engineer.labeling.barriers import BarrierConfig
 from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
+from ml4t.engineer.labeling.utils import resolve_labeling_columns
 
 if TYPE_CHECKING:
-    from ml4t.engineer.config import LabelingConfig
+    from ml4t.engineer.config import DataContractConfig
 
 
 def atr_triple_barrier_labels(
@@ -83,11 +84,13 @@ def atr_triple_barrier_labels(
     atr_period: int | None = None,
     max_holding_bars: int | str | None = None,
     side: Literal[1, -1, 0] | str | None = None,
-    price_col: str = "close",
-    timestamp_col: str = "timestamp",
+    price_col: str | None = None,
+    timestamp_col: str | None = None,
+    group_col: str | list[str] | None = None,
     trailing_stop: bool = False,
     *,
     config: LabelingConfig | None = None,
+    contract: DataContractConfig | None = None,
 ) -> pl.DataFrame:
     """
     Triple barrier labeling with ATR-adjusted dynamic barriers.
@@ -147,6 +150,9 @@ def atr_triple_barrier_labels(
         If provided, extracts atr_tp_multiple, atr_sl_multiple, atr_period,
         max_holding_bars, side, and trailing_stop from config.
         Individual parameters override config values if both are provided.
+    contract : DataContractConfig, optional
+        Shared dataframe contract for timestamp/symbol/price columns.
+        Applied when explicit parameters are omitted.
 
     Returns
     -------
@@ -231,12 +237,15 @@ def atr_triple_barrier_labels(
     ...     side="side_prediction",  # Dynamic side
     ... )
     """
+    if isinstance(data, pl.LazyFrame):
+        data = data.collect()
+
     # Extract values from config if provided, with individual params as overrides
     if config is not None:
         atr_tp_multiple = atr_tp_multiple if atr_tp_multiple is not None else config.atr_tp_multiple
         atr_sl_multiple = atr_sl_multiple if atr_sl_multiple is not None else config.atr_sl_multiple
         atr_period = atr_period if atr_period is not None else config.atr_period
-        if max_holding_bars is None and isinstance(config.max_holding_period, (int, str)):
+        if max_holding_bars is None and isinstance(config.max_holding_period, int | str):
             max_holding_bars = config.max_holding_period
         if side is None:
             side = config.side  # type: ignore[assignment]
@@ -257,10 +266,15 @@ def atr_triple_barrier_labels(
             f"ATR requires OHLC data. Missing columns: {missing}",
         )
 
-    if timestamp_col not in data.columns:
-        raise DataValidationError(
-            f"Timestamp column '{timestamp_col}' not found in data",
-        )
+    resolved_price_col, resolved_ts_col, resolved_group_cols = resolve_labeling_columns(
+        data=data,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        group_col=group_col,
+        config=config,
+        contract=contract,
+        require_timestamp=True,
+    )
 
     # Compute ATR
     data_with_atr = data.with_columns(
@@ -284,9 +298,9 @@ def atr_triple_barrier_labels(
         max_holding_bars if max_holding_bars is not None else len(data_with_barriers)  # type: ignore[arg-type]
     )
 
-    barrier_config = BarrierConfig(
-        upper_barrier="upper_barrier_distance",  # Column name
-        lower_barrier="lower_barrier_distance",  # Column name
+    barrier_config = LabelingConfig.triple_barrier(
+        upper_barrier="upper_barrier_distance",
+        lower_barrier="lower_barrier_distance",
         max_holding_period=holding_period,
         side=side,
         trailing_stop=trailing_stop,
@@ -295,10 +309,11 @@ def atr_triple_barrier_labels(
     # Use existing triple_barrier_labels with dynamic barriers
     # Note: type signature allows LazyFrame but triple_barrier_labels needs DataFrame
     labeled = triple_barrier_labels(
-        data_with_barriers,  # type: ignore[arg-type]
+        data_with_barriers,
         config=barrier_config,
-        price_col=price_col,
-        timestamp_col=timestamp_col,
+        price_col=resolved_price_col,
+        timestamp_col=resolved_ts_col,
+        group_col=resolved_group_cols,
     )
 
     return labeled

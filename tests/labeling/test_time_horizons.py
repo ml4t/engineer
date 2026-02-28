@@ -8,13 +8,13 @@ Tests cover:
 5. Edge cases (tolerance, irregular data, session boundaries)
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import numpy as np
 import polars as pl
 import pytest
 
-from ml4t.engineer.labeling.barriers import BarrierConfig
+from ml4t.engineer.config import DataContractConfig, LabelingConfig
 from ml4t.engineer.labeling.horizon_labels import fixed_time_horizon_labels
 from ml4t.engineer.labeling.percentile_labels import rolling_percentile_binary_labels
 from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
@@ -302,6 +302,55 @@ class TestFixedTimeHorizonLabels:
         with pytest.raises(ValueError, match="timestamp column"):
             fixed_time_horizon_labels(df, horizon="1h", method="returns")
 
+    def test_uses_config_column_contract(self):
+        """Column mapping should come from LabelingConfig when omitted in call."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig.fixed_horizon(
+            horizon=1,
+            return_method="returns",
+            price_col="px",
+            timestamp_col="ts",
+            group_col="ticker",
+        )
+
+        result = fixed_time_horizon_labels(data, horizon=1, method="returns", config=config)
+
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_return_1p"] == pytest.approx(0.01)
+        assert b0["label_return_1p"] == pytest.approx(-0.001)
+
+    def test_uses_shared_contract_column_mapping(self):
+        """Column mapping should come from DataContractConfig when config is omitted."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+
+        result = fixed_time_horizon_labels(
+            data,
+            horizon=1,
+            method="returns",
+            contract=contract,
+        )
+
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_return_1p"] == pytest.approx(0.01)
+        assert b0["label_return_1p"] == pytest.approx(-0.001)
+
 
 # =============================================================================
 # Triple Barrier Labels Tests
@@ -313,7 +362,7 @@ class TestTripleBarrierTimeBased:
 
     def test_bar_based_unchanged(self, regular_5min_data: pl.DataFrame):
         """Test that bar-based API is unchanged."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period=10,  # Bars
@@ -331,7 +380,7 @@ class TestTripleBarrierTimeBased:
 
     def test_time_based_duration_string(self, regular_5min_data: pl.DataFrame):
         """Test time-based max_holding_period with duration string."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period="1h",  # 1 hour
@@ -350,7 +399,7 @@ class TestTripleBarrierTimeBased:
 
     def test_time_based_timedelta(self, regular_5min_data: pl.DataFrame):
         """Test time-based max_holding_period with timedelta."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period=timedelta(hours=1),
@@ -367,7 +416,7 @@ class TestTripleBarrierTimeBased:
 
     def test_time_based_requires_timestamp_col(self, regular_5min_data: pl.DataFrame):
         """Test that time-based max_holding_period requires timestamp_col."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period="1h",
@@ -386,14 +435,14 @@ class TestTripleBarrierTimeBased:
         """
         from polars.testing import assert_series_equal
 
-        config_bars = BarrierConfig(
+        config_bars = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period=12,  # 12 bars = 1 hour for 5-min bars
             side=1,
         )
 
-        config_time = BarrierConfig(
+        config_time = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period="1h",
@@ -507,6 +556,17 @@ class TestGetFuturePriceAtTime:
         # This is expected behavior for irregular data
         assert len(future_prices) == len(irregular_trade_data)
 
+    def test_no_forward_match_returns_null(self, regular_5min_data: pl.DataFrame):
+        """Forward horizon should return null when no price exists at/after target time."""
+        future_prices, valid_mask = get_future_price_at_time(
+            regular_5min_data,
+            time_horizon="24h",
+            price_col="close",
+            timestamp_col="timestamp",
+        )
+        assert len(future_prices) == len(regular_5min_data)
+        assert valid_mask.sum() == 0
+
 
 # =============================================================================
 # Edge Cases
@@ -519,9 +579,8 @@ class TestEdgeCases:
     def test_horizon_past_data_end(self, regular_5min_data: pl.DataFrame):
         """Test behavior when horizon extends past data end.
 
-        For time-based horizons, join_asof with backward strategy returns the
-        nearest available price, not null. This means the return will be
-        calculated against the last available price.
+        For time-based horizons, join_asof with forward strategy returns null
+        when there is no price at or after the requested horizon.
         """
         # Very long horizon
         result = fixed_time_horizon_labels(
@@ -533,14 +592,8 @@ class TestEdgeCases:
         # Label column should exist
         assert "label_return_24h" in result.columns
 
-        # The returns should be computed (against last available price)
-        # Due to join_asof backward strategy, nulls only occur when
-        # no future data exists at all
-        # For 100 rows of 5-min data (~8 hours), a 24h horizon means most
-        # values will be computed against the final price
-        # This is expected behavior - the test validates the column exists
-        # and computes values without errors
-        assert result["label_return_24h"].null_count() >= 0  # May have some nulls
+        # No row has a future timestamp 24h ahead, so all labels are null.
+        assert result["label_return_24h"].null_count() == len(result)
 
     def test_zero_horizon_rejected(self, regular_5min_data: pl.DataFrame):
         """Test that zero/negative horizon is rejected."""
@@ -612,7 +665,7 @@ class TestIntegration:
         )
 
         # Step 2: Triple barrier labels
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period=12,
@@ -638,7 +691,7 @@ class TestIntegration:
         )
 
         # Step 2: Time-based triple barrier labels
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.01,
             lower_barrier=0.005,
             max_holding_period="1h",

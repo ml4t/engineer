@@ -25,16 +25,13 @@ Examples
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 
 from ml4t.engineer.config.base import BaseConfig
-
-if TYPE_CHECKING:
-    from ml4t.engineer.labeling.barriers import ATRBarrierConfig, BarrierConfig
+from ml4t.engineer.config.data_contract import DataContractConfig
 
 
 class LabelingConfig(BaseConfig):
@@ -132,6 +129,16 @@ class LabelingConfig(BaseConfig):
     # Common parameters
     price_col: str = Field("close", description="Price column for calculations")
     timestamp_col: str = Field("timestamp", description="Timestamp column")
+    group_col: str | list[str] | None = Field(
+        None,
+        validation_alias=AliasChoices("group_col", "symbol_col", "ticker_col", "asset_col"),
+        description="Grouping column(s) for panel labeling (e.g., symbol, ticker)",
+    )
+    data_contract: DataContractConfig | None = Field(
+        None,
+        validation_alias=AliasChoices("data_contract", "contract"),
+        description="Optional shared dataframe column contract for cross-library workflows",
+    )
 
     # Triple barrier parameters
     upper_barrier: float | str | None = Field(
@@ -441,65 +448,19 @@ class LabelingConfig(BaseConfig):
             **kwargs,
         )
 
-    # =========================================================================
-    # Conversion to Legacy Configs
-    # =========================================================================
-
-    def to_barrier_config(self) -> BarrierConfig:
-        """Convert to legacy BarrierConfig dataclass.
-
-        For backward compatibility with existing labeling functions.
-
-        Returns
-        -------
-        BarrierConfig
-            Legacy dataclass configuration
-        """
-        from ml4t.engineer.labeling.barriers import BarrierConfig
-
-        # Map weight_scheme string to callable if needed
-        weight_scheme: str | Callable[..., Any] = self.weight_scheme
-
-        return BarrierConfig(
-            upper_barrier=self.upper_barrier,
-            lower_barrier=self.lower_barrier,
-            max_holding_period=self.max_holding_period,
-            side=self.side,
-            trailing_stop=self.trailing_stop,
-            weight_scheme=weight_scheme,
-            weight_decay_rate=self.weight_decay_rate,
-        )
-
-    def to_atr_barrier_config(self) -> ATRBarrierConfig:
-        """Convert to legacy ATRBarrierConfig dataclass.
-
-        For backward compatibility with existing labeling functions.
-
-        Returns
-        -------
-        ATRBarrierConfig
-            Legacy dataclass configuration
-        """
-        from ml4t.engineer.labeling.barriers import ATRBarrierConfig
-
-        weight_scheme: str | Callable[..., Any] = self.weight_scheme
-
-        return ATRBarrierConfig(
-            upper_multiplier=self.atr_tp_multiple,
-            lower_multiplier=self.atr_sl_multiple,
-            atr_period=self.atr_period,
-            max_holding_period=self.max_holding_period,
-            side=self.side,  # type: ignore[arg-type]  # str allowed for dynamic side
-            weight_scheme=weight_scheme,
-            weight_decay_rate=self.weight_decay_rate,
-        )
-
-
-# Type alias for backward compatibility
-BarrierLabelingConfig = LabelingConfig
-
-
 __all__ = [
     "LabelingConfig",
-    "BarrierLabelingConfig",
 ]
+
+_REMOVED_EXPORTS = {
+    "BarrierLabelingConfig": (
+        "ml4t.engineer.config.labeling.BarrierLabelingConfig has been removed. "
+        "Use ml4t.engineer.config.LabelingConfig instead."
+    )
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _REMOVED_EXPORTS:
+        raise ImportError(_REMOVED_EXPORTS[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

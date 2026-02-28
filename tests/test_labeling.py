@@ -1,21 +1,71 @@
 """Tests for the generalized labeling module."""
 
+import importlib
+import sys
+import warnings
 from datetime import datetime, timedelta
 
 import numpy as np
 import polars as pl
 import pytest
 
+from ml4t.engineer.config import DataContractConfig, LabelingConfig
 from ml4t.engineer.core.exceptions import DataValidationError
-from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
+from ml4t.engineer.labeling import triple_barrier_labels
 
 
-class TestBarrierConfig:
-    """Test barrier configuration."""
+class TestRemovedCoreModule:
+    """Test explicit error messaging for removed legacy module paths."""
+
+    def test_labeling_core_import_error_is_actionable(self):
+        """Importing removed labeling.core should raise a clear migration error."""
+        sys.modules.pop("ml4t.engineer.labeling.core", None)
+        with pytest.raises(ImportError, match="labeling.core has been removed"):
+            importlib.import_module("ml4t.engineer.labeling.core")
+
+    def test_labeling_barrier_config_export_is_actionable(self):
+        """Importing removed labeling.BarrierConfig should raise migration guidance."""
+        with pytest.raises(ImportError, match="BarrierConfig has been removed"):
+            from ml4t.engineer.labeling import BarrierConfig  # noqa: F401
+
+    def test_labeling_barriers_module_import_error_is_actionable(self):
+        """Importing removed labeling.barriers should raise migration guidance."""
+        sys.modules.pop("ml4t.engineer.labeling.barriers", None)
+        with pytest.raises(ImportError, match="labeling.barriers has been removed"):
+            importlib.import_module("ml4t.engineer.labeling.barriers")
+
+    def test_labeling_barrier_utils_module_import_error_is_actionable(self):
+        """Importing removed labeling.barrier_utils should raise migration guidance."""
+        sys.modules.pop("ml4t.engineer.labeling.barrier_utils", None)
+        with pytest.raises(ImportError, match="labeling.barrier_utils has been removed"):
+            importlib.import_module("ml4t.engineer.labeling.barrier_utils")
+
+    def test_config_alias_import_error_is_actionable(self):
+        """Importing removed config alias should raise migration guidance."""
+        with pytest.raises(ImportError, match="BarrierLabelingConfig has been removed"):
+            from ml4t.engineer.config import BarrierLabelingConfig  # noqa: F401
+
+    def test_config_labeling_alias_import_error_is_actionable(self):
+        """Importing removed config.labeling alias should raise migration guidance."""
+        with pytest.raises(ImportError, match="BarrierLabelingConfig has been removed"):
+            from ml4t.engineer.config.labeling import BarrierLabelingConfig  # noqa: F401
+
+    def test_non_labeling_config_input_raises_actionable_error(self):
+        """Passing non-LabelingConfig should fail with migration guidance."""
+        class LegacyBarrierConfig:
+            pass
+
+        df = pl.DataFrame({"timestamp": [datetime(2024, 1, 1)], "close": [100.0]})
+        with pytest.raises(TypeError, match="Legacy BarrierConfig inputs are no longer supported"):
+            triple_barrier_labels(df, config=LegacyBarrierConfig())  # type: ignore[arg-type]
+
+
+class TestLabelingConfig:
+    """Test labeling configuration."""
 
     def test_default_config(self):
-        """Test default barrier configuration."""
-        config = BarrierConfig()
+        """Test default labeling configuration."""
+        config = LabelingConfig()
         assert config.upper_barrier is None
         assert config.lower_barrier is None
         assert config.max_holding_period == 10
@@ -23,7 +73,7 @@ class TestBarrierConfig:
 
     def test_custom_config(self):
         """Test custom barrier configuration."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=20,
@@ -67,7 +117,7 @@ class TestTripleBarrierLabels:
 
     def test_basic_triple_barrier(self, sample_data):
         """Test basic triple barrier labeling."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit target
             lower_barrier=-0.01,  # 1% stop loss
             max_holding_period=50,
@@ -112,7 +162,7 @@ class TestTripleBarrierLabels:
             volatility=pl.col("price").pct_change().rolling_std(window_size=20) * np.sqrt(252),
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier="volatility",  # Use volatility column
             lower_barrier="volatility",  # Symmetric barriers
             max_holding_period=30,
@@ -131,7 +181,7 @@ class TestTripleBarrierLabels:
 
     def test_trailing_stop(self, sample_data):
         """Test trailing stop functionality."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,
             lower_barrier=-0.02,
             max_holding_period=100,
@@ -151,7 +201,7 @@ class TestTripleBarrierLabels:
 
     def test_max_holding_period(self, sample_data):
         """Test that max holding period is respected."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=10.0,  # Very high barrier (unlikely to hit)
             lower_barrier=-10.0,  # Very low barrier (unlikely to hit)
             max_holding_period=5,
@@ -175,7 +225,7 @@ class TestTripleBarrierLabels:
 
     def test_no_barriers(self, sample_data):
         """Test with no profit/loss barriers, only time."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=None,
             lower_barrier=None,
             max_holding_period=10,
@@ -195,7 +245,7 @@ class TestTripleBarrierLabels:
 
     def test_asymmetric_barriers(self, sample_data):
         """Test asymmetric barriers."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.03,  # 3% profit
             lower_barrier=-0.01,  # 1% loss
             max_holding_period=50,
@@ -227,44 +277,13 @@ class TestTripleBarrierLabels:
             assert abs(median_return - config.lower_barrier) / abs(config.lower_barrier) < 0.6
 
 
-class TestBarrierHelpers:
-    """Test helper functions for barrier calculations."""
-
-    def test_compute_barrier_touches(self):
-        """Test barrier touch detection."""
-        prices = np.array([100, 102, 101, 98, 103, 99, 104])
-        upper_barrier = 102.5
-        lower_barrier = 98.5
-
-        from ml4t.engineer.labeling.core import compute_barrier_touches
-
-        touches = compute_barrier_touches(prices, upper_barrier, lower_barrier)
-
-        assert touches["first_upper"] == 4  # Index where price >= 103
-        assert touches["first_lower"] == 3  # Index where price <= 98
-        assert touches["first_touch"] == 3  # Lower barrier hit first
-        assert touches["barrier_hit"] == "lower"
-
-    def test_calculate_returns(self):
-        """Test return calculation."""
-        entry_price = 100
-        exit_prices = np.array([102, 98, 100, 105])
-
-        from ml4t.engineer.labeling.core import calculate_returns
-
-        returns = calculate_returns(entry_price, exit_prices)
-        expected = np.array([0.02, -0.02, 0.0, 0.05])
-
-        np.testing.assert_array_almost_equal(returns, expected)
-
-
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
     def test_empty_dataframe(self):
         """Test with empty dataframe."""
         df = pl.DataFrame({"timestamp": [], "price": []})
-        config = BarrierConfig(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
 
         result = triple_barrier_labels(df, config, price_col="price")
         assert len(result) == 0
@@ -272,7 +291,7 @@ class TestEdgeCases:
     def test_single_row(self):
         """Test with single row."""
         df = pl.DataFrame({"timestamp": [datetime(2024, 1, 1)], "price": [100.0]})
-        config = BarrierConfig(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
 
         result = triple_barrier_labels(df, config, price_col="price")
         assert len(result) == 1
@@ -287,7 +306,7 @@ class TestEdgeCases:
                 "price": [float("nan")] * 10,
             },
         )
-        config = BarrierConfig(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
 
         result = triple_barrier_labels(df, config, price_col="price")
         # With NaN prices, all events timeout (label=0) and returns are NaN
@@ -300,14 +319,14 @@ class TestEdgeCases:
 
         # Upper barrier less than lower barrier
         # Note: Currently no validation for invalid barriers, so test just ensures no crash
-        config = BarrierConfig(upper_barrier=-0.01, lower_barrier=0.02)
+        config = LabelingConfig.triple_barrier(upper_barrier=-0.01, lower_barrier=0.02)
         result = triple_barrier_labels(df, config, price_col="price")
         assert len(result) == len(df)
 
     def test_missing_columns(self):
         """Test with missing required columns."""
         df = pl.DataFrame({"time": [datetime(2024, 1, 1)], "value": [100.0]})
-        config = BarrierConfig(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
 
         # Missing price column should raise DataValidationError
         with pytest.raises(DataValidationError):
@@ -316,6 +335,34 @@ class TestEdgeCases:
         # Test with valid price column but no timestamp
         result = triple_barrier_labels(df, config, price_col="value")
         assert len(result) == len(df)
+
+    def test_missing_default_timestamp_does_not_warn(self):
+        """Default config timestamp should not warn when not explicitly requested."""
+        df = pl.DataFrame({"value": [100.0, 101.0, 102.0]})
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = triple_barrier_labels(df, config, price_col="value")
+
+        assert len(result) == len(df)
+        assert not any(
+            "Specified timestamp_col 'timestamp' not found" in str(w.message) for w in caught
+        )
+
+    def test_explicit_missing_timestamp_still_warns(self):
+        """Explicitly requesting a missing timestamp column should still warn."""
+        df = pl.DataFrame({"value": [100.0, 101.0, 102.0]})
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = triple_barrier_labels(df, config, price_col="value", timestamp_col="timestamp")
+
+        assert len(result) == len(df)
+        assert any(
+            "Specified timestamp_col 'timestamp' not found" in str(w.message) for w in caught
+        )
 
 
 class TestBarDuration:
@@ -350,7 +397,7 @@ class TestBarDuration:
 
     def test_bar_duration_barrier_hit(self, simple_data):
         """Test bar duration when barrier is hit."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% up
             lower_barrier=-0.01,  # 1% down
             max_holding_period=50,
@@ -374,7 +421,7 @@ class TestBarDuration:
 
     def test_bar_duration_timeout(self, simple_data):
         """Test bar duration on timeout."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,  # 10% up (won't be hit)
             lower_barrier=-0.10,  # 10% down (won't be hit)
             max_holding_period=15,
@@ -406,7 +453,7 @@ class TestBarDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.015,
             max_holding_period=30,
@@ -451,7 +498,7 @@ class TestBarDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=20,
@@ -481,7 +528,7 @@ class TestBarDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=20,
@@ -519,7 +566,7 @@ class TestBarDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=15,
@@ -562,7 +609,7 @@ class TestTimeDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.015,
             max_holding_period=20,
@@ -624,7 +671,7 @@ class TestTimeDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,  # Won't be hit
             lower_barrier=-0.10,  # Won't be hit
             max_holding_period=15,  # Will timeout
@@ -673,7 +720,7 @@ class TestTimeDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,
             lower_barrier=-0.10,
             max_holding_period=5,
@@ -714,7 +761,7 @@ class TestTimeDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=20,
@@ -750,7 +797,7 @@ class TestTimeDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.03,
             lower_barrier=-0.02,
             max_holding_period=15,
@@ -799,7 +846,7 @@ class TestTimeDuration:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,
             lower_barrier=-0.10,
             max_holding_period=10,
@@ -884,7 +931,7 @@ class TestPerformance:
         df = self._create_benchmark_data(n_bars)
 
         # Create config
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=20,
@@ -919,7 +966,7 @@ class TestPerformance:
         # Test with medium dataset (100K bars)
         df = self._create_benchmark_data(100_000)
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=20,
@@ -999,7 +1046,7 @@ class TestPerformance:
         """
         df = self._create_benchmark_data(50_000)
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=max_holding_period,
@@ -1030,7 +1077,7 @@ class TestPerformance:
         # Create large dataset
         df = self._create_benchmark_data(100_000)
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
             lower_barrier=-0.01,
             max_holding_period=20,
@@ -1080,7 +1127,7 @@ class TestOHLCBarrierChecking:
 
     def test_ohlc_tp_triggers_on_high_for_long(self, ohlc_data):
         """LONG: TP should trigger when high >= target (bar 1 high=102.5 >= 102)."""
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% TP: 100 * 1.02 = 102
             lower_barrier=0.01,  # 1% SL: 100 * 0.99 = 99
             max_holding_period=10,
@@ -1114,7 +1161,7 @@ class TestOHLCBarrierChecking:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% TP: 100 * 1.02 = 102
             lower_barrier=0.01,  # 1% SL: 100 * 0.99 = 99
             max_holding_period=10,
@@ -1144,7 +1191,7 @@ class TestOHLCBarrierChecking:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% TP
             lower_barrier=0.01,  # 1% SL
             max_holding_period=10,
@@ -1177,7 +1224,7 @@ class TestOHLCBarrierChecking:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02, lower_barrier=0.01, max_holding_period=10, side=1
         )
 
@@ -1196,7 +1243,7 @@ class TestOHLCBarrierChecking:
             },
         )
 
-        config = BarrierConfig(upper_barrier=0.02, lower_barrier=0.01, max_holding_period=10)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01, max_holding_period=10)
 
         with pytest.raises(DataValidationError, match="High column 'nonexistent' not found"):
             triple_barrier_labels(data, config, price_col="close", high_col="nonexistent")
@@ -1218,7 +1265,7 @@ class TestOHLCBarrierChecking:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% TP: for short, target is 98
             lower_barrier=0.01,  # 1% SL: for short, stop is 101
             max_holding_period=10,
@@ -1247,7 +1294,7 @@ class TestOHLCBarrierChecking:
             },
         )
 
-        config = BarrierConfig(
+        config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% TP: for short, target is 98
             lower_barrier=0.01,  # 1% SL: for short, stop is 101
             max_holding_period=10,
@@ -1261,3 +1308,243 @@ class TestOHLCBarrierChecking:
         # TP should trigger at bar 2 or 3 (low reaches 98 or below)
         assert result["label"][0] == 1  # TP hit
         assert result["barrier_hit"][0] == "upper"
+
+
+class TestPanelLabeling:
+    """Panel/multi-asset triple-barrier behavior."""
+
+    def test_grouped_labels_do_not_cross_assets(self):
+        """Labels must only use future prices from the same asset group."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "timestamp": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "symbol": ["A", "B", "A", "B"],
+                "close": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1)
+
+        result = triple_barrier_labels(
+            data,
+            config,
+            price_col="close",
+            timestamp_col="timestamp",
+            group_col="symbol",
+        )
+
+        a0 = result.filter((pl.col("symbol") == "A") & (pl.col("timestamp") == base)).row(
+            0, named=True
+        )
+        b0 = result.filter((pl.col("symbol") == "B") & (pl.col("timestamp") == base)).row(
+            0, named=True
+        )
+
+        assert a0["label_price"] == 101.0
+        assert b0["label_price"] == 999.0
+        assert a0["label"] == 0
+        assert b0["label"] == 0
+
+    def test_symbol_column_auto_detects_panel_grouping(self):
+        """When symbol exists, grouping is auto-detected if group_col is omitted."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "timestamp": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "symbol": ["A", "B", "A", "B"],
+                "close": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1)
+
+        explicit = triple_barrier_labels(
+            data,
+            config,
+            price_col="close",
+            timestamp_col="timestamp",
+            group_col="symbol",
+        )
+        autodetected = triple_barrier_labels(
+            data,
+            config,
+            price_col="close",
+            timestamp_col="timestamp",
+        )
+
+        assert explicit["label_price"].to_list() == autodetected["label_price"].to_list()
+        assert explicit["label"].to_list() == autodetected["label"].to_list()
+
+    def test_labeling_config_column_mapping_is_applied(self):
+        """LabelingConfig should supply timestamp/price/group column names."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+            price_col="px",
+            timestamp_col="ts",
+            group_col="ticker",
+        )
+
+        result = triple_barrier_labels(data, config=config)
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+
+        assert a0["label_price"] == 101.0
+        assert b0["label_price"] == 999.0
+
+    def test_labeling_config_symbol_col_alias_maps_to_group_col(self):
+        """LabelingConfig should accept symbol_col alias for group mapping."""
+        config = LabelingConfig.from_dict(
+            {
+                "method": "triple_barrier",
+                "upper_barrier": 0.05,
+                "lower_barrier": 0.05,
+                "max_holding_period": 1,
+                "price_col": "px",
+                "timestamp_col": "ts",
+                "symbol_col": "ticker",
+            }
+        )
+        assert config.group_col == "ticker"
+
+    def test_labeling_config_contract_alias_maps_to_data_contract(self):
+        """LabelingConfig should accept nested contract alias."""
+        config = LabelingConfig.from_dict(
+            {
+                "method": "triple_barrier",
+                "upper_barrier": 0.05,
+                "lower_barrier": 0.05,
+                "max_holding_period": 1,
+                "contract": {
+                    "timestamp_col": "ts",
+                    "symbol_col": "ticker",
+                    "price_col": "px",
+                },
+            }
+        )
+        assert config.data_contract is not None
+        assert config.data_contract.timestamp_col == "ts"
+        assert config.data_contract.symbol_col == "ticker"
+        assert config.data_contract.price_col == "px"
+
+    def test_shared_contract_column_mapping_is_applied(self):
+        """DataContractConfig should supply timestamp/price/group names."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(
+            timestamp_col="ts",
+            symbol_col="ticker",
+            price_col="px",
+        )
+        config = LabelingConfig.triple_barrier(upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1)
+
+        result = triple_barrier_labels(data, config=config, contract=contract)
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == 101.0
+        assert b0["label_price"] == 999.0
+
+    def test_contract_overrides_labeling_config_defaults(self):
+        """Contract mapping should apply when config keeps default column names."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+
+        result = triple_barrier_labels(data, config=config, contract=contract)
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == 101.0
+        assert b0["label_price"] == 999.0
+
+    def test_nested_data_contract_in_labeling_config_is_applied(self):
+        """LabelingConfig.data_contract should drive column mapping without explicit contract arg."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [100.0, 1000.0, 101.0, 999.0],
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+            data_contract=contract,
+        )
+
+        result = triple_barrier_labels(data, config=config)
+        a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
+        b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
+        assert a0["label_price"] == 101.0
+        assert b0["label_price"] == 999.0
+
+    def test_explicit_args_override_config_and_contract(self):
+        """Explicit column arguments must win over config and contract values."""
+        base = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "timestamp": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "symbol": ["A", "B", "A", "B"],
+                "close": [100.0, 1000.0, 101.0, 999.0],
+                "ts": [base, base, base + timedelta(minutes=1), base + timedelta(minutes=1)],
+                "ticker": ["A", "B", "A", "B"],
+                "px": [1.0, 1.0, 1.0, 1.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+            price_col="px",
+            timestamp_col="ts",
+            group_col="ticker",
+        )
+        contract = DataContractConfig(
+            timestamp_col="ts",
+            symbol_col="ticker",
+            price_col="px",
+        )
+
+        result = triple_barrier_labels(
+            data,
+            config=config,
+            price_col="close",
+            timestamp_col="timestamp",
+            group_col="symbol",
+            contract=contract,
+        )
+        a0 = result.filter((pl.col("symbol") == "A") & (pl.col("timestamp") == base)).row(
+            0, named=True
+        )
+        b0 = result.filter((pl.col("symbol") == "B") & (pl.col("timestamp") == base)).row(
+            0, named=True
+        )
+        assert a0["label_price"] == 101.0
+        assert b0["label_price"] == 999.0

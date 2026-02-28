@@ -9,6 +9,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from ml4t.engineer.config import DataContractConfig, LabelingConfig
 from ml4t.engineer.labeling import (
     fixed_time_horizon_labels,
     trend_scanning_labels,
@@ -136,6 +137,15 @@ class TestFixedTimeHorizonLabels:
         assert up_count > total * 0.9, (
             f"Expected mostly up labels in uptrend, got {up_count}/{total}"
         )
+
+    def test_binary_tail_is_null(self, sample_prices):
+        """Binary labels should be null when future data is unavailable."""
+        result = fixed_time_horizon_labels(
+            sample_prices,
+            horizon=5,
+            method="binary",
+        )
+        assert result["label_direction_5p"][-5:].null_count() == 5
 
     def test_binary_downtrend(self, trending_down):
         """Test binary labels detect downtrend."""
@@ -265,6 +275,49 @@ class TestTrendScanningLabels:
         # All windows should be in range
         assert (windows >= min_w).all()
         assert (windows <= max_w).all()
+
+    def test_uses_config_column_contract(self):
+        """Trend scanning should read price/timestamp columns from config."""
+        df = pl.DataFrame(
+            {
+                "ts": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(50)],
+                "px": np.linspace(100, 110, 50),
+            }
+        )
+        config = LabelingConfig.trend_scanning(
+            min_horizon=5,
+            max_horizon=20,
+            price_col="px",
+            timestamp_col="ts",
+        )
+        result = trend_scanning_labels(
+            df,
+            min_window=5,
+            max_window=20,
+            config=config,
+        )
+
+        assert "label" in result.columns
+        assert "t_value" in result.columns
+
+    def test_uses_shared_contract_column_contract(self):
+        """Trend scanning should read price/timestamp columns from DataContractConfig."""
+        df = pl.DataFrame(
+            {
+                "ts": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(50)],
+                "px": np.linspace(100, 110, 50),
+            }
+        )
+        contract = DataContractConfig(timestamp_col="ts", price_col="px", symbol_col=None)
+        result = trend_scanning_labels(
+            df,
+            min_window=5,
+            max_window=20,
+            contract=contract,
+        )
+
+        assert "label" in result.columns
+        assert "t_value" in result.columns
 
     def test_step_parameter(self, sample_prices):
         """Test that step parameter works."""

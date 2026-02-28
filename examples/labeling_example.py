@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import polars as pl
 
 from ml4t.engineer import pipeline
-from ml4t.engineer.labeling import BarrierConfig, triple_barrier_labels
+from ml4t.engineer.config import LabelingConfig
+from ml4t.engineer.labeling import triple_barrier_labels
 
 # Load real crypto data
 print("Loading BTC futures data...")
@@ -26,7 +27,7 @@ print("\n" + "=" * 50)
 print("Example 1: Fixed Barriers")
 print("=" * 50)
 
-config_fixed = BarrierConfig(
+config_fixed = LabelingConfig.triple_barrier(
     upper_barrier=0.01,  # 1% profit target
     lower_barrier=-0.005,  # 0.5% stop loss
     max_holding_period=30,  # 30 minutes max
@@ -55,7 +56,7 @@ df = df.with_columns(
     lower_barrier_dynamic=(-1 * pl.col("volatility")).fill_null(-0.005),
 )
 
-config_dynamic = BarrierConfig(
+config_dynamic = LabelingConfig.triple_barrier(
     upper_barrier="upper_barrier_dynamic",
     lower_barrier="lower_barrier_dynamic",
     max_holding_period=30,
@@ -78,7 +79,7 @@ print("\n" + "=" * 50)
 print("Example 3: With Trailing Stop")
 print("=" * 50)
 
-config_trailing = BarrierConfig(
+config_trailing = LabelingConfig.triple_barrier(
     upper_barrier=0.02,  # 2% profit target
     lower_barrier=-0.01,  # 1% stop loss
     max_holding_period=60,  # 60 minutes max
@@ -108,7 +109,7 @@ print("\n" + "=" * 50)
 print("Example 4: Duration Analysis (Bars vs Time)")
 print("=" * 50)
 
-config_duration = BarrierConfig(
+config_duration = LabelingConfig.triple_barrier(
     upper_barrier=0.02,  # 2% profit target
     lower_barrier=-0.01,  # 1% stop loss
     max_holding_period=60,  # 60 minutes max
@@ -290,7 +291,7 @@ pipeline = pipeline.Pipeline(
             "labeling",
             lambda df: triple_barrier_labels(
                 df,
-                BarrierConfig(
+                LabelingConfig.triple_barrier(
                     upper_barrier="upper_barrier",
                     lower_barrier="lower_barrier",
                     max_holding_period=30,
