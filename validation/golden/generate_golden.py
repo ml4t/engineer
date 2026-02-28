@@ -15,12 +15,11 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from ml4t.engineer.features.trend import sma, ema, dema, tema, wma
-from ml4t.engineer.features.momentum import rsi, macd, stochastic, roc, mom
-from ml4t.engineer.features.volatility import atr, bollinger_bands, natr
-from ml4t.engineer.features.volume import obv, ad
-from ml4t.engineer.features.statistics import stddev, var
-
+from ml4t.engineer.features.momentum import mom, roc, rsi
+from ml4t.engineer.features.statistics import stddev
+from ml4t.engineer.features.trend import ema, sma, wma
+from ml4t.engineer.features.volatility import atr, natr
+from ml4t.engineer.features.volume import ad, obv
 
 # Output directory
 GOLDEN_DATA_DIR = Path(__file__).parent / "data"
@@ -63,11 +62,7 @@ def generate_golden(feature_name: str | None = None) -> None:
     """Generate golden files for features."""
     GOLDEN_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    features_to_generate = (
-        {feature_name: FEATURES[feature_name]}
-        if feature_name
-        else FEATURES
-    )
+    features_to_generate = {feature_name: FEATURES[feature_name]} if feature_name else FEATURES
 
     for name, (func, kwargs) in features_to_generate.items():
         print(f"Generating {name}...")

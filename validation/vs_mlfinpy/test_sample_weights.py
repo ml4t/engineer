@@ -14,10 +14,13 @@ import pytest
 # Try to import mlfinpy - skip all tests if not available
 try:
     from mlfinpy.sampling.bootstrapping import (
-        get_ind_matrix,
         get_ind_mat_average_uniqueness as get_avg_uniqueness,
+    )
+    from mlfinpy.sampling.bootstrapping import (
+        get_ind_matrix,
         seq_bootstrap,
     )
+
     HAS_MLFINPY = True
 
     # Test for pandas 2.x compatibility bug in mlfinpy's get_ind_matrix
@@ -25,6 +28,7 @@ try:
     def _test_get_ind_matrix_compat():
         try:
             import pandas as pd
+
             dates = pd.date_range("2020-01-01", periods=3, freq="D")
             t1 = pd.Series([dates[1], dates[2]], index=[dates[0], dates[1]])
             get_ind_matrix(dates, t1)
@@ -43,10 +47,8 @@ from ml4t.engineer.labeling import (
     sequential_bootstrap,
 )
 
-
 pytestmark = pytest.mark.skipif(
-    not HAS_MLFINPY,
-    reason="mlfinpy not installed (requires separate venv due to numba conflict)"
+    not HAS_MLFINPY, reason="mlfinpy not installed (requires separate venv due to numba conflict)"
 )
 
 
@@ -85,7 +87,7 @@ class TestConcurrencyComparison:
         t1, starts, ends = create_t1_series(n_events=20, max_horizon=5, seed=42)
 
         # mlfinpy
-        close_index = t1.index.union(t1.values).sort_values()
+        t1.index.union(t1.values).sort_values()
         # Note: mlfinpy's num_concurrent_events takes different arguments
         # This is a simplified comparison
 
@@ -106,8 +108,7 @@ class TestConcurrencyComparison:
 
 
 @pytest.mark.skipif(
-    not MLFINPY_IND_MATRIX_WORKS,
-    reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
+    not MLFINPY_IND_MATRIX_WORKS, reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
 )
 class TestUniquenessComparison:
     """Compare uniqueness calculations."""
@@ -138,13 +139,13 @@ class TestUniquenessComparison:
         ml4t_mean = ml4t_uniqueness.mean()
 
         # Allow 20% tolerance due to possible boundary handling differences
-        assert abs(mlfinpy_mean - ml4t_mean) < 0.2 * max(mlfinpy_mean, ml4t_mean), \
+        assert abs(mlfinpy_mean - ml4t_mean) < 0.2 * max(mlfinpy_mean, ml4t_mean), (
             f"Mean uniqueness mismatch: mlfinpy={mlfinpy_mean:.4f}, ml4t={ml4t_mean:.4f}"
+        )
 
 
 @pytest.mark.skipif(
-    not MLFINPY_IND_MATRIX_WORKS,
-    reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
+    not MLFINPY_IND_MATRIX_WORKS, reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
 )
 class TestSequentialBootstrapComparison:
     """Compare sequential bootstrap implementations."""
@@ -191,8 +192,7 @@ class TestSequentialBootstrapComparison:
 
 
 @pytest.mark.skipif(
-    not MLFINPY_IND_MATRIX_WORKS,
-    reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
+    not MLFINPY_IND_MATRIX_WORKS, reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
 )
 class TestIndicatorMatrix:
     """Compare indicator matrix construction."""
@@ -222,8 +222,7 @@ class TestIndicatorMatrix:
 
 
 @pytest.mark.skipif(
-    not MLFINPY_IND_MATRIX_WORKS,
-    reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
+    not MLFINPY_IND_MATRIX_WORKS, reason="mlfinpy get_ind_matrix has pandas 2.x compatibility bug"
 )
 class TestAFMLBookExample:
     """Test the exact example from AFML Chapter 4.5.3."""
@@ -250,14 +249,16 @@ class TestAFMLBookExample:
         bar_index = pd.Index(range(6))
         ind_matrix = get_ind_matrix(bar_index, t1)
 
-        expected = np.array([
-            [1, 0, 0],  # t=0
-            [1, 0, 0],  # t=1
-            [1, 1, 0],  # t=2
-            [0, 1, 0],  # t=3
-            [0, 0, 1],  # t=4
-            [0, 0, 1],  # t=5
-        ])
+        expected = np.array(
+            [
+                [1, 0, 0],  # t=0
+                [1, 0, 0],  # t=1
+                [1, 1, 0],  # t=2
+                [0, 1, 0],  # t=3
+                [0, 0, 1],  # t=4
+                [0, 0, 1],  # t=5
+            ]
+        )
 
         np.testing.assert_array_equal(ind_matrix.values, expected)
 
@@ -286,7 +287,7 @@ class TestAFMLBookExample:
         )
 
         # Expected from book
-        expected = np.array([5/6, 0.75, 1.0])
+        expected = np.array([5 / 6, 0.75, 1.0])
 
         # mlfinpy should match book
         np.testing.assert_allclose(mlfinpy_uniqueness.values, expected, rtol=1e-10)

@@ -55,7 +55,7 @@ def directional_targets(
     # Validate inputs
     validate_list_length(thresholds, min_length=1, name="thresholds")
     for i, thresh in enumerate(thresholds):
-        if not isinstance(thresh, (int, float)):
+        if not isinstance(thresh, int | float):
             raise TypeError(
                 f"thresholds[{i}] must be numeric, got {type(thresh).__name__}",
             )

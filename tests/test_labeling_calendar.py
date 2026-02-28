@@ -243,6 +243,7 @@ class TestCalendarAwareLabels:
 
     def test_non_labeling_config_input_raises_actionable_error(self, sample_daily_data):
         """Passing non-LabelingConfig should fail with migration guidance."""
+
         class LegacyBarrierConfig:
             pass
 

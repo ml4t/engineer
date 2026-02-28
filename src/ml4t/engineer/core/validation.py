@@ -74,7 +74,7 @@ def validate_threshold(
     TypeError
         If threshold is not numeric
     """
-    if not isinstance(threshold, (int, float)):
+    if not isinstance(threshold, int | float):
         raise TypeError(f"{name} must be numeric, got {type(threshold).__name__}")
     if not min_val <= threshold <= max_val:
         raise ValueError(
@@ -204,7 +204,7 @@ def validate_positive(value: float, name: str = "value") -> None:
     TypeError
         If value is not numeric
     """
-    if not isinstance(value, (int, float)):
+    if not isinstance(value, int | float):
         raise TypeError(f"{name} must be numeric, got {type(value).__name__}")
     if value <= 0:
         raise ValueError(f"{name} must be positive, got {value}")

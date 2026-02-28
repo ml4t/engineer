@@ -174,7 +174,7 @@ def stochf(
     ...     qta.stochf("high", "low", "close", 5, 3).alias("fastk")
     ... ])
     """
-    if isinstance(high, (pl.Expr, str)):
+    if isinstance(high, pl.Expr | str):
         # Return Polars expression using map_batches for complex calculations
         if isinstance(high, str):
             high = pl.col(high)

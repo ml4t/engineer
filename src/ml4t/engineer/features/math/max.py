@@ -114,7 +114,7 @@ def maximum(
     >>> df = pl.DataFrame({"price": [1, 3, 2, 5, 4, 7, 6, 8]})
     >>> result = df.with_columns(qta.maximum("price", 3).alias("max"))
     """
-    if isinstance(close, (pl.Expr, str)):
+    if isinstance(close, pl.Expr | str):
         # Return Polars expression
         if isinstance(close, str):
             close = pl.col(close)

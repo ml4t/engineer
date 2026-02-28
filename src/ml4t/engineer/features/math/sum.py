@@ -89,7 +89,7 @@ def summation(
     >>> df = pl.DataFrame({"price": [1, 2, 3, 4, 5, 6, 7, 8]})
     >>> result = df.with_columns(qta.summation("price", 3).alias("sum"))
     """
-    if isinstance(close, (pl.Expr, str)):
+    if isinstance(close, pl.Expr | str):
         # Return Polars expression
         if isinstance(close, str):
             close = pl.col(close)

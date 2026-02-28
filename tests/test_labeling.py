@@ -52,6 +52,7 @@ class TestRemovedCoreModule:
 
     def test_non_labeling_config_input_raises_actionable_error(self):
         """Passing non-LabelingConfig should fail with migration guidance."""
+
         class LegacyBarrierConfig:
             pass
 
@@ -1243,7 +1244,9 @@ class TestOHLCBarrierChecking:
             },
         )
 
-        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01, max_holding_period=10)
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.02, lower_barrier=0.01, max_holding_period=10
+        )
 
         with pytest.raises(DataValidationError, match="High column 'nonexistent' not found"):
             triple_barrier_labels(data, config, price_col="close", high_col="nonexistent")
@@ -1323,7 +1326,9 @@ class TestPanelLabeling:
                 "close": [100.0, 1000.0, 101.0, 999.0],
             }
         )
-        config = LabelingConfig.triple_barrier(upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1)
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1
+        )
 
         result = triple_barrier_labels(
             data,
@@ -1355,7 +1360,9 @@ class TestPanelLabeling:
                 "close": [100.0, 1000.0, 101.0, 999.0],
             }
         )
-        config = LabelingConfig.triple_barrier(upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1)
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1
+        )
 
         explicit = triple_barrier_labels(
             data,
@@ -1450,7 +1457,9 @@ class TestPanelLabeling:
             symbol_col="ticker",
             price_col="px",
         )
-        config = LabelingConfig.triple_barrier(upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1)
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05, lower_barrier=0.05, max_holding_period=1
+        )
 
         result = triple_barrier_labels(data, config=config, contract=contract)
         a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)

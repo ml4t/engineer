@@ -28,7 +28,6 @@ Reference:
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from ml4t.engineer.labeling import (
     build_concurrency,
@@ -194,9 +193,7 @@ class TestSampleWeights:
         uniqueness = np.array([1.0, 0.5, 0.75])
         returns = np.array([0.01, 0.02, 0.03])
 
-        weights = calculate_sample_weights(
-            uniqueness, returns, weight_scheme="uniqueness_only"
-        )
+        weights = calculate_sample_weights(uniqueness, returns, weight_scheme="uniqueness_only")
 
         # Weights should be proportional to uniqueness, normalized to sum=len
         total = 1.0 + 0.5 + 0.75
@@ -209,9 +206,7 @@ class TestSampleWeights:
         uniqueness = np.array([1.0, 0.5, 0.75])
         returns = np.array([0.01, 0.02, 0.03])
 
-        weights = calculate_sample_weights(
-            uniqueness, returns, weight_scheme="returns_only"
-        )
+        weights = calculate_sample_weights(uniqueness, returns, weight_scheme="returns_only")
 
         # Weights should be proportional to |returns|, normalized
         abs_returns = np.array([0.01, 0.02, 0.03])
@@ -228,9 +223,7 @@ class TestSampleWeights:
         uniqueness = np.array([1.0, 0.5, 0.75])
         returns = np.array([0.01, -0.02, 0.03])  # Including negative
 
-        weights = calculate_sample_weights(
-            uniqueness, returns, weight_scheme="returns_uniqueness"
-        )
+        weights = calculate_sample_weights(uniqueness, returns, weight_scheme="returns_uniqueness")
 
         # w̃_i = u_i * |r_i|
         raw_weights = uniqueness * np.abs(returns)
@@ -244,9 +237,7 @@ class TestSampleWeights:
         uniqueness = np.array([0.3, 0.5, 0.9])
         returns = np.array([0.01, 0.02, 0.03])
 
-        weights = calculate_sample_weights(
-            uniqueness, returns, weight_scheme="equal"
-        )
+        weights = calculate_sample_weights(uniqueness, returns, weight_scheme="equal")
 
         # All weights should be 1.0
         np.testing.assert_allclose(weights, np.ones(3))
@@ -395,9 +386,7 @@ class TestEdgeCases:
         uniqueness = np.array([0.8, 0.6, 0.7])
         returns = np.array([0.0, 0.0, 0.0])
 
-        weights = calculate_sample_weights(
-            uniqueness, returns, weight_scheme="uniqueness_only"
-        )
+        weights = calculate_sample_weights(uniqueness, returns, weight_scheme="uniqueness_only")
 
         # Should still produce valid weights
         assert len(weights) == 3

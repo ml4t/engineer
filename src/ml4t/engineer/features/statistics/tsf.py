@@ -127,7 +127,7 @@ def tsf(
     >>> df = pl.DataFrame({"price": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]})
     >>> result = df.with_columns(qta.tsf("price", 3).alias("tsf"))
     """
-    if isinstance(close, (pl.Expr, str)):
+    if isinstance(close, pl.Expr | str):
         # Return Polars expression using map_batches for complex calculations
         if isinstance(close, str):
             close = pl.col(close)

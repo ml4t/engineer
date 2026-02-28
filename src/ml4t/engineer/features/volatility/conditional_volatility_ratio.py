@@ -48,7 +48,7 @@ def conditional_volatility_ratio(
     """
     # Validate inputs
     validate_window(period, min_window=2, name="period")
-    if not isinstance(threshold, (int, float)):
+    if not isinstance(threshold, int | float):
         raise TypeError(f"threshold must be numeric, got {type(threshold).__name__}")
 
     returns = pl.col(returns) if isinstance(returns, str) else returns

@@ -61,6 +61,7 @@ class TestDataContractConfig:
 
     def test_from_ml4t_data_uses_available_schema_aliases(self, monkeypatch: pytest.MonkeyPatch):
         """Bridge should map to available schema aliases when canonical names differ."""
+
         class _SchemaWithAliases:
             SCHEMA = {
                 "ts_event": object(),

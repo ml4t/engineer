@@ -35,6 +35,7 @@ try:
         get_bins,
         get_events,
     )
+
     HAS_MLFINPY = True
 except ImportError:
     HAS_MLFINPY = False
@@ -43,8 +44,7 @@ from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.labeling import triple_barrier_labels
 
 pytestmark = pytest.mark.skipif(
-    not HAS_MLFINPY,
-    reason="mlfinpy not installed (requires separate venv due to numba conflict)"
+    not HAS_MLFINPY, reason="mlfinpy not installed (requires separate venv due to numba conflict)"
 )
 
 
@@ -61,12 +61,14 @@ def create_test_prices(n: int = 500, seed: int = 42) -> tuple[pd.Series, pl.Data
     pandas_close = pd.Series(close, index=dates, name="close")
 
     # Create polars DataFrame
-    polars_df = pl.DataFrame({
-        "timestamp": dates.to_pydatetime(),
-        "close": close,
-        "high": close,  # Simplified: use close for OHLC
-        "low": close,
-    })
+    polars_df = pl.DataFrame(
+        {
+            "timestamp": dates.to_pydatetime(),
+            "close": close,
+            "high": close,  # Simplified: use close for OHLC
+            "low": close,
+        }
+    )
 
     return pandas_close, polars_df
 
@@ -75,7 +77,7 @@ def get_daily_volatility(close: pd.Series, span: int = 100) -> pd.Series:
     """Compute daily volatility using EWM (from AFML Snippet 3.1)."""
     df0 = close.index.searchsorted(close.index - pd.Timedelta(days=1))
     df0 = df0[df0 > 0]
-    df0 = pd.Series(close.index[df0 - 1], index=close.index[close.shape[0] - df0.shape[0]:])
+    df0 = pd.Series(close.index[df0 - 1], index=close.index[close.shape[0] - df0.shape[0] :])
     df0 = close.loc[df0.index] / close.loc[df0.values].values - 1
     df0 = df0.ewm(span=span).std()
     return df0
@@ -128,9 +130,7 @@ class TestTripleBarrierComparison:
             side=1,
         )
 
-        ml4t_result = triple_barrier_labels(
-            polars_with_events, config, timestamp_col="timestamp"
-        )
+        ml4t_result = triple_barrier_labels(polars_with_events, config, timestamp_col="timestamp")
 
         # Compare labels (filter to only events that mlfinpy processed)
         ml4t_labels = ml4t_result.filter(pl.col("event_time").is_not_null())

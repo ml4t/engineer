@@ -448,6 +448,7 @@ class LabelingConfig(BaseConfig):
             **kwargs,
         )
 
+
 __all__ = [
     "LabelingConfig",
 ]

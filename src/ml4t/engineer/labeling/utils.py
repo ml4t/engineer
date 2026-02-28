@@ -410,7 +410,9 @@ def resolve_labeling_columns(
     require_timestamp: bool = False,
 ) -> tuple[str, str | None, list[str]]:
     """Resolve columns using explicit args > labeling config > shared contract > defaults."""
-    config_fields_set = set(getattr(config, "model_fields_set", set())) if config is not None else set()
+    config_fields_set = (
+        set(getattr(config, "model_fields_set", set())) if config is not None else set()
+    )
     timestamp_is_explicit = timestamp_col is not None
 
     if contract is None and config is not None:

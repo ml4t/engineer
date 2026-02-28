@@ -116,7 +116,7 @@ def plus_dm(
     ...     qta.plus_dm("high", "low", 14).alias("plus_dm")
     ... ])
     """
-    if isinstance(high, (pl.Expr, str)):
+    if isinstance(high, pl.Expr | str):
         # Return Polars expression using map_batches for complex calculations
         if isinstance(high, str):
             high = pl.col(high)
