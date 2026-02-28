@@ -10,6 +10,8 @@ Agent Navigation:
     Start with the root AGENT.md for package overview and navigation.
 """
 
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _dist_version
 from pathlib import Path as _Path
 
 from . import (
@@ -45,7 +47,13 @@ from .preprocessing import (
     TransformType,
 )
 
-__version__ = "0.3.0"
+try:
+    from ._version import version as __version__
+except Exception:
+    try:
+        __version__ = _dist_version("ml4t-engineer")
+    except _PackageNotFoundError:
+        __version__ = "0+unknown"
 
 
 def get_agent_docs() -> dict[str, _Path]:
