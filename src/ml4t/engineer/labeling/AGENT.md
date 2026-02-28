@@ -4,13 +4,13 @@ Methods for creating supervised learning labels from price data.
 
 ## Triple-Barrier (Recommended)
 
-### triple_barrier_labels(data, upper_barrier, lower_barrier, max_holding) -> DataFrame
+### triple_barrier_labels(data, config, ...) -> DataFrame
 Path-dependent labeling with profit target, stop loss, and time horizon.
 - Returns: +1 (profit), -1 (loss), 0 (timeout)
 - Performance: 50,000 labels/second
 Reference: López de Prado (2018), Chapter 3
 
-### atr_triple_barrier_labels(data, atr_period=14, upper_mult=2.0, lower_mult=1.0, max_holding=20) -> DataFrame
+### atr_triple_barrier_labels(data, ..., config=None, contract=None) -> DataFrame
 Triple barrier with ATR-based dynamic barriers.
 Barriers adapt to volatility.
 
@@ -59,7 +59,6 @@ Uniqueness score per label.
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `core.py` | 1694 | Core triple-barrier implementation (Numba) |
 | `triple_barrier.py` | 350 | High-level triple barrier API |
 | `atr_barriers.py` | 303 | ATR-based barrier calculation |
 | `percentile_labels.py` | 322 | Rolling percentile labels |
@@ -67,3 +66,6 @@ Uniqueness score per label.
 | `meta_labels.py` | - | Meta-labeling for bet sizing |
 | `uniqueness.py` | 389 | Sample weights and bootstrap |
 | `numba_ops.py` | 424 | Numba-compiled operations |
+
+Legacy module notes:
+- `core.py`, `barriers.py`, and `barrier_utils.py` are removed compatibility paths that raise import-time migration errors.

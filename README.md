@@ -90,31 +90,41 @@ print(registry.list_normalized())             # 37 bounded (0-100, -1 to 1)
 ## Triple-Barrier Labeling
 
 ```python
+from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.labeling import triple_barrier_labels, atr_triple_barrier_labels
 
 # Fixed barriers
-labels = triple_barrier_labels(
-    df,
+tb_config = LabelingConfig.triple_barrier(
     upper_barrier=0.02,    # 2% profit target
     lower_barrier=0.01,    # 1% stop loss
     max_holding_period=20, # 20 bars
 )
+labels = triple_barrier_labels(
+    df,
+    config=tb_config,
+)
 
 # ATR-based dynamic barriers
+atr_config = LabelingConfig.atr_barrier(
+    atr_tp_multiple=2.0,
+    atr_sl_multiple=1.0,
+    atr_period=14,
+    max_holding_period=20,
+)
 labels = atr_triple_barrier_labels(
     df,
-    atr_period=14,
-    upper_atr_mult=2.0,
-    lower_atr_mult=1.0,
-    max_holding_period=20,
+    config=atr_config,
 )
 
 # Time-based horizons
-labels = triple_barrier_labels(
-    df,
+tb_time_config = LabelingConfig.triple_barrier(
     upper_barrier=0.02,
     lower_barrier=0.01,
     max_holding_period="4h",  # 4 hours
+)
+labels = triple_barrier_labels(
+    df,
+    config=tb_time_config,
 )
 ```
 

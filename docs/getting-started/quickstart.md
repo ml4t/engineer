@@ -61,13 +61,18 @@ result = compute_features(df, "features.yaml")
 ## Triple-Barrier Labeling
 
 ```python
+from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.labeling import triple_barrier_labels
+
+config = LabelingConfig.triple_barrier(
+    upper_barrier=0.02,  # 2% profit target
+    lower_barrier=0.01,  # 1% stop loss
+    max_holding_period=20,  # 20 bar maximum holding
+)
 
 labels = triple_barrier_labels(
     df,
-    upper_barrier=0.02,  # 2% profit target
-    lower_barrier=0.01,  # 1% stop loss
-    max_holding=20,      # 20 bar maximum holding
+    config=config,
 )
 ```
 

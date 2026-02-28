@@ -11,13 +11,18 @@ The triple-barrier method from *Advances in Financial Machine Learning* creates 
 - **Vertical barrier**: Time limit (label = 0)
 
 ```python
+from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.labeling import triple_barrier_labels
+
+config = LabelingConfig.triple_barrier(
+    upper_barrier=0.02,  # 2% profit target
+    lower_barrier=0.01,  # 1% stop loss
+    max_holding_period=20,  # 20 bar horizon
+)
 
 labels = triple_barrier_labels(
     df,
-    upper_barrier=0.02,  # 2% profit target
-    lower_barrier=0.01,  # 1% stop loss
-    max_holding=20,      # 20 bar horizon
+    config=config,
 )
 ```
 
@@ -26,15 +31,17 @@ labels = triple_barrier_labels(
 Use volatility-adjusted barriers that adapt to market conditions:
 
 ```python
-from ml4t.engineer.labeling import atr_barriers
+from ml4t.engineer.config import LabelingConfig
+from ml4t.engineer.labeling import atr_triple_barrier_labels
 
-labels = atr_barriers(
-    df,
+config = LabelingConfig.atr_barrier(
     atr_period=14,
-    upper_multiplier=2.0,  # 2x ATR profit target
-    lower_multiplier=1.0,  # 1x ATR stop loss
-    max_holding=20,
+    atr_tp_multiple=2.0,  # 2x ATR profit target
+    atr_sl_multiple=1.0,  # 1x ATR stop loss
+    max_holding_period=20,
 )
+
+labels = atr_triple_barrier_labels(df, config=config)
 ```
 
 ## Performance

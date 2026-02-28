@@ -41,7 +41,7 @@ Package-level navigation for feature engineering library.
 | File | Purpose | Key Classes |
 |------|---------|-------------|
 | `feature_config.py` | Feature specifications | `FeatureConfig`, `FeatureSpec` |
-| `labeling.py` | Labeling config | `LabelingConfig`, `BarrierConfig` |
+| `labeling.py` | Labeling config | `LabelingConfig` |
 | `preprocessing_config.py` | Scaler config | `PreprocessingConfig`, `ScalerConfig` |
 | `base.py` | Base config classes | `BaseConfig` |
 
@@ -85,7 +85,7 @@ metadata = registry.get("rsi")
 ## File Size Tiers (for refactoring reference)
 
 **Very Large (>1000 lines)** - Consider splitting:
-- `labeling/core.py` (1694)
+- None currently in active labeling public surface (legacy `labeling/core.py` removed)
 
 **Large (500-1000 lines)**:
 - `config/feature_config.py`, `preprocessing.py`, `features/risk.py`
