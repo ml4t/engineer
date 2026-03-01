@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.9 or higher
+- Python 3.11 or higher
 - Polars 0.20+
 
 ## Install from PyPI
@@ -42,15 +42,16 @@ pip install TA-Lib
 ## Verify Installation
 
 ```python
-from ml4t.engineer import list_features, list_categories
+from ml4t.engineer import feature_catalog
 
 # Check available features
-print(f"Total features: {len(list_features())}")
-print(f"Categories: {list_categories()}")
+all_features = feature_catalog.list()
+print(f"Total features: {len(all_features)}")
+print(f"Categories: {feature_catalog.categories()}")
 ```
 
 Expected output:
 ```
-Total features: 107
-Categories: ['math', 'microstructure', 'ml', 'momentum', 'price_transform', 'statistics', 'trend', 'volatility', 'volume']
+Total features: 120
+Categories: ['math', 'microstructure', 'ml', 'momentum', 'price_transform', 'regime', 'risk', 'statistics', 'trend', 'volatility', 'volume']
 ```

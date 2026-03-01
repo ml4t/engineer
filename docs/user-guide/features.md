@@ -1,6 +1,6 @@
 # Technical Indicators
 
-ML4T Engineer provides 107+ technical indicators across 10 categories.
+ML4T Engineer provides 120 technical indicators across 11 categories.
 
 ## Momentum Indicators (31)
 
@@ -44,7 +44,7 @@ ML4T Engineer provides 107+ technical indicators across 10 categories.
 | `ewma` | EWMA volatility |
 | `garch` | GARCH(1,1) forecast |
 
-## Microstructure (12)
+## Microstructure (15)
 
 | Name | Description |
 |------|-------------|
@@ -55,7 +55,7 @@ ML4T Engineer provides 107+ technical indicators across 10 categories.
 | `corwin_schultz` | Corwin-Schultz high-low spread |
 | `hasbrouck_lambda` | Hasbrouck's Lambda |
 
-## ML Features (11)
+## ML Features (14)
 
 | Name | Description |
 |------|-------------|

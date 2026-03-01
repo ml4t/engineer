@@ -87,7 +87,7 @@ def atr_triple_barrier_labels(
     price_col: str | None = None,
     timestamp_col: str | None = None,
     group_col: str | list[str] | None = None,
-    trailing_stop: bool = False,
+    trailing_stop: bool | float | str = False,
     *,
     config: LabelingConfig | None = None,
     contract: DataContractConfig | None = None,
@@ -143,8 +143,11 @@ def atr_triple_barrier_labels(
         Price column for barrier calculation (typically 'close').
     timestamp_col : str, default "timestamp"
         Timestamp column for duration calculations.
-    trailing_stop : bool, default False
-        Enable trailing stop (lock in profits as price moves favorably).
+    trailing_stop : bool | float | str, default False
+        Trailing stop configuration:
+        - bool: Enable/disable with default distance behavior
+        - float: Explicit trailing stop distance
+        - str: Column name with per-row trailing stop distances
     config : LabelingConfig, optional
         Pydantic configuration object (alternative to individual parameters).
         If provided, extracts atr_tp_multiple, atr_sl_multiple, atr_period,
@@ -249,8 +252,8 @@ def atr_triple_barrier_labels(
             max_holding_bars = config.max_holding_period
         if side is None:
             side = config.side  # type: ignore[assignment]
-        if not trailing_stop and config.trailing_stop:
-            trailing_stop = bool(config.trailing_stop)
+        if trailing_stop is False and config.trailing_stop is not False:
+            trailing_stop = config.trailing_stop
 
     # Apply defaults for any remaining None values
     atr_tp_multiple = atr_tp_multiple if atr_tp_multiple is not None else 2.0

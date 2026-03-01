@@ -255,12 +255,20 @@ def rolling_percentile_binary_labels(
     result = result.with_columns(forward_returns.alias(forward_return_col))
 
     # Step 2: Compute rolling percentile threshold
+    # Critical: shift forward returns by 1 so thresholds only use historical
+    # realized outcomes, never the current row's own future return.
+    historical_return_col = f"_historical_forward_return_{horizon_label}"
+    historical_forward_expr = pl.col(forward_return_col).shift(1)
+    if resolved_group_cols:
+        historical_forward_expr = historical_forward_expr.over(resolved_group_cols)
+    result = result.with_columns(historical_forward_expr.alias(historical_return_col))
+
     quantile = percentile / 100.0
 
     # Determine min_samples default
     if min_samples is None:
         if isinstance(lookback_window, int):
-            min_samples = min(1008, lookback_window // 10)
+            min_samples = max(1, min(1008, lookback_window // 10))
         else:
             # For time-based lookback, use a reasonable default
             min_samples = 100
@@ -274,7 +282,7 @@ def rolling_percentile_binary_labels(
             index_column=resolved_ts_col,
             period=lookback_window,  # type: ignore[arg-type]
             group_by=resolved_group_cols if resolved_group_cols else None,
-        ).agg(pl.col(forward_return_col).quantile(quantile).alias("_rolling_threshold"))
+        ).agg(pl.col(historical_return_col).quantile(quantile).alias("_rolling_threshold"))
 
         join_keys = (
             [*resolved_group_cols, resolved_ts_col] if resolved_group_cols else [resolved_ts_col]
@@ -292,7 +300,7 @@ def rolling_percentile_binary_labels(
                 f"lookback_window must be an integer for bar-based rolling, "
                 f"got '{lookback_window}'. For time-based, ensure timestamp_col is set."
             )
-        rolling_threshold_expr = pl.col(forward_return_col).rolling_quantile(
+        rolling_threshold_expr = pl.col(historical_return_col).rolling_quantile(
             window_size=lookback_window,
             quantile=quantile,
             min_samples=min_samples,
@@ -324,7 +332,7 @@ def rolling_percentile_binary_labels(
     label_col_name = f"label_{direction}_p{int(percentile)}_h{horizon_label}"
     result = result.with_columns(label.alias(label_col_name))
 
-    return result
+    return result.drop(historical_return_col)
 
 
 def rolling_percentile_multi_labels(

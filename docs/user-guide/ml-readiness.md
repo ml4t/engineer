@@ -105,7 +105,7 @@ print(f"RSI normalized: {meta.normalized}")  # True
 
 # Get features by category that are normalized
 momentum_normalized = [
-    name for name in registry.list_features(category="momentum")
+    name for name in registry.list_by_category("momentum")
     if registry.get(name).normalized is True
 ]
 ```

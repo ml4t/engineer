@@ -23,7 +23,7 @@ Transforming raw price data into predictive features is a core task in quantitat
 - Alternative bar sampling (volume bars, dollar bars, tick imbalance bars)
 - A feature registry for discovery and configuration
 
-The library is built on Polars with Numba JIT compilation for numerical operations. 59 indicators are validated against TA-Lib at 1e-6 tolerance.
+The library is built on Polars with Numba JIT compilation for numerical operations. 60 indicators are validated against TA-Lib at 1e-6 tolerance.
 
 ![ml4t-engineer Architecture](docs/images/ml4t_engineer_architecture_print.jpeg)
 
@@ -67,7 +67,7 @@ from ml4t.engineer.core.registry import get_registry
 registry = get_registry()
 print(registry.list_all())                    # All 120 features
 print(registry.list_by_category("momentum"))  # 31 momentum indicators
-print(registry.list_ta_lib_compatible())      # 59 TA-Lib validated
+print(registry.list_ta_lib_compatible())      # 60 TA-Lib validated
 print(registry.list_normalized())             # 37 bounded (0-100, -1 to 1)
 ```
 
@@ -147,7 +147,7 @@ ibars = TickImbalanceBarSampler(expected_imbalance=100).sample(tick_data)
 
 - **Polars-native**: All computations use Polars expressions
 - **Numba-accelerated**: JIT compilation for numerical kernels
-- **TA-Lib validated**: 59 indicators validated at 1e-6 tolerance
+- **TA-Lib validated**: 60 indicators validated at 1e-6 tolerance
 - **AFML-compliant**: Labeling methods verified against *Advances in Financial Machine Learning*
 - **ML-ready outputs**: 37 features produce bounded outputs (0-100, -1 to 1) for direct model input; remaining features work with standard preprocessing (returns, z-scores, robust scaling)
 

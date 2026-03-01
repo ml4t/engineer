@@ -251,6 +251,30 @@ class TestIntegration:
         assert len(result) == len(sample_ohlc)
         assert "label" in result.columns
 
+    def test_config_preserves_numeric_trailing_stop(self, sample_ohlc, monkeypatch):
+        """Numeric trailing_stop in LabelingConfig should not be coerced to bool."""
+        captured: dict[str, float | bool | str] = {}
+
+        def _stub_triple_barrier(data, config, **_kwargs):  # type: ignore[no-untyped-def]
+            captured["trailing_stop"] = config.trailing_stop
+            return data.with_columns(label=pl.lit(0, dtype=pl.Int32))
+
+        monkeypatch.setattr(
+            "ml4t.engineer.labeling.atr_barriers.triple_barrier_labels",
+            _stub_triple_barrier,
+        )
+
+        config = LabelingConfig.atr_barrier(
+            atr_tp_multiple=2.0,
+            atr_sl_multiple=1.0,
+            atr_period=14,
+            max_holding_period=5,
+            trailing_stop=0.025,
+        )
+        _ = atr_triple_barrier_labels(sample_ohlc, config=config)
+
+        assert captured["trailing_stop"] == pytest.approx(0.025)
+
     def test_no_max_holding_period(self, sample_ohlc):
         """Test with no maximum holding period."""
         result = atr_triple_barrier_labels(

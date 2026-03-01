@@ -7,9 +7,14 @@
       show_root_heading: true
       members:
         - compute_features
-        - list_features
-        - list_categories
-        - describe_feature
+
+## Feature Discovery
+
+::: ml4t.engineer.discovery.catalog
+    options:
+      show_root_heading: true
+      members:
+        - FeatureCatalog
 
 ## Labeling
 

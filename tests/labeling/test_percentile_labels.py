@@ -140,6 +140,64 @@ class TestRollingPercentileBinaryLabels:
         positive_rate = labels.mean()
         assert 0 < positive_rate < 0.30
 
+    def test_threshold_uses_only_historical_forward_returns(self) -> None:
+        """Rolling threshold must exclude current row forward return to avoid leakage."""
+        data = pl.DataFrame({"close": [100.0, 101.0, 103.0, 102.0, 104.0]})
+
+        result = rolling_percentile_binary_labels(
+            data,
+            horizon=1,
+            percentile=100,
+            direction="long",
+            lookback_window=1,
+            min_samples=1,
+        )
+
+        forward = result["forward_return_1"].to_list()
+        threshold = result["threshold_p100_h1"].to_list()
+
+        assert threshold[0] is None
+        assert threshold[1] == pytest.approx(forward[0])
+        assert threshold[2] == pytest.approx(forward[1])
+        assert threshold[3] == pytest.approx(forward[2])
+
+        # With lookback=1 and p100, leakage would make all non-null labels == 1.
+        # Historical-only threshold correctly yields at least one 0.
+        labels = result["label_long_p100_h1"].drop_nulls().to_list()
+        assert 0 in labels
+
+    def test_time_based_threshold_uses_only_historical_forward_returns(self) -> None:
+        """Time-based rolling threshold should also use shifted forward returns."""
+        from datetime import datetime
+
+        ts = pl.datetime_range(
+            start=datetime(2024, 1, 1, 9, 30, 0),
+            end=datetime(2024, 1, 1, 9, 34, 0),
+            interval="1m",
+            eager=True,
+        )
+        data = pl.DataFrame(
+            {
+                "timestamp": ts,
+                "close": [100.0, 101.0, 103.0, 102.0, 104.0],
+            }
+        )
+
+        result = rolling_percentile_binary_labels(
+            data,
+            horizon="1m",
+            percentile=100,
+            direction="long",
+            lookback_window="2m",
+            min_samples=1,
+        )
+
+        forward = result["forward_return_1m"].to_list()
+        threshold = result["threshold_p100_h1m"].to_list()
+
+        assert threshold[0] is None
+        assert threshold[1] == pytest.approx(forward[0])
+
     def test_uses_config_column_contract_for_panel_data(self) -> None:
         """Config-driven price/timestamp/group mapping should be honored."""
         from datetime import datetime, timedelta

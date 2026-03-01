@@ -4,12 +4,12 @@ High-performance feature engineering library for financial machine learning.
 
 ## Overview
 
-ML4T Engineer provides **107+ technical indicators**, triple-barrier labeling, and alternative bar sampling with a Polars-first implementation that's 10-100x faster than pandas alternatives.
+ML4T Engineer provides **120 technical indicators**, triple-barrier labeling, and alternative bar sampling with a Polars-first implementation that's 10-100x faster than pandas alternatives.
 
 ## Key Features
 
-- **107+ Technical Indicators** across 10 categories (momentum, trend, volatility, etc.)
-- **59 TA-Lib Validated** indicators with 1e-6 tolerance matching
+- **120 Technical Indicators** across 11 categories (momentum, trend, volatility, etc.)
+- **60 TA-Lib Validated** indicators with 1e-6 tolerance matching
 - **Triple-Barrier Labeling** at 50,000 labels/second
 - **Alternative Bar Sampling** (volume, dollar, tick imbalance bars)
 - **Polars-First** implementation for maximum performance
@@ -31,13 +31,17 @@ result = compute_features(df, ["rsi", "macd", "atr", "bollinger_bands"])
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Momentum | 31 | RSI, MACD, Stochastic, CCI, ADX |
-| Trend | 10 | SMA, EMA, KAMA, T3 |
-| Volatility | 15 | ATR, Bollinger, Yang-Zhang, GARCH |
-| Volume | 3 | OBV, AD, CMF |
-| Statistics | 8 | Rolling stats, Z-score |
-| Microstructure | 12 | Kyle's Lambda, VPIN, Amihud |
-| ML Features | 11 | Fractional diff, Hurst, Entropy |
+| Momentum | 31 | RSI, MACD, Stochastic, CCI, ADX, MFI |
+| Microstructure | 15 | Kyle Lambda, VPIN, Amihud, Roll spread |
+| Volatility | 15 | ATR, Bollinger, Yang-Zhang, Parkinson |
+| Statistics | 14 | Variance, Linear Regression, Correlation |
+| ML | 14 | Fractional Diff, Entropy, Lag features |
+| Trend | 10 | SMA, EMA, WMA, DEMA, TEMA, KAMA |
+| Risk | 6 | Max Drawdown, Sortino, CVaR |
+| Price Transform | 5 | Typical Price, Weighted Close |
+| Regime | 4 | Hurst Exponent, Choppiness Index |
+| Volume | 3 | OBV, AD, ADOSC |
+| Math | 3 | MAX, MIN, SUM |
 
 ## Installation
 

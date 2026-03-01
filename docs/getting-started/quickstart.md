@@ -79,18 +79,18 @@ labels = triple_barrier_labels(
 ## Explore Available Features
 
 ```python
-from ml4t.engineer import list_features, list_categories, describe_feature
+from ml4t.engineer import feature_catalog
 
 # List all categories
-print(list_categories())
+print(feature_catalog.categories())
 # ['momentum', 'trend', 'volatility', ...]
 
 # List features in a category
-print(list_features("momentum"))
+print(feature_catalog.list(category="momentum"))
 # ['rsi', 'macd', 'stoch', 'cci', ...]
 
 # Get feature details
-info = describe_feature("rsi")
+info = feature_catalog.describe("rsi")
 print(info)
 # {'name': 'rsi', 'category': 'momentum', 'normalized': True, ...}
 ```
