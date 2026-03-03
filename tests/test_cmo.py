@@ -186,6 +186,7 @@ class TestCMO:
                     err_msg=f"CMO mismatch on crypto data for period {period}",
                 )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_cmo_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark CMO performance."""

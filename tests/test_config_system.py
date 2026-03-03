@@ -422,57 +422,6 @@ class TestComputationalConfig:
 # =============================================================================
 
 
-class TestFeatureConfigValidators:
-    """Tests for feature_config.py validators."""
-
-    def test_stationarity_config_at_least_one_test(self) -> None:
-        """Test that StationarityConfig requires at least one test enabled."""
-        from ml4t.engineer.config.feature_config import StationarityConfig
-
-        # Valid: at least one test enabled
-        config = StationarityConfig(adf_enabled=True, kpss_enabled=False, pp_enabled=False)
-        assert config.adf_enabled is True
-
-        config = StationarityConfig(adf_enabled=False, kpss_enabled=True, pp_enabled=False)
-        assert config.kpss_enabled is True
-
-        config = StationarityConfig(adf_enabled=False, kpss_enabled=False, pp_enabled=True)
-        assert config.pp_enabled is True
-
-    def test_stationarity_config_none_enabled_raises(self) -> None:
-        """Test that StationarityConfig raises if no tests enabled."""
-        from ml4t.engineer.config.feature_config import StationarityConfig
-
-        with pytest.raises(ValidationError, match="At least one stationarity test"):
-            StationarityConfig(adf_enabled=False, kpss_enabled=False, pp_enabled=False)
-
-    def test_volatility_config_window_sizes_validation(self) -> None:
-        """Test VolatilityConfig window_sizes validator."""
-        from ml4t.engineer.config.feature_config import VolatilityConfig
-
-        # Valid window sizes
-        config = VolatilityConfig(window_sizes=[5, 10, 20])
-        assert config.window_sizes == [5, 10, 20]
-
-        # Window sizes get sorted
-        config = VolatilityConfig(window_sizes=[20, 5, 10])
-        assert config.window_sizes == [5, 10, 20]
-
-    def test_volatility_config_empty_window_sizes_raises(self) -> None:
-        """Test that empty window_sizes raises error."""
-        from ml4t.engineer.config.feature_config import VolatilityConfig
-
-        with pytest.raises(ValidationError, match="at least one window size"):
-            VolatilityConfig(window_sizes=[])
-
-    def test_volatility_config_invalid_window_size_raises(self) -> None:
-        """Test that window size < 2 raises error."""
-        from ml4t.engineer.config.feature_config import VolatilityConfig
-
-        with pytest.raises(ValidationError, match="must be >= 2"):
-            VolatilityConfig(window_sizes=[1, 5, 10])
-
-
 class TestConfigIntegration:
     """Integration tests for config system."""
 

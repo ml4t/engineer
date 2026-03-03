@@ -317,6 +317,7 @@ class TestLinearRegFamily:
                     err_msg=f"LINEARREG_ANGLE mismatch on crypto data for period {period}",
                 )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_linearreg_family_performance(
         self,

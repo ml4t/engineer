@@ -237,6 +237,7 @@ class TestDMIndicators:
         assert_indicator_match(plus_dm_result, expected_plus, "PLUS_DM calc", rtol=1e-10)
         assert_indicator_match(minus_dm_result, expected_minus, "MINUS_DM calc", rtol=1e-10)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_dm_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark DM indicators performance."""

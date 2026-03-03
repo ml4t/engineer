@@ -135,7 +135,6 @@ dev = [
     "pytest-benchmark>=4.0.0",
     "hypothesis>=6.80.0",
     "ruff>=0.1.0",
-    "mypy>=1.5.0",
     "ipython>=8.14.0",
     "ipdb>=0.13.0",
     "pre-commit>=3.3.0",
@@ -174,7 +173,6 @@ all = [
     "pytest-benchmark>=4.0.0",
     "hypothesis>=6.80.0",
     "ruff>=0.1.0",
-    "mypy>=1.5.0",
     "ipython>=8.14.0",
     "ipdb>=0.13.0",
     "pre-commit>=3.3.0",
@@ -205,6 +203,7 @@ dev = [
     "ty",
     "pre-commit>=3.3.0",
     "twine>=6.0.0",
+    "pandas-market-calendars>=4.0.0",
 ]
 
 [tool.pytest.ini_options]
@@ -215,6 +214,7 @@ python_functions = ["test_*"]
 addopts = [
     "-ra",
     "--strict-markers",
+    "-m", "not perf",
     "--capture=no",  # Disable capture to avoid crash with numba/numpy on Python 3.13
     "--cov=ml4t.engineer",
     "--cov-report=term-missing",
@@ -224,7 +224,7 @@ markers = [
     "slow: marks tests as slow",
     "integration: marks tests as integration tests",
     "benchmark: marks benchmark tests",
-    "performance: marks performance tests",
+    "perf: marks performance comparison tests (excluded from default runs, use pytest -m perf)",
     "validation: marks tests that validate against TA-Lib",
     "property: marks property-based tests using hypothesis",
 ]
@@ -256,22 +256,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E402", "ARG002", "B017", "F841"]
-
-[tool.mypy]
-python_version = "3.11"
-strict = true
-warn_return_any = true
-warn_unused_ignores = true
-disallow_untyped_defs = true
-disallow_any_unimported = false
-no_implicit_optional = true
-check_untyped_defs = true
-show_error_codes = true
-warn_redundant_casts = true
-ignore_missing_imports = true
-namespace_packages = true
-explicit_package_bases = true
-mypy_path = "src"
 
 [tool.ty.environment]
 python-version = "3.11"

@@ -259,6 +259,7 @@ class TestMIDPRICE:
                     err_msg=f"MIDPRICE mismatch on crypto data for period {period}",
                 )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_midprice_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark MIDPRICE performance."""

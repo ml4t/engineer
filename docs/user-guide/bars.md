@@ -2,6 +2,8 @@
 
 Transform tick data into information-driven bars instead of time-based bars.
 
+> **Book**: *ML for Trading, 3rd ed.* — Ch3 `08_itch_bar_sampling.py` constructs tick, volume, and dollar bars from ITCH trade data. `10_itch_information_bars.py` builds imbalance bars with threshold analysis. `13_databento_bar_sampling.py` demonstrates bar sampling on Databento data.
+
 ## Why Alternative Bars?
 
 Time bars (1min, 1h, daily) have problems:

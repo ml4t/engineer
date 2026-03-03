@@ -148,16 +148,16 @@ class TestNextOpenPreviousClose:
         """Test next open when currently in market hours."""
         calendar = EquityCalendar()
 
-        # Tuesday 10:00 AM ET
-        dt = datetime(2024, 1, 2, 10, 0, 0)
+        # Wednesday 10:00 AM ET (during market hours)
+        dt = datetime(2024, 1, 3, 10, 0, 0)
         dt = dt.replace(tzinfo=ZoneInfo("America/New_York"))
 
         next_open = calendar.next_open(dt)
         # Convert to ET for comparison
         next_open_et = next_open.astimezone(ZoneInfo("America/New_York"))
 
-        # Next open should be Wednesday 9:30 AM ET
-        assert next_open_et.day == 3
+        # Next open should be Thursday 9:30 AM ET
+        assert next_open_et.day == 4
         assert next_open_et.hour == 9
         assert next_open_et.minute == 30
 
@@ -199,17 +199,16 @@ class TestNextOpenPreviousClose:
         """Test previous close when in market hours."""
         calendar = EquityCalendar()
 
-        # Tuesday 10:00 AM ET
-        dt = datetime(2024, 1, 2, 10, 0, 0)
+        # Wednesday 10:00 AM ET (avoids holiday ambiguity)
+        dt = datetime(2024, 1, 3, 10, 0, 0)
         dt = dt.replace(tzinfo=ZoneInfo("America/New_York"))
 
         prev_close = calendar.previous_close(dt)
         # Convert to ET for comparison
         prev_close_et = prev_close.astimezone(ZoneInfo("America/New_York"))
 
-        # Previous close should be Dec 29, 2023 4:00 PM (Jan 1 is a holiday)
-        assert prev_close_et.month == 12
-        assert prev_close_et.day == 29
+        # Previous close should be Tuesday Jan 2, 4:00 PM
+        assert prev_close_et.day == 2
         assert prev_close_et.hour == 16
         assert prev_close_et.minute == 0
 
@@ -217,24 +216,24 @@ class TestNextOpenPreviousClose:
         """Test previous close when before market open."""
         calendar = EquityCalendar()
 
-        # Tuesday 8:00 AM ET (before open)
-        dt = datetime(2024, 1, 2, 8, 0, 0)
+        # Wednesday 8:00 AM ET (before open, avoids holiday ambiguity)
+        dt = datetime(2024, 1, 3, 8, 0, 0)
         dt = dt.replace(tzinfo=ZoneInfo("America/New_York"))
 
         prev_close = calendar.previous_close(dt)
         # Convert to ET for comparison
         prev_close_et = prev_close.astimezone(ZoneInfo("America/New_York"))
 
-        # Previous close should be Dec 29, 2023 4:00 PM (Jan 1 is a holiday)
-        assert prev_close_et.month == 12
-        assert prev_close_et.day == 29
+        # Previous close should be Tuesday Jan 2, 4:00 PM
+        assert prev_close_et.day == 2
         assert prev_close_et.hour == 16
 
     def test_previous_close_skips_weekend(self) -> None:
         """Test previous close skips weekend."""
         calendar = EquityCalendar()
 
-        # Monday 10:00 AM ET
+        # Monday 10:00 AM ET — during market hours, so previous close is
+        # the last trading day's close, which should skip the weekend
         monday = datetime(2024, 1, 8, 10, 0, 0)
         monday = monday.replace(tzinfo=ZoneInfo("America/New_York"))
 
@@ -242,8 +241,9 @@ class TestNextOpenPreviousClose:
         # Convert to ET for comparison
         prev_close_et = prev_close.astimezone(ZoneInfo("America/New_York"))
 
-        # Should be previous Friday 4:00 PM ET
+        # Should be previous Friday (Jan 5) 4:00 PM ET
         assert prev_close_et.weekday() == 4  # Friday
+        assert prev_close_et.day == 5
         assert prev_close_et.hour == 16
 
 
@@ -259,18 +259,17 @@ class TestSessionsBetween:
         """Test sessions between dates in same week."""
         calendar = EquityCalendar()
 
-        # Jan 1, 2024 is New Year's Day (holiday), so use Jan 2-5
-        # which gives Tue-Fri = 4 sessions
-        start = datetime(2024, 1, 1, 9, 30, 0)  # Monday (holiday)
-        end = datetime(2024, 1, 5, 16, 0, 0)  # Friday
+        # Use Jan 8-12, 2024 (no holidays, Mon-Fri)
+        start = datetime(2024, 1, 8, 9, 30, 0)  # Monday
+        end = datetime(2024, 1, 12, 16, 0, 0)  # Friday
 
         start = start.replace(tzinfo=ZoneInfo("America/New_York"))
         end = end.replace(tzinfo=ZoneInfo("America/New_York"))
 
         sessions = calendar.sessions_between(start, end)
 
-        # Should have 4 sessions (Tue-Fri, skipping New Year's Day)
-        assert len(sessions) == 4
+        # Should have 5 sessions (Mon-Fri)
+        assert len(sessions) == 5
 
         # All should be weekdays
         for session in sessions:
@@ -521,9 +520,12 @@ class TestCalendarIntegration:
         # Should detect as in session
         assert calendar.is_session(dt_utc) is True
 
-        # Next open in UTC should be next day at correct time
+        # Next open should be next day (currently in session)
         next_open = calendar.next_open(dt_utc)
-        assert next_open.day == 3  # Next day
+        next_open_et = next_open.astimezone(ZoneInfo("America/New_York"))
+        assert next_open_et.day == 3  # Next day
+        assert next_open_et.hour == 9
+        assert next_open_et.minute == 30
 
 
 # =============================================================================

@@ -155,6 +155,7 @@ class TestTypicalPrice:
         # Should match exactly on real data
         assert_allclose(result, expected, rtol=1e-10, equal_nan=True)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_typprice_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark TYPPRICE performance using real crypto data."""

@@ -175,7 +175,6 @@ class TestImbalanceBarSampler:
         """Test basic imbalance bar generation."""
         sampler = ImbalanceBarSampler(
             expected_ticks_per_bar=20,
-            initial_expectation=1000,
         )
         bars = sampler.sample(tick_data)
 
@@ -219,7 +218,6 @@ class TestImbalanceBarSampler:
 
         sampler = ImbalanceBarSampler(
             expected_ticks_per_bar=20,
-            initial_expectation=500,
         )
         bars = sampler.sample(data)
 
@@ -244,7 +242,6 @@ class TestImbalanceBarSampler:
 
         sampler = ImbalanceBarSampler(
             expected_ticks_per_bar=20,
-            initial_expectation=1500,  # 15 ticks * 100 volume
             alpha=0.3,
         )
         bars = sampler.sample(data)
@@ -311,7 +308,7 @@ class TestBarSamplerEdgeCases:
             TickBarSampler(10),
             VolumeBarSampler(1000),
             DollarBarSampler(10000),
-            ImbalanceBarSampler(20, 100),
+            ImbalanceBarSampler(20),
         ]
 
         for sampler in samplers:
@@ -362,51 +359,12 @@ class TestBarSamplerEdgeCases:
         assert len(result) == 0
 
 
-class TestBarSamplerIntegration:
-    """Test integration with pipeline."""
-
-    # @pytest.mark.skip(reason="Pipeline integration with bar samplers has column resolution issues")
-    def test_pipeline_integration(self, tick_data):
-        """Test bar samplers in pipeline."""
-        from ml4t.engineer.pipeline import Pipeline
-
-        # Create pipeline that generates different bar types
-        pipeline = Pipeline(
-            steps=[
-                # Generate volume bars
-                ("volume_bars", lambda df: VolumeBarSampler(1000).sample(df)),
-                # Add returns
-                (
-                    "returns",
-                    lambda df: df.with_columns(returns=pl.col("close").pct_change()),
-                ),
-                # Add volatility
-                (
-                    "volatility",
-                    lambda df: df.with_columns(
-                        volatility=pl.col("returns").rolling_std(window_size=5),
-                    ),
-                ),
-            ],
-        )
-
-        result = pipeline.run(tick_data)
-
-        # Should have volume bar columns plus added features
-        assert "returns" in result.columns
-        assert "volatility" in result.columns
-        assert "volume" in result.columns
-
-        # Volume should meet threshold
-        assert (result["volume"][:-1] >= 1000).all()
-
-
 class TestTickRunBarSampler:
     """Test tick run bar sampling."""
 
     def test_basic_tick_run_bars(self, tick_data):
         """Test basic tick run bar generation."""
-        sampler = TickRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=10)
+        sampler = TickRunBarSampler(expected_ticks_per_bar=100)
         bars = sampler.sample(tick_data)
 
         # Should have bars when runs exceed expectation
@@ -483,7 +441,7 @@ class TestTickRunBarSampler:
             },
         )
 
-        sampler = TickRunBarSampler(expected_ticks_per_bar=20, initial_run_expectation=3)
+        sampler = TickRunBarSampler(expected_ticks_per_bar=20)
         bars = sampler.sample(data)
 
         # Should create bars when runs reach threshold
@@ -496,7 +454,7 @@ class TestVolumeRunBarSampler:
     def test_basic_volume_run_bars(self, tick_data):
         """Test basic volume run bar generation."""
         # Use lower initial expectation for random data
-        sampler = VolumeRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=500.0)
+        sampler = VolumeRunBarSampler(expected_ticks_per_bar=100)
         bars = sampler.sample(tick_data)
 
         # Should have bars
@@ -547,7 +505,7 @@ class TestVolumeRunBarSampler:
             },
         )
 
-        sampler = VolumeRunBarSampler(expected_ticks_per_bar=10, initial_run_expectation=300)
+        sampler = VolumeRunBarSampler(expected_ticks_per_bar=10)
         bars = sampler.sample(data)
 
         # Should create bars when run volumes exceed threshold
@@ -561,7 +519,7 @@ class TestDollarRunBarSampler:
     def test_basic_dollar_run_bars(self, tick_data):
         """Test basic dollar run bar generation."""
         # Use lower initial expectation for random data
-        sampler = DollarRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=5000.0)
+        sampler = DollarRunBarSampler(expected_ticks_per_bar=100)
         bars = sampler.sample(tick_data)
 
         # Should have bars
@@ -654,7 +612,7 @@ class TestRunBarsComparison:
     def test_run_bars_create_fewer_bars_than_standard(self, tick_data):
         """Test that run bars create fewer but more informative bars."""
         tick_sampler = TickBarSampler(ticks_per_bar=100)
-        tick_run_sampler = TickRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=10)
+        tick_run_sampler = TickRunBarSampler(expected_ticks_per_bar=100)
 
         standard_bars = tick_sampler.sample(tick_data)
         run_bars = tick_run_sampler.sample(tick_data)
@@ -666,9 +624,9 @@ class TestRunBarsComparison:
     def test_all_run_bar_types_produce_valid_output(self, tick_data):
         """Test that all three run bar types produce valid OHLCV data."""
         # Use appropriate initial expectations for random data
-        tick_run = TickRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=10)
-        volume_run = VolumeRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=500.0)
-        dollar_run = DollarRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=5000.0)
+        tick_run = TickRunBarSampler(expected_ticks_per_bar=100)
+        volume_run = VolumeRunBarSampler(expected_ticks_per_bar=100)
+        dollar_run = DollarRunBarSampler(expected_ticks_per_bar=100)
 
         tick_bars = tick_run.sample(tick_data)
         volume_bars = volume_run.sample(tick_data)

@@ -272,6 +272,7 @@ class TestDirectionalIndicators:
                 rtol=1e-10,
             )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_directional_performance(
         self,

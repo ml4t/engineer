@@ -394,6 +394,7 @@ class TestRiskFeatures:
         dd = result["dd"].drop_nulls()
         assert dd.max() < 1e-10  # Should be near zero
 
+    @pytest.mark.perf
     def test_performance(self):
         """Test performance with larger dataset."""
         import time

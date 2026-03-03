@@ -259,7 +259,7 @@ class TestP0IndicatorAccuracy:
             expected = talib.MOM(close, timeperiod=period)
 
             # Our implementation
-            result = mom(close, timeperiod=period)
+            result = mom(close, period=period)
 
             # Check accuracy
             assert_allclose(
@@ -274,7 +274,7 @@ class TestP0IndicatorAccuracy:
         """Test MOM with edge cases."""
         for name, data in edge_cases.items():
             expected = talib.MOM(data, timeperiod=10)
-            result = mom(data, timeperiod=10)
+            result = mom(data, period=10)
 
             assert_allclose(
                 result,
@@ -400,6 +400,7 @@ class TestP0PerformanceBenchmarks:
             "volume": volume,
         }
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_wma_performance(self, large_dataset, benchmark):
         """Benchmark WMA performance."""
@@ -416,6 +417,7 @@ class TestP0PerformanceBenchmarks:
         expected = talib.WMA(close, timeperiod=period)
         assert_allclose(result, expected, rtol=1e-6, atol=1e-6)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_obv_performance(self, large_dataset, benchmark):
         """Benchmark OBV performance."""
@@ -432,6 +434,7 @@ class TestP0PerformanceBenchmarks:
         expected = talib.OBV(close, volume)
         assert_allclose(result, expected, rtol=1e-6, atol=1e-6)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_mom_performance(self, large_dataset, benchmark):
         """Benchmark MOM performance."""
@@ -439,10 +442,10 @@ class TestP0PerformanceBenchmarks:
         period = 10
 
         # Warm up JIT
-        _ = mom(close[:1000], timeperiod=period)
+        _ = mom(close[:1000], period=period)
 
         # Benchmark our implementation
-        result = benchmark(mom, close, timeperiod=period)
+        result = benchmark(mom, close, period=period)
 
         # Verify correctness
         expected = talib.MOM(close, timeperiod=period)

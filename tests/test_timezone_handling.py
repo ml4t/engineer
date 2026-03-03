@@ -60,14 +60,14 @@ class TestEquityCalendarTimezone:
         """Test next market open with naive datetime."""
         cal = EquityCalendar()
 
-        # Monday 3 PM ET -> Tuesday 9:30 AM ET
+        # Monday 3 PM ET (during market hours) -> Tuesday 9:30 AM ET
         dt = datetime(2024, 1, 8, 15, 0, 0)
         next_open = cal._next_basic_open(dt)
         assert next_open.hour == 9
         assert next_open.minute == 30
-        assert next_open.day == 8  # Same day since before close
+        assert next_open.day == 9  # Next day (currently in session)
 
-        # Monday 5 PM ET -> Tuesday 9:30 AM ET
+        # Monday 5 PM ET (after close) -> Tuesday 9:30 AM ET
         dt = datetime(2024, 1, 8, 17, 0, 0)
         next_open = cal._next_basic_open(dt)
         assert next_open.day == 9  # Next day
@@ -97,12 +97,12 @@ class TestEquityCalendarTimezone:
         """Test previous market close with naive datetime."""
         cal = EquityCalendar()
 
-        # Tuesday 10 AM ET -> Monday 4 PM ET
+        # Tuesday 10 AM ET (during market hours) -> Monday 4 PM ET
         dt = datetime(2024, 1, 9, 10, 0, 0)
         prev_close = cal._previous_basic_close(dt)
         assert prev_close.hour == 16
         assert prev_close.minute == 0
-        assert prev_close.day == 9  # Same day since after open
+        assert prev_close.day == 8  # Previous day (currently in session)
 
         # Tuesday 8 AM ET -> Monday 4 PM ET
         dt = datetime(2024, 1, 9, 8, 0, 0)

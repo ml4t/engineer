@@ -226,6 +226,7 @@ class TestMathOperators:
         assert np.all(np.isnan(min_result))
         assert np.all(np.isnan(sum_result))
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_math_operators_performance(
         self,

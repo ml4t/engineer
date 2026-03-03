@@ -13,7 +13,6 @@ import polars as pl
 from numba import jit
 
 from ml4t.engineer.core.decorators import feature
-from ml4t.engineer.core.deprecation import resolve_period_parameter
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
 
@@ -83,8 +82,6 @@ def mom_polars(column: str, period: int = 10) -> pl.Expr:
 def mom(
     close: npt.NDArray[np.float64] | pl.Series | str,
     period: int | None = None,
-    *,
-    timeperiod: int | None = None,  # Deprecated alias for period
 ) -> npt.NDArray[np.float64] | pl.Expr:
     """
     Momentum exactly matching TA-Lib.
@@ -99,8 +96,6 @@ def mom(
         Price data or column name
     period : int, default 10
         Number of periods for momentum calculation
-    timeperiod : int, optional
-        Deprecated alias for period. Use period instead.
 
     Returns
     -------
@@ -120,13 +115,8 @@ def mom(
     - First 'period' close will be NaN
     - Simple calculation: price - price[n periods ago]
     """
-    # Resolve period with deprecation handling
-    period = resolve_period_parameter(
-        period=period,
-        timeperiod=timeperiod,
-        default=10,
-        func_name="mom",
-    )
+    if period is None:
+        period = 10
 
     # Validate parameters
     if period < 1:

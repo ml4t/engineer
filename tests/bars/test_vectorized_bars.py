@@ -473,8 +473,8 @@ class TestImbalanceBarSamplerVectorized:
 
         assert len(bars_with) >= len(bars_without)
 
-    def test_initial_expectation_estimation(self, sample_tick_data):
-        """Test AFML parameters are estimated when not provided."""
+    def test_afml_parameter_estimation(self, sample_tick_data):
+        """Test AFML parameters are estimated from data."""
         sampler = ImbalanceBarSamplerVectorized(expected_ticks_per_bar=50)
 
         sampler.sample(sample_tick_data)
@@ -483,16 +483,6 @@ class TestImbalanceBarSamplerVectorized:
         assert sampler._initial_v > 0
         assert sampler._initial_v_buy is not None
         assert sampler._initial_v_buy > 0
-
-    def test_initial_expectation_provided(self, sample_tick_data):
-        """Test sampling with provided initial expectation."""
-        sampler = ImbalanceBarSamplerVectorized(
-            expected_ticks_per_bar=50, initial_expectation=500.0
-        )
-
-        sampler.sample(sample_tick_data)
-        # Should use provided initial_expectation
-        assert sampler.initial_expectation == 500.0
 
     def test_empty_result_schema(self):
         """Test _empty_imbalance_bars_df returns correct schema."""

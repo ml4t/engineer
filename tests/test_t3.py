@@ -186,6 +186,7 @@ class TestT3:
                         err_msg=f"T3 mismatch on crypto data for period {period}, vfactor {vfactor}",
                     )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_t3_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark T3 performance."""

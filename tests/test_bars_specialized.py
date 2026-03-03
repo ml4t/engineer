@@ -352,11 +352,9 @@ class TestImbalanceBarSampler:
         # Valid
         sampler = ImbalanceBarSampler(
             expected_ticks_per_bar=100,
-            initial_expectation=1000,
             alpha=0.1,
         )
         assert sampler.expected_ticks_per_bar == 100
-        assert sampler.initial_expectation == 1000
         assert sampler.alpha == 0.1
 
         # Invalid expected_ticks_per_bar
@@ -416,7 +414,6 @@ class TestImbalanceBarSampler:
         tick_data = generate_tick_data(n_ticks=1000, seed=42)
         sampler = ImbalanceBarSampler(
             expected_ticks_per_bar=50,
-            initial_expectation=1000,
             alpha=0.1,
         )
 
@@ -428,24 +425,16 @@ class TestImbalanceBarSampler:
             # Check that expectations change
             assert np.std(expectations) > 0
 
-    def test_initial_expectation_estimation(self) -> None:
-        """Test automatic estimation of initial expectation."""
+    def test_dynamic_threshold_estimation(self) -> None:
+        """Test that AFML threshold is computed dynamically from data."""
         tick_data = generate_tick_data(n_ticks=500, seed=42)
 
-        # Don't provide initial_expectation
-        sampler = ImbalanceBarSampler(
-            expected_ticks_per_bar=100,
-            initial_expectation=None,  # Will be estimated
-        )
+        sampler = ImbalanceBarSampler(expected_ticks_per_bar=100)
 
         bars = sampler.sample(tick_data)
 
-        # Should still produce bars
+        # Should produce bars with dynamically computed thresholds
         assert len(bars) > 0
-
-        # NOTE: initial_expectation is now computed dynamically per AFML methodology
-        # and is not stored on the sampler instance. The threshold adapts based on
-        # the data, so we just verify bars are produced successfully.
 
 
 # =============================================================================

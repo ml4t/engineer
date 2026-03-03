@@ -1,7 +1,5 @@
 """Tests for the generalized labeling module."""
 
-import importlib
-import sys
 import warnings
 from datetime import datetime, timedelta
 
@@ -12,53 +10,6 @@ import pytest
 from ml4t.engineer.config import DataContractConfig, LabelingConfig
 from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling import triple_barrier_labels
-
-
-class TestRemovedCoreModule:
-    """Test explicit error messaging for removed legacy module paths."""
-
-    def test_labeling_core_import_error_is_actionable(self):
-        """Importing removed labeling.core should raise a clear migration error."""
-        sys.modules.pop("ml4t.engineer.labeling.core", None)
-        with pytest.raises(ImportError, match="labeling.core has been removed"):
-            importlib.import_module("ml4t.engineer.labeling.core")
-
-    def test_labeling_barrier_config_export_is_actionable(self):
-        """Importing removed labeling.BarrierConfig should raise migration guidance."""
-        with pytest.raises(ImportError, match="BarrierConfig has been removed"):
-            from ml4t.engineer.labeling import BarrierConfig  # noqa: F401
-
-    def test_labeling_barriers_module_import_error_is_actionable(self):
-        """Importing removed labeling.barriers should raise migration guidance."""
-        sys.modules.pop("ml4t.engineer.labeling.barriers", None)
-        with pytest.raises(ImportError, match="labeling.barriers has been removed"):
-            importlib.import_module("ml4t.engineer.labeling.barriers")
-
-    def test_labeling_barrier_utils_module_import_error_is_actionable(self):
-        """Importing removed labeling.barrier_utils should raise migration guidance."""
-        sys.modules.pop("ml4t.engineer.labeling.barrier_utils", None)
-        with pytest.raises(ImportError, match="labeling.barrier_utils has been removed"):
-            importlib.import_module("ml4t.engineer.labeling.barrier_utils")
-
-    def test_config_alias_import_error_is_actionable(self):
-        """Importing removed config alias should raise migration guidance."""
-        with pytest.raises(ImportError, match="BarrierLabelingConfig has been removed"):
-            from ml4t.engineer.config import BarrierLabelingConfig  # noqa: F401
-
-    def test_config_labeling_alias_import_error_is_actionable(self):
-        """Importing removed config.labeling alias should raise migration guidance."""
-        with pytest.raises(ImportError, match="BarrierLabelingConfig has been removed"):
-            from ml4t.engineer.config.labeling import BarrierLabelingConfig  # noqa: F401
-
-    def test_non_labeling_config_input_raises_actionable_error(self):
-        """Passing non-LabelingConfig should fail with migration guidance."""
-
-        class LegacyBarrierConfig:
-            pass
-
-        df = pl.DataFrame({"timestamp": [datetime(2024, 1, 1)], "close": [100.0]})
-        with pytest.raises(TypeError, match="Legacy BarrierConfig inputs are no longer supported"):
-            triple_barrier_labels(df, config=LegacyBarrierConfig())  # type: ignore[arg-type]
 
 
 class TestLabelingConfig:
@@ -914,6 +865,7 @@ class TestPerformance:
             }
         )
 
+    @pytest.mark.perf
     @pytest.mark.parametrize("n_bars", [10_000, 50_000, 100_000])
     def test_duration_overhead(self, benchmark, n_bars):
         """Benchmark duration calculation overhead.
@@ -958,6 +910,7 @@ class TestPerformance:
             f"({labeled_count / n_bars * 100:.1f}% label rate)"
         )
 
+    @pytest.mark.perf
     def test_scaling_characteristics(self, benchmark):
         """Test how duration calculations scale with dataset size.
 
@@ -986,6 +939,7 @@ class TestPerformance:
         assert "label_bars" in result.columns
         assert "label_duration" in result.columns
 
+    @pytest.mark.perf
     def test_duration_computation_only(self, benchmark):
         """Benchmark just the duration computation overhead.
 
@@ -1031,6 +985,7 @@ class TestPerformance:
 
         print(f"\n{n_events:,} duration calculations completed")
 
+    @pytest.mark.perf
     @pytest.mark.parametrize("max_holding_period", [10, 20, 50, 100], ids=lambda x: f"period_{x}")
     def test_performance_vs_holding_period(self, benchmark, max_holding_period):
         """Test performance impact of different holding periods.

@@ -246,6 +246,7 @@ class TestSTOCHF:
         # STOCHF %K should match
         assert_indicator_match(stochf_k, stoch_k, "STOCHF vs STOCH", rtol=1e-10)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_stochf_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark STOCHF performance."""

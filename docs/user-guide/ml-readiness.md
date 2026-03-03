@@ -2,6 +2,8 @@
 
 This guide explains the `normalized` field in feature metadata and how to prepare features for machine learning models.
 
+> **Book**: *ML for Trading, 3rd ed.* — Ch8 `01_price_volume_features.py` compares normalized vs non-normalized features on real ETF data, including preprocessing strategies for each type.
+
 ## Overview
 
 Features in ml4t-engineer have a `normalized` metadata field that indicates whether a feature produces bounded outputs suitable for direct ML consumption:

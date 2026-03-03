@@ -162,6 +162,7 @@ class TestKAMA:
                     err_msg=f"KAMA mismatch on crypto data for period {period}",
                 )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_kama_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark KAMA performance."""

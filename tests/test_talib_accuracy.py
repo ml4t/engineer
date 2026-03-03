@@ -289,6 +289,7 @@ class TestTALibAccuracy:
         assert_allclose(result_array, expected, rtol=1e-6, atol=1e-6)
         assert_allclose(result_series, expected, rtol=1e-6, atol=1e-6)
 
+    @pytest.mark.perf
     def test_performance_consistency(self):
         """Test that different implementations give same results."""
         np.random.seed(42)
@@ -689,6 +690,7 @@ class TestPerformance:
         close = 100 * (1 + returns).cumprod()
         return close
 
+    @pytest.mark.perf
     def test_sma_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark SMA implementations."""
         # Use real crypto data
@@ -727,6 +729,7 @@ class TestPerformance:
             f"Performance ratio {our_time / talib_time:.1f}x exceeds threshold {threshold}x"
         )
 
+    @pytest.mark.perf
     def test_rsi_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark RSI implementation."""
         # Use real crypto data

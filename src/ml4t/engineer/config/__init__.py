@@ -4,39 +4,12 @@ This module provides Pydantic v2 configuration schemas for feature engineering:
 
 - **Labeling**: Triple barrier, ATR barrier, fixed horizon, trend scanning
 - **Preprocessing**: Standard, MinMax, Robust scalers with create_scaler()
-- **Feature Diagnostics**: Stationarity, ACF, volatility, distribution
-- **Cross-Feature Analysis**: Correlation, PCA, clustering, redundancy
-- **Feature-Outcome Analysis**: IC, classification, thresholds, ML diagnostics
+- **Data Contract**: Schema validation for input data
+- **Experiment**: Experiment configuration and serialization
 
-D06 Pattern Support:
-    This module supports the D06 configuration pattern with single-level nesting:
-    - Primary configs use `*Config` naming (e.g., `EngineerConfig`)
-    - Nested settings use `*Settings` naming (e.g., `StationaritySettings`)
-    - Both patterns are fully supported via aliases
-
-Examples:
-    Quick start with defaults:
-
-    >>> from ml4t.engineer.config import EngineerConfig
-    >>> config = EngineerConfig()
-
-    Use presets:
-
-    >>> config = EngineerConfig.for_quick_analysis()
-    >>> config = EngineerConfig.for_research()
-    >>> config = EngineerConfig.for_production()
-
-    Custom configuration:
-
-    >>> config = EngineerConfig(
-    ...     module_a=ModuleAConfig(
-    ...         stationarity=StationaritySettings(significance_level=0.01)
-    ...     )
-    ... )
-
-    Load from YAML:
-
-    >>> config = EngineerConfig.from_yaml("config.yaml")
+Note:
+    Feature evaluation configs (StationarityConfig, ACFConfig, etc.) have moved
+    to ``ml4t-diagnostic``. Install with: ``pip install ml4t-diagnostic``
 """
 
 from ml4t.engineer.config.base import (
@@ -50,65 +23,14 @@ from ml4t.engineer.config.experiment import (
     load_experiment_config,
     save_experiment_config,
 )
-from ml4t.engineer.config.feature_config import (
-    ACFConfig,
-    BinaryClassificationConfig,
-    ClusteringConfig,
-    CorrelationConfig,
-    DistributionConfig,
-    FeatureEvaluatorConfig,
-    ICConfig,
-    MLDiagnosticsConfig,
-    ModuleAConfig,
-    ModuleBConfig,
-    ModuleCConfig,
-    PCAConfig,
-    RedundancyConfig,
-    StationarityConfig,
-    ThresholdAnalysisConfig,
-    VolatilityConfig,
-)
 from ml4t.engineer.config.labeling import LabelingConfig
 from ml4t.engineer.config.preprocessing_config import PreprocessingConfig
-
-# =============================================================================
-# D06 Pattern Aliases - Settings Classes
-# =============================================================================
-# These aliases provide compatibility with the diagnostic library's D06 pattern
-# where nested configuration classes use *Settings naming.
-
-StationaritySettings = StationarityConfig
-ACFSettings = ACFConfig
-VolatilitySettings = VolatilityConfig
-DistributionSettings = DistributionConfig
-CorrelationSettings = CorrelationConfig
-PCASettings = PCAConfig
-ClusteringSettings = ClusteringConfig
-RedundancySettings = RedundancyConfig
-ICSettings = ICConfig
-BinaryClassificationSettings = BinaryClassificationConfig
-ThresholdAnalysisSettings = ThresholdAnalysisConfig
-MLDiagnosticsSettings = MLDiagnosticsConfig
-
-# =============================================================================
-# D06 Pattern Aliases - Top-Level Configs
-# =============================================================================
-
-# Primary alias - EngineerConfig is the D06-style name
-EngineerConfig = FeatureEvaluatorConfig
-
-# DiagnosticConfig alias for symmetry with ml4t.diagnostic
-DiagnosticConfig = FeatureEvaluatorConfig
-
-# RuntimeConfig is the D06-style name for computational settings
-RuntimeConfig = ComputationalConfig
 
 __all__ = [
     # Base configs
     "BaseConfig",
     "StatisticalTestConfig",
-    "RuntimeConfig",
-    "ComputationalConfig",  # Backward compatibility
+    "ComputationalConfig",
     # Labeling and preprocessing configs
     "LabelingConfig",
     "DataContractConfig",
@@ -117,51 +39,4 @@ __all__ = [
     "ExperimentConfig",
     "load_experiment_config",
     "save_experiment_config",
-    # Primary config (D06 pattern)
-    "EngineerConfig",
-    "DiagnosticConfig",  # Alias for symmetry
-    # Feature evaluation (original names)
-    "FeatureEvaluatorConfig",
-    "ModuleAConfig",
-    "ModuleBConfig",
-    "ModuleCConfig",
-    # Settings classes (D06 pattern - *Settings naming)
-    "StationaritySettings",
-    "ACFSettings",
-    "VolatilitySettings",
-    "DistributionSettings",
-    "CorrelationSettings",
-    "PCASettings",
-    "ClusteringSettings",
-    "RedundancySettings",
-    "ICSettings",
-    "BinaryClassificationSettings",
-    "ThresholdAnalysisSettings",
-    "MLDiagnosticsSettings",
-    # Original config names (backward compatibility)
-    "StationarityConfig",
-    "ACFConfig",
-    "VolatilityConfig",
-    "DistributionConfig",
-    "CorrelationConfig",
-    "PCAConfig",
-    "ClusteringConfig",
-    "RedundancyConfig",
-    "ICConfig",
-    "BinaryClassificationConfig",
-    "ThresholdAnalysisConfig",
-    "MLDiagnosticsConfig",
 ]
-
-_REMOVED_EXPORTS = {
-    "BarrierLabelingConfig": (
-        "ml4t.engineer.config.BarrierLabelingConfig has been removed. "
-        "Use ml4t.engineer.config.LabelingConfig instead."
-    )
-}
-
-
-def __getattr__(name: str) -> object:
-    if name in _REMOVED_EXPORTS:
-        raise ImportError(_REMOVED_EXPORTS[name])
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -451,16 +451,3 @@ class LabelingConfig(BaseConfig):
 __all__ = [
     "LabelingConfig",
 ]
-
-_REMOVED_EXPORTS = {
-    "BarrierLabelingConfig": (
-        "ml4t.engineer.config.labeling.BarrierLabelingConfig has been removed. "
-        "Use ml4t.engineer.config.LabelingConfig instead."
-    )
-}
-
-
-def __getattr__(name: str) -> object:
-    if name in _REMOVED_EXPORTS:
-        raise ImportError(_REMOVED_EXPORTS[name])
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

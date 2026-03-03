@@ -195,6 +195,7 @@ class TestIMI:
 
         assert_indicator_match(imi_result, expected, "IMI calculation", rtol=1e-6)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_imi_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark IMI performance."""

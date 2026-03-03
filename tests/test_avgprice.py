@@ -163,6 +163,7 @@ class TestAveragePrice:
         # Should match exactly on real data
         assert_allclose(result, expected, rtol=1e-10, equal_nan=True)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_avgprice_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark AVGPRICE performance using real crypto data."""

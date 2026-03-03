@@ -210,6 +210,7 @@ class TestADOSC:
                 f"ADOSC (crypto, fast={fast}, slow={slow})",
             )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_adosc_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark ADOSC performance using real crypto data."""

@@ -74,6 +74,7 @@ class TestPerformanceBenchmarks:
         end = time.perf_counter()
         return result, end - start
 
+    @pytest.mark.perf
     def test_sma_performance_small(self):
         """Test SMA performance on small dataset."""
         # Our implementation
@@ -95,6 +96,7 @@ class TestPerformanceBenchmarks:
         # Performance threshold: should complete in reasonable time
         assert our_time < 1.0, f"SMA too slow: {our_time:.4f}s"
 
+    @pytest.mark.perf
     def test_sma_performance_large(self):
         """Test SMA performance on large dataset."""
         # Our implementation
@@ -116,6 +118,7 @@ class TestPerformanceBenchmarks:
         # Performance threshold: should handle 100K rows efficiently
         assert our_time < 5.0, f"SMA too slow on large data: {our_time:.4f}s"
 
+    @pytest.mark.perf
     def test_multiple_indicators_performance(self):
         """Test performance of computing multiple indicators simultaneously."""
         indicators = {
@@ -147,6 +150,7 @@ class TestPerformanceBenchmarks:
             f"Too slow: {calculations_per_second:,.0f} calculations/sec"
         )
 
+    @pytest.mark.perf
     def test_rsi_performance_vs_talib(self):
         """Test RSI performance vs TA-Lib."""
         if not HAS_TALIB:
@@ -173,6 +177,7 @@ class TestPerformanceBenchmarks:
         # Should be competitive with TA-Lib
         assert speedup > 0.5, f"Too slow compared to TA-Lib: {speedup:.2f}x"
 
+    @pytest.mark.perf
     def test_bollinger_bands_performance(self):
         """Test Bollinger Bands performance."""
         _, our_time = self.time_function(
@@ -201,6 +206,7 @@ class TestPerformanceBenchmarks:
         # Should complete in reasonable time
         assert our_time < 2.0, f"Bollinger Bands too slow: {our_time:.4f}s"
 
+    @pytest.mark.perf
     def test_memory_efficiency(self):
         """Test memory efficiency with large datasets."""
         # Test with lazy evaluation - should not consume excessive memory
@@ -224,6 +230,7 @@ class TestPerformanceBenchmarks:
         # Should complete without memory issues
         assert collect_time < 10.0, f"Collection too slow: {collect_time:.4f}s"
 
+    @pytest.mark.perf
     def test_streaming_performance(self):
         """Test performance with streaming-like operations."""
         # Simulate processing data in chunks
@@ -272,6 +279,7 @@ class TestScalabilityBenchmarks:
         end = time.perf_counter()
         return result, end - start
 
+    @pytest.mark.perf
     def test_million_row_performance(self):
         """Test performance with 1 million rows."""
         # Run with reduced size for reasonable test time
