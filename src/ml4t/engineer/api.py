@@ -78,6 +78,7 @@ KEYWORD_ONLY_PARAMS: frozenset[str] = frozenset(
     }
 )
 
+
 def compute_features(
     data: pl.DataFrame | pl.LazyFrame,
     features: list[str] | list[dict[str, Any]] | Path | str,

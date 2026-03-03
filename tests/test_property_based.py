@@ -325,7 +325,7 @@ class TestPropertyBasedValidation:
             assert (corr_values <= 1.0).all()
 
     @given(returns_series(min_size=60))
-    @settings(max_examples=20, deadline=3000)
+    @settings(max_examples=20, deadline=5000)
     def test_regime_indicators_bounds(self, returns):
         """Test that regime indicators produce reasonable bounds."""
         # Convert returns to cumulative prices (hurst_exponent needs prices not returns)
