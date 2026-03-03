@@ -6,6 +6,9 @@ __pycache__/
 .hypothesis/
 htmlcov/
 
+# MkDocs build output
+site/
+
 # Claude Code (local development only)
 CLAUDE.md
 .claude/

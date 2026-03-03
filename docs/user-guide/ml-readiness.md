@@ -174,5 +174,5 @@ result = result.with_columns(
 
 ## Reference
 
-- See [Feature Registry](../api/registry.md) for full metadata API
-- See [Preprocessing](../api/preprocessing.md) for scaler documentation
+- See [API Reference](../api/index.md) for full metadata API
+- See [Preprocessing](preprocessing.md) for scaler documentation

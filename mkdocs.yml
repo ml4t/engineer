@@ -3,9 +3,9 @@
 
 site_name: ML4T Engineer
 site_description: High-performance feature engineering for financial machine learning
-site_url: https://ml4t.io/docs/engineer/
-repo_url: https://github.com/stefan-jansen/ml4t-engineer
-repo_name: stefan-jansen/ml4t-engineer
+site_url: https://ml4trading.io/docs/engineer/
+repo_url: https://github.com/ml4t/engineer
+repo_name: ml4t/engineer
 
 # Theme configuration - Picasso Blue Period palette
 theme:
@@ -119,8 +119,13 @@ nav:
     - Quickstart: getting-started/quickstart.md
   - User Guide:
     - Features: user-guide/features.md
+    - Feature Discovery: user-guide/discovery.md
     - Labeling: user-guide/labeling.md
     - Alternative Bars: user-guide/bars.md
+    - Dataset Builder: user-guide/dataset-builder.md
+    - Preprocessing: user-guide/preprocessing.md
+    - Fractional Differencing: user-guide/fractional-differencing.md
+    - ML Readiness: user-guide/ml-readiness.md
   - API Reference:
     - api/index.md
 
