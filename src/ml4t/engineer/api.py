@@ -78,20 +78,6 @@ KEYWORD_ONLY_PARAMS: frozenset[str] = frozenset(
     }
 )
 
-# Common default values for required parameters missing from metadata
-# Used as fallback when feature registration is incomplete
-COMMON_PARAM_DEFAULTS: dict[str, Any] = {
-    "period": 14,
-    "window": 20,
-    "lookback": 20,
-    "lag": 1,
-    "lags": [1],
-    "n": 5,
-    "bins": 10,
-    "features": ["close"],
-    "windows": [5, 10, 20],
-}
-
 
 def compute_features(
     data: pl.DataFrame | pl.LazyFrame,
@@ -175,6 +161,11 @@ def compute_features(
     - Circular dependencies are detected and raise ValueError
     - Parameters in config override default parameters from registry
     """
+    from ml4t.engineer.core.schemas import validate_ohlcv_schema
+
+    # Validate input schema (flexible: no asset_id required, flexible time column)
+    validate_ohlcv_schema(data, require_asset_id=False, allow_flexible_time=True)
+
     # Parse input to standardized format
     feature_specs = _parse_feature_input(features)
 
@@ -403,16 +394,12 @@ def _execute_feature(
             pass
         else:
             # Required parameter with no default and not in COLUMN_ARG_MAP
-            # This indicates incomplete metadata - try common defaults
-            if param_name in COMMON_PARAM_DEFAULTS:
-                keyword_params[param_name] = COMMON_PARAM_DEFAULTS[param_name]
-            else:
-                # Cannot proceed - need user to provide this parameter explicitly
-                raise ValueError(
-                    f"Feature '{feature_name}' requires parameter '{param_name}' but it's not "
-                    f"provided. Call with explicit parameters: "
-                    f'compute_features(df, [{{"name": "{feature_name}", "{param_name}": value}}])'
-                )
+            raise ValueError(
+                f"Feature '{feature_name}' requires parameter '{param_name}' but it's not "
+                f"provided in metadata.parameters or call params. "
+                f'Use: compute_features(df, [{{"name": "{feature_name}", '
+                f'"params": {{"{param_name}": value}}}}])'
+            )
 
     # Call the feature function
     try:

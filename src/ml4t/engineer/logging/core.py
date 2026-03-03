@@ -1,4 +1,3 @@
-# mypy: disable-error-code="arg-type,call-arg,return-value,assignment,operator"
 """Core logging functionality for ml4t.engineer.
 
 Exports:

@@ -11,10 +11,11 @@ from ml4t.engineer.core.validation import (
     name="time_decay_weights",
     category="ml",
     description="Time Decay Weights - exponentially decaying weights",
-    lookback=0,
+    lookback="lookback",
     normalized=False,
     formula="",
     ta_lib_compatible=False,
+    parameters={"lookback": 20},
 )
 def time_decay_weights(
     lookback: int,

@@ -19,6 +19,28 @@ if TYPE_CHECKING:
 _DATETIME_TYPES = (pl.Datetime, pl.Date)
 _DEFAULT_GROUP_COLS = ("symbol", "product", "ticker", "asset", "asset_id")
 
+
+def validate_price_no_nans(data: pl.DataFrame, price_col: str) -> None:
+    """Validate that price column has no NaN values.
+
+    NaN prices produce silently wrong labels. This check runs before
+    any labeling computation to catch data issues early.
+
+    Raises
+    ------
+    DataValidationError
+        If price column contains NaN values.
+    """
+    null_count = data[price_col].null_count()
+    nan_count = data[price_col].is_nan().sum() if data[price_col].dtype.is_float() else 0
+    total_bad = null_count + nan_count
+    if total_bad > 0:
+        raise DataValidationError(
+            f"Price column '{price_col}' contains {total_bad} null/NaN values "
+            f"(out of {len(data)} rows). Clean data before labeling."
+        )
+
+
 # Duration string regex pattern (e.g., "1h", "30m", "1d2h30m")
 _DURATION_PATTERN = re.compile(
     r"^(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$",

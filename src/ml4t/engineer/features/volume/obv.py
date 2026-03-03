@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 On Balance Volume (OBV) - TA-Lib compatible implementation.
 

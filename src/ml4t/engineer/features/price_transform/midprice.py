@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 MIDPRICE - Midpoint Price over period.
 

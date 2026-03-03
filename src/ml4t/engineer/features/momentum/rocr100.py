@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 ROCR100 - Rate of Change Ratio 100 scale.
 

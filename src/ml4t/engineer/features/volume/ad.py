@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Chaikin A/D Line (AD) - TA-Lib compatible implementation.
 

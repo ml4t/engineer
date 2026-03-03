@@ -486,7 +486,9 @@ class TestCalendarIntegration:
         assert "label" in result_simple.columns
 
     def test_calendar_with_nan_prices(self, sample_intraday_data):
-        """Test calendar-aware labels with NaN prices."""
+        """Test calendar-aware labels rejects NaN prices at entry."""
+        from ml4t.engineer.core.exceptions import DataValidationError
+
         # Add some NaN values
         data_with_nan = sample_intraday_data.with_columns(
             pl.when(pl.col("close") > 100.5).then(None).otherwise(pl.col("close")).alias("close")
@@ -501,13 +503,12 @@ class TestCalendarIntegration:
             max_holding_period=5,
         )
 
-        # Should not crash
-        result = calendar_aware_labels(
-            data_with_nan,
-            config,
-            calendar=cal,
-            price_col="close",
-            timestamp_col="timestamp",
-        )
-
-        assert "label" in result.columns
+        # NaN validation catches bad prices at entry
+        with pytest.raises(DataValidationError, match="null/NaN"):
+            calendar_aware_labels(
+                data_with_nan,
+                config,
+                calendar=cal,
+                price_col="close",
+                timestamp_col="timestamp",
+            )

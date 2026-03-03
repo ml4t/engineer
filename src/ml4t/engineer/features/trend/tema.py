@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 TEMA (Triple Exponential Moving Average) - TA-Lib compatible implementation.
 

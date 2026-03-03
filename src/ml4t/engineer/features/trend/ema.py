@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Exponential Moving Average (EMA) - TA-Lib compatible implementation.
 
@@ -115,10 +114,11 @@ def ema_polars(column: str, period: int) -> pl.Expr:
     name="ema",
     category="trend",
     description="EMA - Exponential Moving Average",
-    lookback=0,
+    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,
+    parameters={"period": 20},
 )
 def ema(
     close: npt.NDArray[np.float64] | pl.Series | str,

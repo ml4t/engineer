@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,arg-type,dict-item"
 """Fractional differencing for stationarity with memory preservation.
 
 This module implements the Fixed-Width Window Fractional Differencing (FFD) method,

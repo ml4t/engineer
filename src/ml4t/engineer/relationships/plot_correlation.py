@@ -1,4 +1,3 @@
-# mypy: disable-error-code="arg-type,assignment"
 """Correlation matrix visualization.
 
 This module provides plotting functions for correlation matrices.

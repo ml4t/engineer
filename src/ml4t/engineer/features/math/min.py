@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 MIN - Lowest value over a specified number of periods.
 

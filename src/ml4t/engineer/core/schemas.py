@@ -152,14 +152,7 @@ def validate_ohlcv_schema(
     for col in ohlcv_cols:
         if col in schema:
             dtype = schema[col]
-            if dtype not in [
-                pl.Float32,
-                pl.Float64,
-                pl.Int32,
-                pl.Int64,
-                pl.UInt32,
-                pl.UInt64,
-            ]:
+            if not dtype.is_numeric():
                 raise DataSchemaError(
                     f"Column '{col}' must be numeric, got {dtype}. "
                     "OHLCV columns must be numeric types (float or int).",

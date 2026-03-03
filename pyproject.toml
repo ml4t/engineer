@@ -295,13 +295,6 @@ source = ["src/ml4t/engineer"]
 omit = [
     "*/tests/*",
     "*/__init__.py",
-    "*/bars/base.py",
-    "*/bars/imbalance.py",
-    "*/bars/run.py",
-    "*/bars/vectorized.py",
-    "*/labeling/barriers.py",
-    "*/labeling/core.py",
-    "*/features/microstructure/*",
 ]
 
 [tool.coverage.report]

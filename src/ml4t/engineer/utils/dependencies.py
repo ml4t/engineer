@@ -1,4 +1,3 @@
-# mypy: disable-error-code="assignment,no-untyped-def,no-untyped-call,no-any-return"
 # ruff: noqa: UP006, UP045, B007
 """Optional dependency checking and validation utilities.
 

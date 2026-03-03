@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Median Price (MEDPRICE) - TA-Lib compatible implementation.
 

@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,misc"
 """
 ADX (Average Directional Movement Index) - TA-Lib compatible implementation.
 

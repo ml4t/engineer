@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Percentage Price Oscillator (PPO) - TA-Lib compatible implementation.
 

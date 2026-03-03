@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Normalized Average True Range (NATR) - TA-Lib compatible implementation.
 

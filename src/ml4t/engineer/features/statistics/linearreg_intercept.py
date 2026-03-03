@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 LINEARREG_INTERCEPT - Linear Regression Intercept.
 

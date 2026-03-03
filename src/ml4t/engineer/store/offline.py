@@ -1,4 +1,3 @@
-# mypy: disable-error-code="arg-type,call-arg,assignment,return-value"
 """Offline feature store using DuckDB with Arrow integration.
 
 Exports:

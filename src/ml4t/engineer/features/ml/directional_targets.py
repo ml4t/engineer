@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc"
 import polars as pl
 
 from ml4t.engineer.core.decorators import feature

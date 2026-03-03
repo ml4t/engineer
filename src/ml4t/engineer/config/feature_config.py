@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,call-arg,arg-type"
 # ruff: noqa: UP006, UP045
 """Feature evaluation configuration (Modules A, B, C).
 

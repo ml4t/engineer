@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Weighted Close Price (WCLPRICE) - TA-Lib compatible implementation.
 

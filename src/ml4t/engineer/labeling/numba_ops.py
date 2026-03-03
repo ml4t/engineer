@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,arg-type,call-arg,return-value,assignment"
 """Numba JIT-compiled operations for triple barrier labeling.
 
 These are internal functions used by the triple barrier implementation.
@@ -185,6 +184,10 @@ def _check_barrier_touch(
         or (side == 0 and (low_price <= lower_price or low_price <= trailing_stop_price))
     )
 
+    # When both barriers are breached in the same bar (e.g., gap or high-volatility),
+    # upper barrier (profit target) takes priority. This is consistent with De Prado's
+    # AFML reference implementation. For conservative (stop-loss-first) resolution,
+    # use higher-frequency data to reduce intrabar ambiguity.
     if upper_hit:
         return 1
     if lower_hit:
@@ -328,11 +331,11 @@ def _apply_triple_barrier_nb(
     closes: npt.NDArray[np.float64],
     highs: npt.NDArray[np.float64],
     lows: npt.NDArray[np.float64],
-    event_times: npt.NDArray[np.float64],
+    event_indices: npt.NDArray[np.intp],
     upper_barriers: npt.NDArray[np.float64],
     lower_barriers: npt.NDArray[np.float64],
-    max_periods: npt.NDArray[np.float64],
-    sides: npt.NDArray[np.float64],
+    max_periods: npt.NDArray[np.int64],
+    sides: npt.NDArray[np.int32],
     trailing_stops: npt.NDArray[np.float64],
 ) -> tuple[
     npt.NDArray[np.float64],
@@ -355,7 +358,7 @@ def _apply_triple_barrier_nb(
     tuple of arrays
         (labels, label_indices, label_prices, label_returns, bar_durations)
     """
-    n_events = len(event_times)
+    n_events = len(event_indices)
     n_prices = len(closes)
 
     # Output arrays
@@ -366,7 +369,7 @@ def _apply_triple_barrier_nb(
     bar_durations = np.zeros(n_events, dtype=np.int64)
 
     for i in range(n_events):
-        event_idx = event_times[i]
+        event_idx = event_indices[i]
         upper = upper_barriers[i]
         lower = lower_barriers[i]
         max_period = max_periods[i]

@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """Market regime identification features.
 
 Exports:
@@ -427,8 +426,8 @@ def hurst_exponent(
     description="Trend Intensity Index - measures trend strength",
     lookback="period",
     normalized=True,
-    value_range=(0.0, 100.0),
-    formula="TII = 100 * (closes_above_MA / period)",
+    value_range=(-100.0, 100.0),
+    formula="TII = 100 * (closes_above_MA / period), negative for downtrends",
     input_type="close",
     parameters={"period": 60},
     tags=["regime", "trend-strength"],

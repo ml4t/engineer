@@ -16,16 +16,11 @@ from ml4t.engineer.core.exceptions import (
     DataError,
     DataSchemaError,
     DataValidationError,
-    ImplementationNotAvailableError,
-    IndicatorError,  # Deprecated
     InsufficientDataError,
     IntegrationError,
-    InvalidArgumentError,
     InvalidParameterError,
     # Base exception
-    QuantLabTAError,
-    # Backward compatibility aliases
-    TechnicalAnalysisError,
+    ML4TEngineerError,
     ValidationError,
 )
 from ml4t.engineer.core.registry import (
@@ -96,7 +91,7 @@ __all__ = [
     "FeatureRegistry",
     "get_registry",
     # Exceptions - Base
-    "QuantLabTAError",
+    "ML4TEngineerError",
     # Exceptions - First-level (flat hierarchy)
     "ConfigurationError",
     "ValidationError",
@@ -107,11 +102,6 @@ __all__ = [
     "ComputationError",
     "DataError",
     "IntegrationError",
-    # Exceptions - Backward compatibility aliases
-    "TechnicalAnalysisError",
-    "IndicatorError",  # Deprecated
-    "InvalidArgumentError",
-    "ImplementationNotAvailableError",
     # Validation
     "validate_lag",
     "validate_list_length",

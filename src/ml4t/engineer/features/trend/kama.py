@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 KAMA - Kaufman's Adaptive Moving Average.
 

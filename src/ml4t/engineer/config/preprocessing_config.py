@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,no-any-return,call-arg"
 """Preprocessing configuration with Pydantic v2 serialization.
 
 This module provides config classes for preprocessing (scalers) that extend BaseConfig,
@@ -289,15 +288,18 @@ class PreprocessingConfig(BaseConfig):
 
         if self.scaler == "standard":
             return StandardScaler(
+                columns=self.columns,
                 with_mean=self.with_mean,
                 with_std=self.with_std,
             )
         elif self.scaler == "minmax":
             return MinMaxScaler(
+                columns=self.columns,
                 feature_range=self.feature_range,
             )
         elif self.scaler == "robust":
             return RobustScaler(
+                columns=self.columns,
                 with_centering=self.with_centering,
                 with_scaling=self.with_scaling,
                 quantile_range=self.quantile_range,

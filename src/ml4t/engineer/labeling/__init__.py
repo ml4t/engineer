@@ -1,4 +1,3 @@
-# mypy: disable-error-code="arg-type"
 """Labeling module for ml4t.engineer.
 
 Provides generalized labeling functionality including triple-barrier method.

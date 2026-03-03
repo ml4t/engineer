@@ -35,17 +35,20 @@ def sample_ohlcv_data():
 
 
 def test_compute_single_feature_with_defaults(sample_ohlcv_data):
-    """Test computing a single feature with default parameters."""
-    result = compute_features(sample_ohlcv_data, ["sma"])
+    """Test computing a single feature using registry default parameters."""
+    # RSI has parameters={"period": 14} in its @feature() registration
+    result = compute_features(sample_ohlcv_data, ["rsi"])
 
     assert isinstance(result, pl.DataFrame)
-    # Check that sma column was added (column name format may vary)
-    assert "sma" in result.columns or "sma_20" in result.columns or "close_sma_20" in result.columns
+    assert "rsi" in result.columns
 
 
 def test_compute_multiple_features(sample_ohlcv_data):
     """Test computing multiple features."""
-    features = ["sma", "ema"]
+    features = [
+        {"name": "sma", "params": {"period": 20}},
+        {"name": "ema", "params": {"period": 10}},
+    ]
     result = compute_features(sample_ohlcv_data, features)
 
     assert isinstance(result, pl.DataFrame)
@@ -68,7 +71,7 @@ def test_compute_feature_with_custom_params(sample_ohlcv_data):
 def test_compute_mixed_format(sample_ohlcv_data):
     """Test computing features with mixed default and custom params."""
     features = [
-        "sma",  # Default parameters
+        "rsi",  # Has parameters={"period": 14} in registration
         {"name": "ema", "params": {"period": 15}},  # Custom parameters
     ]
     result = compute_features(sample_ohlcv_data, features)
@@ -83,7 +86,7 @@ def test_compute_mixed_format(sample_ohlcv_data):
 def test_compute_with_lazyframe(sample_ohlcv_data):
     """Test that API works with LazyFrame input."""
     lazy_data = sample_ohlcv_data.lazy()
-    result = compute_features(lazy_data, ["sma"])
+    result = compute_features(lazy_data, [{"name": "sma", "params": {"period": 20}}])
 
     assert isinstance(result, pl.LazyFrame)
     # Collect to verify computation works
@@ -158,10 +161,11 @@ def test_compute_from_yaml_config_simple_list(sample_ohlcv_data):
     """Test computing from YAML config with simple list format."""
     pytest.importorskip("yaml")
 
+    # Use features that have default parameters in their registration
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         f.write("""
-- sma
-- ema
+- rsi
+- macd
 """)
         config_path = f.name
 
@@ -267,10 +271,17 @@ def test_duplicate_feature_names(sample_ohlcv_data):
 
 
 def test_features_with_empty_params(sample_ohlcv_data):
-    """Test features with explicit empty params dict."""
+    """Test features with explicit empty params dict uses registration defaults."""
+    # RSI has parameters={"period": 14} in registration, so empty params works
     features = [
-        {"name": "sma", "params": {}},
+        {"name": "rsi", "params": {}},
     ]
 
     result = compute_features(sample_ohlcv_data, features)
     assert isinstance(result, pl.DataFrame)
+
+
+def test_features_without_params_raises_clear_error(sample_ohlcv_data):
+    """Test that unregistered features raise a clear error."""
+    with pytest.raises(ValueError, match="not found in registry"):
+        compute_features(sample_ohlcv_data, ["nonexistent_feature_xyz"])

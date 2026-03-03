@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,arg-type,call-arg,return-value,assignment"
 """Triple barrier labeling implementation.
 
 Implements the generalized triple-barrier labeling method for financial machine learning.
@@ -32,6 +31,7 @@ from ml4t.engineer.labeling.utils import (
     parse_duration,
     resolve_labeling_columns,
     time_horizon_to_bars,
+    validate_price_no_nans,
 )
 
 
@@ -139,8 +139,18 @@ def _prepare_barrier_arrays(
     elif config.trailing_stop is True:
         if config.lower_barrier is not None and isinstance(config.lower_barrier, int | float):
             trailing_stops = np.full(n_events, abs(float(config.lower_barrier)))
+        elif config.lower_barrier is not None and isinstance(config.lower_barrier, str):
+            # Column-name lower barrier (e.g., ATR-based): use per-event values
+            if config.lower_barrier not in data.columns:
+                raise DataValidationError(
+                    f"Lower barrier column '{config.lower_barrier}' not found"
+                )
+            trailing_stops = np.abs(data[config.lower_barrier].to_numpy()[event_indices])
         else:
-            trailing_stops = np.full(n_events, 0.01)
+            raise DataValidationError(
+                "trailing_stop=True requires either a numeric lower_barrier to derive the "
+                "trail distance, or an explicit float value for trailing_stop (e.g., 0.02)."
+            )
     elif isinstance(config.trailing_stop, int | float):
         trailing_stops = np.full(n_events, float(config.trailing_stop))
     else:
@@ -269,7 +279,9 @@ def _triple_barrier_labels_single_group(
                 label_time=pl.lit(None, dtype=pl.Int64),
                 label_price=pl.lit(None, dtype=pl.Float64),
                 label_return=pl.lit(None, dtype=pl.Float64),
-                weight=pl.lit(None, dtype=pl.Float64),
+                label_bars=pl.lit(None, dtype=pl.Int64),
+                label_duration=pl.lit(None, dtype=pl.Utf8),
+                barrier_hit=pl.lit(None, dtype=pl.Utf8),
             )
     else:
         event_indices = np.arange(len(data))
@@ -417,6 +429,8 @@ def triple_barrier_labels(
         raise DataValidationError(
             "triple_barrier_labels requires LabelingConfig.method='triple_barrier'."
         )
+
+    validate_price_no_nans(data, resolved_price_col)
 
     if group_cols:
         sort_cols = group_cols + ([resolved_ts_col] if resolved_ts_col else [])

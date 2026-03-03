@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 TRIX - 1-day Rate-Of-Change (ROC) of a Triple Smooth EMA - TA-Lib compatible implementation.
 

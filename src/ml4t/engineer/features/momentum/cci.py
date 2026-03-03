@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """Commodity Channel Index (CCI) implementation."""
 
 import numpy as np

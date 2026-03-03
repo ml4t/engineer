@@ -34,9 +34,7 @@ higher moment calculations for financial risk management.
 """
 
 import numpy as np
-import numpy.typing as npt
 import polars as pl
-from numba import jit
 from scipy import stats
 
 from ml4t.engineer.core.decorators import feature
@@ -209,62 +207,6 @@ def conditional_value_at_risk(
     pdf_z = stats.norm.pdf(z_alpha)
 
     return mean - std * pl.lit(pdf_z / alpha)
-
-
-@jit(nopython=True, cache=True)  # type: ignore[misc]
-def _calculate_drawdowns_nb(
-    close: npt.NDArray[np.float64],
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
-    """Calculate drawdown series, duration, and recovery time using Numba.
-
-    Parameters
-    ----------
-    close : npt.NDArray
-        Price series
-
-    Returns
-    -------
-    tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        (drawdown_series, drawdown_duration, time_to_recovery)
-    """
-    n = len(close)
-    drawdowns = np.zeros(n)
-    durations = np.zeros(n)
-    recovery_times = np.zeros(n)
-
-    running_max = close[0]
-    drawdown_start = 0
-    in_drawdown = False
-
-    for i in range(n):
-        if close[i] > running_max:
-            running_max = close[i]
-
-            # Recovery occurred
-            if in_drawdown:
-                # Fill recovery time for the drawdown period
-                for j in range(drawdown_start, i):
-                    recovery_times[j] = i - drawdown_start
-                in_drawdown = False
-
-        # Calculate current drawdown
-        drawdowns[i] = (close[i] - running_max) / running_max
-
-        # Track drawdown duration
-        if drawdowns[i] < 0:
-            if not in_drawdown:
-                drawdown_start = i
-                in_drawdown = True
-            durations[i] = i - drawdown_start + 1
-        else:
-            durations[i] = 0
-
-    # Handle case where series ends in drawdown
-    if in_drawdown:
-        for j in range(drawdown_start, n):
-            recovery_times[j] = np.nan  # Not recovered
-
-    return drawdowns, durations, recovery_times
 
 
 @feature(

@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Typical Price (TYPPRICE) - TA-Lib compatible implementation.
 

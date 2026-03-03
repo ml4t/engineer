@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,arg-type,call-arg,return-value,assignment"
 """Fixed horizon and trend scanning labeling methods.
 
 Provides simpler labeling methods for supervised learning:
@@ -23,6 +22,7 @@ from ml4t.engineer.labeling.utils import (
     is_duration_string,
     parse_duration,
     resolve_labeling_columns,
+    validate_price_no_nans,
 )
 
 if TYPE_CHECKING:
@@ -157,6 +157,8 @@ def fixed_time_horizon_labels(
             "Time-based horizon requires a timestamp column. "
             "Provide timestamp_col parameter or ensure data has a datetime column.",
         )
+
+    validate_price_no_nans(data, resolved_price_col)
 
     if is_time_based:
         return _time_based_horizon_labels(
@@ -302,116 +304,23 @@ def _time_based_horizon_labels(
     return data.with_columns(label.alias(label_name))
 
 
-def trend_scanning_labels(
+def _trend_scanning_single_group(
     data: pl.DataFrame,
-    min_window: int = 5,
-    max_window: int = 50,
-    step: int = 1,
-    price_col: str | None = None,
-    timestamp_col: str | None = None,
-    *,
-    config: LabelingConfig | None = None,
-    contract: DataContractConfig | None = None,
+    min_window: int,
+    max_window: int,
+    step: int,
+    price_col: str,
+    timestamp_col: str | None,
 ) -> pl.DataFrame:
-    """Generate labels using De Prado's trend scanning method.
-
-    For each observation, fits linear trends over windows of varying lengths
-    and selects the window with the highest absolute t-statistic. The label
-    is assigned based on the trend direction (sign of the t-statistic).
-
-    This method is more robust than fixed-horizon labeling as it adapts to
-    the local trend structure in the data.
-
-    Parameters
-    ----------
-    data : pl.DataFrame
-        Input data with price information
-    min_window : int, default 5
-        Minimum window size to scan
-    max_window : int, default 50
-        Maximum window size to scan
-    step : int, default 1
-        Step size for window scanning
-    price_col : str | None, default None
-        Name of the price column to use
-    timestamp_col : str | None, default None
-        Column to use for chronological sorting. If None, auto-detects from
-        column dtype (pl.Datetime, pl.Date). Required for correct scanning.
-    config : LabelingConfig | None, default None
-        Optional column contract source. If provided, `price_col` and
-        `timestamp_col` default to config values when omitted.
-    contract : DataContractConfig | None, default None
-        Optional shared dataframe contract. Used after config and before defaults.
-
-    Returns
-    -------
-    pl.DataFrame
-        Original data with additional columns:
-        - label: ±1 based on trend direction
-        - t_value: t-statistic of the selected trend
-        - optimal_window: window size with highest |t-value|
-
-    Examples
-    --------
-    >>> # Scan windows from 5 to 50 bars
-    >>> labeled = trend_scanning_labels(df, min_window=5, max_window=50)
-    >>>
-    >>> # Fast scanning with larger steps
-    >>> labeled = trend_scanning_labels(df, min_window=10, max_window=100, step=5)
-
-    Notes
-    -----
-    The trend scanning method:
-    1. For each observation, scans forward with windows of varying lengths
-    2. Fits a linear regression to each window
-    3. Computes t-statistic for the slope coefficient
-    4. Selects the window with highest absolute t-statistic
-    5. Assigns label = sign(t-statistic)
-
-    This approach:
-    - Adapts to local trend structure
-    - More robust than fixed horizons
-    - Computationally expensive (O(n * m) where m = window range)
-
-    References
-    ----------
-    .. [1] De Prado, M.L. (2018). Advances in Financial Machine Learning. Wiley.
-           Chapter 18: Entropy Features (Section on Trend Scanning).
-
-    See Also
-    --------
-    fixed_time_horizon_labels : Simple fixed-horizon labeling
-    triple_barrier_labels : Path-dependent labeling with barriers
-
-    Notes
-    -----
-    **Important**: Data is automatically sorted by timestamp before scanning.
-    This is required because the algorithm scans forward in row order.
-    The result is returned sorted chronologically.
-    """
+    """Apply trend scanning to a single asset/group."""
     from scipy import stats
 
-    if min_window < 2:
-        raise ValueError("min_window must be at least 2")
-    if max_window <= min_window:
-        raise ValueError("max_window must be greater than min_window")
-    if step < 1:
-        raise ValueError("step must be at least 1")
-    resolved_price_col, resolved_ts_col, _ = resolve_labeling_columns(
-        data=data,
-        price_col=price_col,
-        timestamp_col=timestamp_col,
-        group_col=[],
-        config=config,
-        contract=contract,
-    )
-
     # Sort data chronologically for correct forward scanning
-    if resolved_ts_col:
-        data = data.sort(resolved_ts_col)
+    if timestamp_col:
+        data = data.sort(timestamp_col)
 
     # Extract prices as numpy array for faster computation
-    prices = data[resolved_price_col].to_numpy()
+    prices = data[price_col].to_numpy()
     n = len(prices)
 
     # Initialize result arrays
@@ -452,14 +361,148 @@ def trend_scanning_labels(
         windows[i] = best_window
 
     # Add results to dataframe
-    # Convert NaN to None for Polars compatibility
-    label_series = pl.Series("label", labels)
-    label_series = label_series.fill_nan(None).cast(pl.Int8)
-
+    label_series = pl.Series("label", labels).fill_nan(None).cast(pl.Int8)
     t_value_series = pl.Series("t_value", t_values)
     window_series = pl.Series("optimal_window", windows).fill_nan(None).cast(pl.Int32)
 
     return data.with_columns([label_series, t_value_series, window_series])
+
+
+def trend_scanning_labels(
+    data: pl.DataFrame,
+    min_window: int = 5,
+    max_window: int = 50,
+    step: int = 1,
+    price_col: str | None = None,
+    timestamp_col: str | None = None,
+    group_col: str | list[str] | None = None,
+    *,
+    config: LabelingConfig | None = None,
+    contract: DataContractConfig | None = None,
+) -> pl.DataFrame:
+    """Generate labels using De Prado's trend scanning method.
+
+    For each observation, fits linear trends over windows of varying lengths
+    and selects the window with the highest absolute t-statistic. The label
+    is assigned based on the trend direction (sign of the t-statistic).
+
+    This method is more robust than fixed-horizon labeling as it adapts to
+    the local trend structure in the data.
+
+    Parameters
+    ----------
+    data : pl.DataFrame
+        Input data with price information
+    min_window : int, default 5
+        Minimum window size to scan
+    max_window : int, default 50
+        Maximum window size to scan
+    step : int, default 1
+        Step size for window scanning
+    price_col : str | None, default None
+        Name of the price column to use
+    timestamp_col : str | None, default None
+        Column to use for chronological sorting. If None, auto-detects from
+        column dtype (pl.Datetime, pl.Date). Required for correct scanning.
+    group_col : str | list[str] | None, default None
+        Column(s) to group by for per-asset labels. If None, auto-detects from
+        common column names: 'symbol', 'product', 'ticker'.
+        Pass an empty list explicitly to disable grouping.
+    config : LabelingConfig | None, default None
+        Optional column contract source. If provided, `price_col` and
+        `timestamp_col` default to config values when omitted.
+    contract : DataContractConfig | None, default None
+        Optional shared dataframe contract. Used after config and before defaults.
+
+    Returns
+    -------
+    pl.DataFrame
+        Original data with additional columns:
+        - label: ±1 based on trend direction
+        - t_value: t-statistic of the selected trend
+        - optimal_window: window size with highest |t-value|
+
+    Examples
+    --------
+    >>> # Scan windows from 5 to 50 bars
+    >>> labeled = trend_scanning_labels(df, min_window=5, max_window=50)
+    >>>
+    >>> # Fast scanning with larger steps
+    >>> labeled = trend_scanning_labels(df, min_window=10, max_window=100, step=5)
+    >>>
+    >>> # Panel data: per-asset scanning
+    >>> labeled = trend_scanning_labels(df, group_col="symbol")
+
+    Notes
+    -----
+    The trend scanning method:
+    1. For each observation, scans forward with windows of varying lengths
+    2. Fits a linear regression to each window
+    3. Computes t-statistic for the slope coefficient
+    4. Selects the window with highest absolute t-statistic
+    5. Assigns label = sign(t-statistic)
+
+    This approach:
+    - Adapts to local trend structure
+    - More robust than fixed horizons
+    - Computationally expensive (O(n * m) where m = window range)
+
+    **Important**: Data is automatically sorted by [group_col, timestamp] before
+    scanning. This is required because the algorithm scans forward in row order.
+
+    References
+    ----------
+    .. [1] De Prado, M.L. (2018). Advances in Financial Machine Learning. Wiley.
+           Chapter 18: Entropy Features (Section on Trend Scanning).
+
+    See Also
+    --------
+    fixed_time_horizon_labels : Simple fixed-horizon labeling
+    triple_barrier_labels : Path-dependent labeling with barriers
+    """
+    if min_window < 2:
+        raise ValueError("min_window must be at least 2")
+    if max_window <= min_window:
+        raise ValueError("max_window must be greater than min_window")
+    if step < 1:
+        raise ValueError("step must be at least 1")
+    resolved_price_col, resolved_ts_col, group_cols = resolve_labeling_columns(
+        data=data,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        group_col=group_col,
+        config=config,
+        contract=contract,
+    )
+
+    validate_price_no_nans(data, resolved_price_col)
+
+    if group_cols:
+        sort_cols = group_cols + ([resolved_ts_col] if resolved_ts_col else [])
+        sorted_data = data.sort(sort_cols)
+        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True)
+
+        grouped_results = [
+            _trend_scanning_single_group(
+                data=group_df,
+                min_window=min_window,
+                max_window=max_window,
+                step=step,
+                price_col=resolved_price_col,
+                timestamp_col=resolved_ts_col,
+            )
+            for group_df in grouped_frames
+        ]
+        return pl.concat(grouped_results, how="vertical")
+
+    return _trend_scanning_single_group(
+        data=data,
+        min_window=min_window,
+        max_window=max_window,
+        step=step,
+        price_col=resolved_price_col,
+        timestamp_col=resolved_ts_col,
+    )
 
 
 __all__ = [

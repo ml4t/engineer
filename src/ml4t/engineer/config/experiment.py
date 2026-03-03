@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,no-any-return"
 """Experiment configuration loading utilities.
 
 This module provides helpers for loading complete experiment configurations
@@ -209,8 +208,20 @@ def save_experiment_config(
             exclude_none=True,
         )
 
+    # Convert tuples to lists for YAML safe_load compatibility
+    output = _tuples_to_lists(output)
+
     with open(path, "w") as f:
         yaml.dump(output, f, default_flow_style=False, sort_keys=False)
+
+
+def _tuples_to_lists(obj: Any) -> Any:
+    """Recursively convert tuples to lists for YAML-safe serialization."""
+    if isinstance(obj, dict):
+        return {k: _tuples_to_lists(v) for k, v in obj.items()}
+    elif isinstance(obj, tuple | list):
+        return [_tuples_to_lists(item) for item in obj]
+    return obj
 
 
 __all__ = [

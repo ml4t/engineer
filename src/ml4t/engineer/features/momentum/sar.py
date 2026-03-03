@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Parabolic SAR (Stop and Reverse) - TA-Lib compatible implementation.
 

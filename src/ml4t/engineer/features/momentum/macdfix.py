@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 MACDFIX - Moving Average Convergence/Divergence Fix 12/26.
 

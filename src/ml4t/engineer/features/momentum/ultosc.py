@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Ultimate Oscillator (ULTOSC) - TA-Lib compatible implementation.
 
