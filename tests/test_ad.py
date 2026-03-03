@@ -178,6 +178,7 @@ class TestAD:
         # Should match closely on real data
         assert_allclose(result, expected, rtol=1e-10, equal_nan=True)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_ad_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark AD performance using real crypto data."""

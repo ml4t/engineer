@@ -205,12 +205,6 @@ class TestTickRunBarSampler:
         assert sampler.alpha == 0.1
         assert sampler.initial_p_buy == 0.5
 
-    def test_init_deprecated_initial_run_expectation(self):
-        """Test deprecation warning for initial_run_expectation."""
-        with pytest.warns(DeprecationWarning, match="initial_run_expectation is deprecated"):
-            sampler = TickRunBarSampler(expected_ticks_per_bar=100, initial_run_expectation=15)
-        assert sampler.expected_ticks_per_bar == 100
-
     def test_init_invalid_ticks_zero(self):
         """Test initialization fails with zero expected ticks."""
         with pytest.raises(ValueError, match="expected_ticks_per_bar must be positive"):
@@ -342,14 +336,6 @@ class TestVolumeRunBarSampler:
         assert sampler.expected_ticks_per_bar == 100
         assert sampler.alpha == 0.1
 
-    def test_init_deprecated_initial_run_expectation(self):
-        """Test deprecation warning for initial_run_expectation."""
-        with pytest.warns(DeprecationWarning, match="initial_run_expectation is deprecated"):
-            sampler = VolumeRunBarSampler(
-                expected_ticks_per_bar=100, initial_run_expectation=1000.0
-            )
-        assert sampler.expected_ticks_per_bar == 100
-
     def test_init_invalid_ticks_zero(self):
         """Test initialization fails with zero expected ticks."""
         with pytest.raises(ValueError, match="expected_ticks_per_bar must be positive"):
@@ -442,14 +428,6 @@ class TestDollarRunBarSampler:
         sampler = DollarRunBarSampler(expected_ticks_per_bar=100)
         assert sampler.expected_ticks_per_bar == 100
         assert sampler.alpha == 0.1
-
-    def test_init_deprecated_initial_run_expectation(self):
-        """Test deprecation warning for initial_run_expectation."""
-        with pytest.warns(DeprecationWarning, match="initial_run_expectation is deprecated"):
-            sampler = DollarRunBarSampler(
-                expected_ticks_per_bar=100, initial_run_expectation=100000.0
-            )
-        assert sampler.expected_ticks_per_bar == 100
 
     def test_init_invalid_ticks_zero(self):
         """Test initialization fails with zero expected ticks."""

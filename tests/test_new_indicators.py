@@ -45,7 +45,7 @@ class TestMomentumIndicator:
         # Test different periods
         for period in [10, 20, 30]:
             talib_mom = talib.MOM(close, timeperiod=period)
-            our_mom = mom(close, timeperiod=period)
+            our_mom = mom(close, period=period)
 
             np.testing.assert_allclose(
                 talib_mom,
@@ -68,13 +68,13 @@ class TestMomentumIndicator:
         """Test MOM edge cases."""
         # Small array
         small = np.array([10.0, 11.0, 12.0, 13.0, 14.0])
-        result = mom(small, timeperiod=3)
+        result = mom(small, period=3)
         assert np.isnan(result[:3]).all()
         assert result[3] == 3.0  # 13 - 10
         assert result[4] == 3.0  # 14 - 11
 
         # Period larger than data
-        result = mom(small, timeperiod=10)
+        result = mom(small, period=10)
         assert np.isnan(result).all()
 
 
@@ -224,7 +224,7 @@ class TestStandardDeviation:
 class TestPerformanceComparison:
     """Test performance of new indicators vs TA-Lib."""
 
-    @pytest.mark.performance
+    @pytest.mark.perf
     @pytest.mark.skipif(not HAS_TALIB, reason="TA-Lib not available")
     def test_mom_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark MOM performance."""
@@ -266,6 +266,7 @@ class TestPerformanceComparison:
             f"MOM performance ratio {our_time / talib_time:.1f}x exceeds threshold {threshold}x"
         )
 
+    @pytest.mark.perf
     @pytest.mark.skipif(not HAS_TALIB, reason="TA-Lib not available")
     def test_obv_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark OBV performance."""
@@ -302,6 +303,7 @@ class TestPerformanceComparison:
         threshold = performance_threshold("simple")
         assert our_time < talib_time * threshold
 
+    @pytest.mark.perf
     @pytest.mark.skipif(not HAS_TALIB, reason="TA-Lib not available")
     def test_ppo_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark PPO performance."""
@@ -415,6 +417,7 @@ class TestAroonIndicators:
         with pytest.raises((ValueError, InvalidParameterError)):
             aroon(high, low, timeperiod=1)
 
+    @pytest.mark.perf
     @pytest.mark.skipif(not HAS_TALIB, reason="TA-Lib not available")
     def test_aroon_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark AROON performance."""
@@ -518,6 +521,7 @@ class TestSarIndicator:
         with pytest.raises((ValueError, InvalidParameterError)):
             sar(high, low, acceleration=0.3, maximum=0.2)
 
+    @pytest.mark.perf
     @pytest.mark.skipif(not HAS_TALIB, reason="TA-Lib not available")
     def test_sar_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark SAR performance."""

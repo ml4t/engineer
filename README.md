@@ -143,6 +143,17 @@ dbars = DollarBarSampler(dollar_threshold=1_000_000).sample(tick_data)
 ibars = TickImbalanceBarSampler(expected_imbalance=100).sample(tick_data)
 ```
 
+## Documentation
+
+- [Features](docs/user-guide/features.md) - 120 technical indicators across 11 categories
+- [Labeling](docs/user-guide/labeling.md) - 7 labeling methods for supervised learning
+- [Alternative Bars](docs/user-guide/bars.md) - Information-driven bar sampling
+- [Feature Discovery](docs/user-guide/discovery.md) - Registry, catalog, and search
+- [Fractional Differencing](docs/user-guide/fractional-differencing.md) - Memory-preserving stationarity
+- [ML-Readiness](docs/user-guide/ml-readiness.md) - Normalized features and preprocessing
+- [Preprocessing](docs/user-guide/preprocessing.md) - Scalers and leakage prevention
+- [Dataset Builder](docs/user-guide/dataset-builder.md) - Leakage-safe train/test preparation
+
 ## Technical Characteristics
 
 - **Polars-native**: All computations use Polars expressions

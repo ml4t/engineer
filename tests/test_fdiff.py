@@ -232,44 +232,6 @@ class TestDiagnostics:
             assert abs(diag_03["correlation"]) > abs(diag_07["correlation"])
 
 
-class TestPipelineIntegration:
-    """Test integration with pipeline API."""
-
-    def test_ffdiff_in_pipeline(self):
-        """FFD should work in pipeline context."""
-        from ml4t.engineer.pipeline import Pipeline
-
-        # Create test data
-        np.random.seed(42)
-        data = pl.DataFrame(
-            {
-                "timestamp": pl.datetime_range(
-                    start=pl.datetime(2024, 1, 1),
-                    end=pl.datetime(2024, 1, 10),
-                    interval="1h",
-                    eager=True,
-                )[:200],
-                "close": np.random.randn(200).cumsum() + 100,
-            },
-        )
-
-        # Create pipeline
-        pipeline = Pipeline(
-            steps=[
-                (
-                    "returns",
-                    lambda df: df.with_columns(returns=pl.col("close").pct_change()),
-                ),
-                ("ffd", lambda df: df.with_columns(close_ffd=ffdiff("close", d=0.5))),
-            ],
-        )
-
-        result = pipeline.run(data)
-
-        assert "close_ffd" in result.columns
-        assert len(result) == len(data)
-
-
 class TestEdgeCases:
     """Test edge cases and error handling."""
 

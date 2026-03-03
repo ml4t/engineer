@@ -165,6 +165,7 @@ class TestTSF:
         valid_idx = ~np.isnan(result)
         assert len(result[valid_idx]) > 0  # Should have some valid forecasts
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_tsf_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark TSF performance using real crypto data."""

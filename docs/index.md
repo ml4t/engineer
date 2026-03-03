@@ -53,6 +53,17 @@ pip install ml4t-engineer
 
 - [Installation Guide](getting-started/installation.md) - Detailed setup instructions
 - [Quickstart](getting-started/quickstart.md) - Get running in 5 minutes
+
+### User Guides
+
+- [Features](user-guide/features.md) - 120 technical indicators across 11 categories
+- [Labeling](user-guide/labeling.md) - 7 labeling methods for supervised learning
+- [Alternative Bars](user-guide/bars.md) - Information-driven bar sampling
+- [Feature Discovery](user-guide/discovery.md) - Registry, catalog, and search
+- [Fractional Differencing](user-guide/fractional-differencing.md) - Memory-preserving stationarity
+- [ML-Readiness](user-guide/ml-readiness.md) - Normalized features and preprocessing
+- [Preprocessing](user-guide/preprocessing.md) - Scalers and leakage prevention
+- [Dataset Builder](user-guide/dataset-builder.md) - Leakage-safe train/test preparation
 - [API Reference](api/index.md) - Complete API documentation
 
 ## Part of the ML4T Library Suite

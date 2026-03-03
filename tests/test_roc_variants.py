@@ -241,6 +241,7 @@ class TestROCVariants:
                 rtol=1e-10,
             )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_roc_variants_performance(
         self,

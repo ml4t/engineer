@@ -519,7 +519,7 @@ class PreprocessingPipeline:
     Parameters
     ----------
     recommendations : dict | None
-        Feature recommendations from EngineerConfig.to_dict().
+        Feature recommendations from FeatureEvaluatorConfig (ml4t-diagnostic).
         Format: {"feature_name": {"transform": "standardize", "confidence": 0.9}}
     min_confidence : float, default 0.0
         Minimum confidence threshold for applying recommendations.
@@ -571,7 +571,7 @@ class PreprocessingPipeline:
         Parameters
         ----------
         recommendations : dict
-            Output from EngineerConfig.to_dict() or similar format.
+            Output from FeatureEvaluatorConfig (ml4t-diagnostic) or similar format.
             Expected structure: {"feature": {"transform": "...", "confidence": ...}}
         min_confidence : float, default 0.0
             Minimum confidence threshold.

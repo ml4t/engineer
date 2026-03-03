@@ -385,8 +385,6 @@ class ImbalanceBarSamplerVectorized(BarSampler):
     ----------
     expected_ticks_per_bar : int
         Expected number of ticks per bar (initializes E[T])
-    initial_expectation : float, optional
-        DEPRECATED. The AFML threshold is computed dynamically.
     alpha : float, default 0.1
         EWMA decay factor for updating expectations
     initial_p_buy : float, default 0.5
@@ -398,7 +396,6 @@ class ImbalanceBarSamplerVectorized(BarSampler):
     def __init__(
         self,
         expected_ticks_per_bar: int,
-        initial_expectation: float | None = None,
         alpha: float = 0.1,
         initial_p_buy: float = 0.5,
         min_bars_warmup: int = 10,
@@ -413,7 +410,6 @@ class ImbalanceBarSamplerVectorized(BarSampler):
             raise ValueError("min_bars_warmup must be non-negative")
 
         self.expected_ticks_per_bar = expected_ticks_per_bar
-        self.initial_expectation = initial_expectation  # Deprecated, kept for backward compat
         self.alpha = alpha
         self.initial_p_buy = initial_p_buy
         self.min_bars_warmup = min_bars_warmup

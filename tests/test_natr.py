@@ -178,6 +178,7 @@ class TestNATR:
                 err_msg=f"NATR mismatch for period={period} on real crypto data",
             )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_natr_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark NATR performance using real crypto data."""

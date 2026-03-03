@@ -351,6 +351,7 @@ class TestIndicatorPerformance:
             "numba_throughput": numba_throughput,
         }
 
+    @pytest.mark.perf
     def test_performance_comparison(self, large_data):
         """Compare performance of Polars vs Numba implementations."""
         print("\n" + "=" * 60)

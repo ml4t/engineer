@@ -19,8 +19,6 @@ Where:
     E[v] = unconditional mean volume per tick
 """
 
-import warnings
-
 import numpy as np
 import numpy.typing as npt
 import polars as pl
@@ -544,8 +542,6 @@ class ImbalanceBarSampler(BarSampler):
     ----------
     expected_ticks_per_bar : int
         Expected number of ticks per bar (used to initialize E[T])
-    initial_expectation : float, optional
-        DEPRECATED. Use expected_ticks_per_bar instead.
     alpha : float, default 0.1
         EWMA decay factor for updating expectations
     initial_p_buy : float, default 0.5
@@ -570,26 +566,10 @@ class ImbalanceBarSampler(BarSampler):
     def __init__(
         self,
         expected_ticks_per_bar: int,
-        initial_expectation: float | None = None,
         alpha: float = 0.1,
         initial_p_buy: float = 0.5,
         min_bars_warmup: int = 10,
     ):
-        """Initialize imbalance bar sampler.
-
-        Parameters
-        ----------
-        expected_ticks_per_bar : int
-            Expected number of ticks per bar
-        initial_expectation : float, optional
-            DEPRECATED. Use expected_ticks_per_bar instead.
-        alpha : float, default 0.1
-            EWMA decay factor
-        initial_p_buy : float, default 0.5
-            Initial buy probability P[b=1]
-        min_bars_warmup : int, default 10
-            Number of bars before starting EWMA updates
-        """
         if expected_ticks_per_bar <= 0:
             raise ValueError("expected_ticks_per_bar must be positive")
 
@@ -602,16 +582,7 @@ class ImbalanceBarSampler(BarSampler):
         if min_bars_warmup < 0:
             raise ValueError("min_bars_warmup must be non-negative")
 
-        if initial_expectation is not None:
-            warnings.warn(
-                "initial_expectation is deprecated and ignored. "
-                "The AFML threshold E[T] × |2v⁺ - E[v]| is computed dynamically.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         self.expected_ticks_per_bar = expected_ticks_per_bar
-        self.initial_expectation = initial_expectation  # Keep for backward compat
         self.alpha = alpha
         self.initial_p_buy = initial_p_buy
         self.min_bars_warmup = min_bars_warmup

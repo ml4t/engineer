@@ -238,12 +238,6 @@ class TestImbalanceBarSampler:
         assert sampler.alpha == 0.2
         assert sampler.initial_p_buy == 0.6
 
-    def test_init_deprecated_initial_expectation(self):
-        """Test deprecation warning for initial_expectation."""
-        with pytest.warns(DeprecationWarning, match="initial_expectation is deprecated"):
-            sampler = ImbalanceBarSampler(expected_ticks_per_bar=100, initial_expectation=5000.0)
-        assert sampler.expected_ticks_per_bar == 100
-
     def test_init_invalid_expected_ticks(self):
         """Test initialization fails with invalid expected_ticks_per_bar."""
         with pytest.raises(ValueError, match="expected_ticks_per_bar must be positive"):

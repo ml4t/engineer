@@ -140,6 +140,7 @@ class TestMedianPrice:
         # Should match exactly on real data
         assert_allclose(result, expected, rtol=1e-10, equal_nan=True)
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_medprice_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark MEDPRICE performance using real crypto data."""

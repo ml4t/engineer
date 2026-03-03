@@ -72,19 +72,18 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install TA-Lib C library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libta-lib0-dev
+
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --extra ta
 
       - name: Run tests
         run: |
           set +e
-          uv run pytest tests/ -v --tb=short -x --no-cov \
-            --deselect tests/core/test_calendars.py::TestNextOpenPreviousClose::test_next_open_from_market_hours \
-            --deselect tests/core/test_calendars.py::TestNextOpenPreviousClose::test_previous_close_from_market_hours \
-            --deselect tests/core/test_calendars.py::TestNextOpenPreviousClose::test_previous_close_from_before_open \
-            --deselect tests/core/test_calendars.py::TestNextOpenPreviousClose::test_previous_close_skips_weekend \
-            --deselect tests/core/test_calendars.py::TestSessionsBetween::test_sessions_between_same_week \
-            --deselect tests/core/test_calendars.py::TestCalendarIntegration::test_timezone_aware_workflow
+          uv run pytest tests/ -v --tb=short -x --no-cov
           PYTEST_EXIT=$?
           if [ $PYTEST_EXIT -eq 0 ] || [ $PYTEST_EXIT -eq 5 ]; then
             echo "Tests passed (exit code: $PYTEST_EXIT)"

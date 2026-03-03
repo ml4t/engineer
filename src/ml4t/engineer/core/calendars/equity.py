@@ -120,17 +120,18 @@ class EquityCalendar(ExchangeCalendar):
         # Ensure we're working in market timezone
         dt = dt.replace(tzinfo=self._tz) if dt.tzinfo is None else dt.astimezone(self._tz)
 
-        # Start from next day if after market close
-        if dt.time() >= time(16, 0):
-            dt = dt.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=1)
+        # If before today's open, next open is today 9:30
+        if dt.time() < time(9, 30):
+            candidate = dt.replace(hour=9, minute=30, second=0, microsecond=0)
         else:
-            dt = dt.replace(hour=9, minute=30, second=0, microsecond=0)
+            # During or after market hours — next open is tomorrow 9:30
+            candidate = dt.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=1)
 
         # Skip weekends
-        while dt.weekday() >= 5:
-            dt += timedelta(days=1)
+        while candidate.weekday() >= 5:
+            candidate += timedelta(days=1)
 
-        return dt
+        return candidate
 
     def previous_close(self, dt: datetime) -> datetime:
         """Previous market close before given datetime."""
@@ -157,17 +158,18 @@ class EquityCalendar(ExchangeCalendar):
         # Ensure we're working in market timezone
         dt = dt.replace(tzinfo=self._tz) if dt.tzinfo is None else dt.astimezone(self._tz)
 
-        # If before market open, go to previous day
-        if dt.time() < time(9, 30):
-            dt = dt.replace(hour=16, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        # If after today's close, previous close is today 16:00
+        if dt.time() > time(16, 0):
+            candidate = dt.replace(hour=16, minute=0, second=0, microsecond=0)
         else:
-            dt = dt.replace(hour=16, minute=0, second=0, microsecond=0)
+            # Before or during market hours — previous close is yesterday 16:00
+            candidate = dt.replace(hour=16, minute=0, second=0, microsecond=0) - timedelta(days=1)
 
         # Skip weekends backwards
-        while dt.weekday() >= 5:
-            dt -= timedelta(days=1)
+        while candidate.weekday() >= 5:
+            candidate -= timedelta(days=1)
 
-        return dt
+        return candidate
 
     def sessions_between(self, start: datetime, end: datetime) -> list[datetime]:
         """List all trading sessions between dates."""

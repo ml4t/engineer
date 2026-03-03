@@ -208,6 +208,7 @@ class TestADXR:
 
         assert avg_trend > avg_range, "ADXR should be higher in trending markets"
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_adxr_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark ADXR performance."""

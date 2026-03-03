@@ -185,6 +185,7 @@ class TestAVGDEV:
                     err_msg=f"AVGDEV mismatch on crypto data for period {period}",
                 )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_avgdev_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark AVGDEV performance."""

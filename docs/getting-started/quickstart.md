@@ -97,6 +97,10 @@ print(info)
 
 ## Next Steps
 
-- [Features Guide](../user-guide/features.md) - Deep dive into all indicators
-- [Labeling Guide](../user-guide/labeling.md) - Triple-barrier and other labeling methods
+- [Features Guide](../user-guide/features.md) - 120 indicators across 11 categories
+- [Labeling Guide](../user-guide/labeling.md) - 7 labeling methods for supervised learning
+- [Alternative Bars](../user-guide/bars.md) - Information-driven bar sampling
+- [Feature Discovery](../user-guide/discovery.md) - Registry, catalog, and search API
+- [Fractional Differencing](../user-guide/fractional-differencing.md) - Memory-preserving stationarity
+- [Dataset Builder](../user-guide/dataset-builder.md) - Leakage-safe train/test preparation
 - [API Reference](../api/index.md) - Complete API documentation

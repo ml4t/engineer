@@ -145,6 +145,7 @@ class TestTRIX:
                 err_msg=f"TRIX mismatch on crypto data for period {period}",
             )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_trix_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark TRIX performance using real crypto data."""

@@ -26,8 +26,6 @@ Exports:
 Based on Advances in Financial Machine Learning by Marcos López de Prado.
 """
 
-import warnings
-
 import numpy as np
 import numpy.typing as npt
 import polars as pl
@@ -179,8 +177,6 @@ class TickRunBarSampler(BarSampler):
     ----------
     expected_ticks_per_bar : int
         Expected number of ticks per bar (used to initialize E[T])
-    initial_run_expectation : int, optional
-        DEPRECATED. Use expected_ticks_per_bar instead.
     alpha : float, default 0.1
         EWMA decay factor for updating expectations
     initial_p_buy : float, default 0.5
@@ -202,7 +198,6 @@ class TickRunBarSampler(BarSampler):
     def __init__(
         self,
         expected_ticks_per_bar: int,
-        initial_run_expectation: int | None = None,
         alpha: float = 0.1,
         initial_p_buy: float = 0.5,
         min_bars_warmup: int = 10,
@@ -216,16 +211,7 @@ class TickRunBarSampler(BarSampler):
         if min_bars_warmup < 0:
             raise ValueError("min_bars_warmup must be non-negative")
 
-        if initial_run_expectation is not None:
-            warnings.warn(
-                "initial_run_expectation is deprecated and ignored. "
-                "The AFML threshold E[T] × max{P[b=1], 1-P[b=1]} is computed dynamically.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         self.expected_ticks_per_bar = expected_ticks_per_bar
-        self.initial_run_expectation = initial_run_expectation  # Keep for compat
         self.alpha = alpha
         self.initial_p_buy = initial_p_buy
         self.min_bars_warmup = min_bars_warmup
@@ -395,8 +381,6 @@ class VolumeRunBarSampler(BarSampler):
     ----------
     expected_ticks_per_bar : int
         Expected number of ticks per bar
-    initial_run_expectation : float, optional
-        DEPRECATED. Threshold is computed dynamically.
     alpha : float, default 0.1
         EWMA decay factor
     initial_p_buy : float, default 0.5
@@ -413,7 +397,6 @@ class VolumeRunBarSampler(BarSampler):
     def __init__(
         self,
         expected_ticks_per_bar: int,
-        initial_run_expectation: float | None = None,
         alpha: float = 0.1,
         initial_p_buy: float = 0.5,
         min_bars_warmup: int = 10,
@@ -427,16 +410,7 @@ class VolumeRunBarSampler(BarSampler):
         if min_bars_warmup < 0:
             raise ValueError("min_bars_warmup must be non-negative")
 
-        if initial_run_expectation is not None:
-            warnings.warn(
-                "initial_run_expectation is deprecated and ignored. "
-                "The AFML threshold is computed dynamically.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         self.expected_ticks_per_bar = expected_ticks_per_bar
-        self.initial_run_expectation = initial_run_expectation
         self.alpha = alpha
         self.initial_p_buy = initial_p_buy
         self.min_bars_warmup = min_bars_warmup
@@ -592,8 +566,6 @@ class DollarRunBarSampler(BarSampler):
     ----------
     expected_ticks_per_bar : int
         Expected number of ticks per bar
-    initial_run_expectation : float, optional
-        DEPRECATED. Threshold is computed dynamically.
     alpha : float, default 0.1
         EWMA decay factor
     initial_p_buy : float, default 0.5
@@ -610,7 +582,6 @@ class DollarRunBarSampler(BarSampler):
     def __init__(
         self,
         expected_ticks_per_bar: int,
-        initial_run_expectation: float | None = None,
         alpha: float = 0.1,
         initial_p_buy: float = 0.5,
         min_bars_warmup: int = 10,
@@ -624,16 +595,7 @@ class DollarRunBarSampler(BarSampler):
         if min_bars_warmup < 0:
             raise ValueError("min_bars_warmup must be non-negative")
 
-        if initial_run_expectation is not None:
-            warnings.warn(
-                "initial_run_expectation is deprecated and ignored. "
-                "The AFML threshold is computed dynamically.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         self.expected_ticks_per_bar = expected_ticks_per_bar
-        self.initial_run_expectation = initial_run_expectation
         self.alpha = alpha
         self.initial_p_buy = initial_p_buy
         self.min_bars_warmup = min_bars_warmup

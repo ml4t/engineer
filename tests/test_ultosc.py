@@ -182,6 +182,7 @@ class TestUltimateOscillator:
                 err_msg=f"ULTOSC mismatch on crypto data for periods ({period1}, {period2}, {period3})",
             )
 
+    @pytest.mark.perf
     @pytest.mark.benchmark
     def test_ultosc_performance(self, crypto_data, performance_threshold, warmup_jit):
         """Benchmark ULTOSC performance using real crypto data."""
