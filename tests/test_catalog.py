@@ -14,7 +14,7 @@ def registry():
     reg.register(
         FeatureMetadata(
             name="rsi",
-            func=lambda close, period=14: None,
+            func=lambda _close, _period=14: None,
             category="momentum",
             description="Relative Strength Index",
             formula="100 - 100 / (1 + RS)",
@@ -32,7 +32,7 @@ def registry():
     reg.register(
         FeatureMetadata(
             name="sma",
-            func=lambda close, period=20: None,
+            func=lambda _close, _period=20: None,
             category="trend",
             description="Simple Moving Average",
             formula="sum(close, period) / period",
@@ -49,7 +49,7 @@ def registry():
     reg.register(
         FeatureMetadata(
             name="atr",
-            func=lambda high, low, close, period=14: None,
+            func=lambda _high, _low, _close, _period=14: None,
             category="volatility",
             description="Average True Range",
             formula="EMA(TR, period)",
@@ -66,7 +66,7 @@ def registry():
     reg.register(
         FeatureMetadata(
             name="macd",
-            func=lambda close, fast=12, slow=26, signal=9: None,
+            func=lambda _close, _fast=12, _slow=26, _signal=9: None,
             category="momentum",
             description="Moving Average Convergence Divergence",
             formula="EMA(fast) - EMA(slow)",
