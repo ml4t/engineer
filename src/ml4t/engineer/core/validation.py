@@ -169,24 +169,6 @@ def validate_column_exists(df: pl.DataFrame, column: str) -> None:
         raise ValueError(f"Column '{column}' not found. Available columns: {available}")
 
 
-def validate_numeric_column(expr: pl.Expr, name: str = "column") -> None:
-    """Validate that expression is numeric.
-
-    Parameters
-    ----------
-    expr : pl.Expr
-        Expression to validate
-    name : str, default "column"
-        Parameter name for error messages
-
-    Note
-    ----
-    This is a placeholder as runtime type checking of expressions
-    is limited. Consider adding schema validation at the DataFrame level.
-    """
-    # Limited validation possible at expression level
-
-
 def validate_positive(value: float, name: str = "value") -> None:
     """Validate that value is positive.
 

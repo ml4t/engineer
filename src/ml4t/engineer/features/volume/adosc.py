@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Chaikin A/D Oscillator (ADOSC) - TA-Lib compatible implementation.
 """

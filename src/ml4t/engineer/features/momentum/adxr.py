@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,type-arg,attr-defined,arg-type,union-attr"
 """
 ADXR - Average Directional Movement Index Rating.
 

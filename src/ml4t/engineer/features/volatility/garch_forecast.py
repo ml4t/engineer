@@ -45,18 +45,13 @@ def garch_volatility_forecast_nb(
     for t in range(1, n_valid):
         sigma2[t] = omega + alpha * valid_returns[t - 1] ** 2 + beta * sigma2[t - 1]
 
-    # Multi-step forecast
+    # Multi-step conditional expectation forecast (no lookahead)
     forecast = np.zeros(n_valid)
     for t in range(n_valid):
-        if t < n_valid - horizon:
-            # Use actual future volatility for in-sample
-            forecast[t] = sigma2[t + horizon]
-        else:
-            # Out-of-sample forecast
-            h_ahead = sigma2[t]
-            for _h in range(horizon):
-                h_ahead = omega + (alpha + beta) * h_ahead
-            forecast[t] = h_ahead
+        h_ahead = sigma2[t]
+        for _h in range(horizon):
+            h_ahead = omega + (alpha + beta) * h_ahead
+        forecast[t] = h_ahead
 
     # Map back to original positions
     valid_idx = 0

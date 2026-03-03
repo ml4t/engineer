@@ -1,4 +1,3 @@
-# mypy: disable-error-code="arg-type,dict-item"
 """Logging configuration utilities for ml4t.engineer.
 
 Provides configuration options and presets for different logging scenarios.

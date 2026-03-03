@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,no-any-return,arg-type"
 """Labeling configuration with Pydantic v2 serialization.
 
 This module provides config classes for ML labeling methods that extend BaseConfig,

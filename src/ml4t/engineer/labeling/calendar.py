@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,assignment,arg-type"
 """Calendar-aware labeling utilities.
 
 Provides session-aware barrier labeling that respects trading calendar gaps
@@ -55,6 +54,7 @@ class SimpleTradingCalendar:
         """
         self.gap_threshold = timedelta(minutes=gap_threshold_minutes)
         self._data: pl.DataFrame | None = None
+        self._session_breaks: list[datetime] | None = None
 
     def fit(self, data: pl.DataFrame, timestamp_col: str = "timestamp") -> SimpleTradingCalendar:
         """Learn session breaks from data gaps.

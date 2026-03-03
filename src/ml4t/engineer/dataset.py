@@ -354,20 +354,7 @@ class MLDatasetBuilder:
 
             # Apply preprocessing (train-only fit)
             if self._scaler is not None:
-                # Clone scaler for this fold (fresh fit)
-                fold_scaler = type(self._scaler)(
-                    columns=self._scaler._columns,
-                )
-                # Copy other attributes if they exist
-                for attr in ["with_mean", "with_std", "ddof"]:  # StandardScaler
-                    if hasattr(self._scaler, attr):
-                        setattr(fold_scaler, attr, getattr(self._scaler, attr))
-                for attr in ["feature_range"]:  # MinMaxScaler
-                    if hasattr(self._scaler, attr):
-                        setattr(fold_scaler, attr, getattr(self._scaler, attr))
-                for attr in ["with_centering", "with_scaling", "quantile_range"]:  # RobustScaler
-                    if hasattr(self._scaler, attr):
-                        setattr(fold_scaler, attr, getattr(self._scaler, attr))
+                fold_scaler = self._scaler.clone()
 
                 # Fit on train, transform both
                 X_train = fold_scaler.fit_transform(X_train_raw)

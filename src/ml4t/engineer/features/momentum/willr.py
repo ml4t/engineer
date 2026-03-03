@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """Williams %R implementation."""
 
 import numpy as np

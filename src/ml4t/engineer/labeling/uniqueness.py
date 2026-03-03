@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,arg-type,call-arg,return-value,assignment"
 """Label uniqueness and sample weighting functions.
 
 Implements De Prado's methods from AFML Chapter 4 for:

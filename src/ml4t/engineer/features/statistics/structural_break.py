@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,no-any-return"
 """
 Structural Break Detection Features.
 

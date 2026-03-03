@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 ATR (Average True Range) - TA-Lib compatible implementation.
 

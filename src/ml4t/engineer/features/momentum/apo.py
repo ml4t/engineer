@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Absolute Price Oscillator (APO) - TA-Lib compatible implementation.
 

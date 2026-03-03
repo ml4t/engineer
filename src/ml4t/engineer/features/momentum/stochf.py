@@ -1,4 +1,3 @@
-# mypy: disable-error-code="union-attr"
 """
 STOCHF - Stochastic Fast.
 

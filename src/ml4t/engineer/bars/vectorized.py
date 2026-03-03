@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,operator,assignment,arg-type"
 """
 Vectorized bar samplers using Polars for high performance.
 

@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 DEMA (Double Exponential Moving Average) - TA-Lib compatible implementation.
 

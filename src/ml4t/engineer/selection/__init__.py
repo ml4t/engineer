@@ -1,44 +1,23 @@
-"""Feature selection for ML pipelines.
+"""Feature selection has moved to ml4t-diagnostic.
 
-This module provides systematic feature selection with multiple criteria:
-- IC filtering (predictive power)
-- Importance filtering (MDI/permutation/SHAP)
-- Correlation filtering (redundancy removal)
-- Drift filtering (stability)
+Use ``ml4t.diagnostic.selection`` instead::
 
-.. note::
+    from ml4t.diagnostic.selection import FeatureSelector
 
-    Requires ``ml4t-diagnostic`` for feature-outcome analysis.
-    Install with: ``pip install ml4t-diagnostic``
-
-Example:
-    >>> from ml4t.engineer.selection import FeatureSelector
-    >>> from ml4t.diagnostic.evaluation import FeatureOutcome  # Requires ml4t-diagnostic
-    >>> from ml4t.engineer.relationships import compute_correlation_matrix
-    >>>
-    >>> # Analyze features
-    >>> analyzer = FeatureOutcome()
-    >>> results = analyzer.run_analysis(features_df, returns_df)
-    >>> corr_matrix = compute_correlation_matrix(features_df)
-    >>>
-    >>> # Select features
-    >>> selector = FeatureSelector(results, corr_matrix)
-    >>> selector.run_pipeline([
-    ...     ("ic", {"threshold": 0.02}),
-    ...     ("correlation", {"threshold": 0.8}),
-    ...     ("importance", {"threshold": 0.01, "method": "mdi"})
-    ... ])
-    >>> selected = selector.get_selected_features()
+Install with: ``pip install ml4t-diagnostic``
 """
 
-from ml4t.engineer.selection.systematic import (
-    FeatureSelector,
-    SelectionReport,
-    SelectionStep,
-)
-
-__all__ = [
+_MOVED_EXPORTS = {
     "FeatureSelector",
     "SelectionReport",
     "SelectionStep",
-]
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _MOVED_EXPORTS:
+        raise ImportError(
+            f"ml4t.engineer.selection.{name} has moved to ml4t-diagnostic. "
+            f"Use: from ml4t.diagnostic.selection import {name}"
+        )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

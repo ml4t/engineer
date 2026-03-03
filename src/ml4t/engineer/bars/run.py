@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,operator,assignment,arg-type"
 """Run bar sampler implementations.
 
 AFML-compliant run bars per López de Prado Chapter 2.3.

@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 STDDEV (Standard Deviation) - TA-Lib compatible implementation.
 

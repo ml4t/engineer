@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 ROCR - Rate of Change Ratio.
 

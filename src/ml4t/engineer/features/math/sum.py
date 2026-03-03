@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 SUM - Summation over a specified number of periods.
 

@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 MACD (Moving Average Convergence/Divergence) - TA-Lib compatible implementation.
 

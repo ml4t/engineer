@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,union-attr"
 """
 PLUS_DM - Plus Directional Movement.
 

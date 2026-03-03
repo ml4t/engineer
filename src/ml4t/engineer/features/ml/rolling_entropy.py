@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,no-any-return"
 """
 Entropy Features for Financial Time Series.
 

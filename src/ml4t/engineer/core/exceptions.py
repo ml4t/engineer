@@ -5,7 +5,7 @@ across the ML4T Engineer library. All exceptions preserve context information an
 provide actionable error messages.
 
 Exception Hierarchy (Flat - D06 Pattern):
-    QuantLabTAError (base)
+    ML4TEngineerError (base)
     ├── ConfigurationError      # Configuration and setup errors
     ├── ValidationError         # Input validation failures (also inherits ValueError)
     ├── InvalidParameterError   # Invalid parameters to indicators
@@ -27,11 +27,10 @@ Example:
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 
-class QuantLabTAError(Exception):
+class ML4TEngineerError(Exception):
     """
     Base exception class for all ML4T Engineer errors.
 
@@ -44,7 +43,7 @@ class QuantLabTAError(Exception):
         cause: Original exception if error was wrapped
 
     Example:
-        >>> raise QuantLabTAError(
+        >>> raise ML4TEngineerError(
         ...     "Operation failed",
         ...     context={"operation": "compute_rsi", "reason": "insufficient_data"}
         ... )
@@ -98,7 +97,7 @@ class QuantLabTAError(Exception):
 # =============================================================================
 
 
-class ConfigurationError(QuantLabTAError):
+class ConfigurationError(ML4TEngineerError):
     """
     Configuration and setup errors.
 
@@ -119,11 +118,11 @@ class ConfigurationError(QuantLabTAError):
     pass
 
 
-class ValidationError(QuantLabTAError, ValueError):
+class ValidationError(ML4TEngineerError, ValueError):
     """
     Input validation failures.
 
-    Inherits from both QuantLabTAError (for library-specific catching)
+    Inherits from both ML4TEngineerError (for library-specific catching)
     and ValueError (for standard Python parameter error handling).
 
     Raised when:
@@ -143,7 +142,7 @@ class ValidationError(QuantLabTAError, ValueError):
     pass
 
 
-class InvalidParameterError(QuantLabTAError, ValueError):
+class InvalidParameterError(ML4TEngineerError, ValueError):
     """
     Invalid parameters provided to indicators.
 
@@ -167,7 +166,7 @@ class InvalidParameterError(QuantLabTAError, ValueError):
     pass
 
 
-class DataValidationError(QuantLabTAError):
+class DataValidationError(ML4TEngineerError):
     """
     Data validation failures.
 
@@ -188,7 +187,7 @@ class DataValidationError(QuantLabTAError):
     pass
 
 
-class DataSchemaError(QuantLabTAError):
+class DataSchemaError(ML4TEngineerError):
     """
     Schema validation failures.
 
@@ -209,7 +208,7 @@ class DataSchemaError(QuantLabTAError):
     pass
 
 
-class InsufficientDataError(QuantLabTAError):
+class InsufficientDataError(ML4TEngineerError):
     """
     Insufficient data for calculation.
 
@@ -229,7 +228,7 @@ class InsufficientDataError(QuantLabTAError):
     pass
 
 
-class ComputationError(QuantLabTAError):
+class ComputationError(ML4TEngineerError):
     """
     Calculation and numerical errors.
 
@@ -250,7 +249,7 @@ class ComputationError(QuantLabTAError):
     pass
 
 
-class DataError(QuantLabTAError):
+class DataError(ML4TEngineerError):
     """
     Data access and format errors.
 
@@ -271,7 +270,7 @@ class DataError(QuantLabTAError):
     pass
 
 
-class IntegrationError(QuantLabTAError):
+class IntegrationError(ML4TEngineerError):
     """
     External library integration errors.
 
@@ -293,49 +292,12 @@ class IntegrationError(QuantLabTAError):
 
 
 # =============================================================================
-# Backward Compatibility Aliases
-# =============================================================================
-
-
-# Primary alias for historical naming
-TechnicalAnalysisError = QuantLabTAError
-
-
-class _DeprecatedIndicatorError(QuantLabTAError):
-    """Deprecated intermediate class - use QuantLabTAError or specific errors."""
-
-    def __init__(
-        self,
-        message: str,
-        context: dict[str, Any] | None = None,
-        cause: Exception | None = None,
-    ):
-        warnings.warn(
-            "IndicatorError is deprecated. Use QuantLabTAError or a specific "
-            "exception type (InsufficientDataError, ComputationError) instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(message, context, cause)
-
-
-# IndicatorError was an intermediate class - deprecated but kept for backward compat
-IndicatorError = _DeprecatedIndicatorError
-
-# InvalidArgumentError is an alias for InvalidParameterError
-InvalidArgumentError = InvalidParameterError
-
-# ImplementationNotAvailableError maps to IntegrationError
-ImplementationNotAvailableError = IntegrationError
-
-
-# =============================================================================
 # Public API
 # =============================================================================
 
 __all__ = [
     # Base exception
-    "QuantLabTAError",
+    "ML4TEngineerError",
     # First-level exceptions (flat hierarchy)
     "ConfigurationError",
     "ValidationError",
@@ -346,9 +308,4 @@ __all__ = [
     "ComputationError",
     "DataError",
     "IntegrationError",
-    # Backward compatibility aliases
-    "TechnicalAnalysisError",
-    "IndicatorError",  # Deprecated
-    "InvalidArgumentError",
-    "ImplementationNotAvailableError",
 ]

@@ -1,19 +1,7 @@
-"""Unified feature analysis visualization.
+"""Plot export utilities.
 
-.. deprecated:: 0.1.0a8
-    The feature outcome visualization has moved to ``ml4t-diagnostic``.
-    Use ``ml4t.diagnostic.visualization`` for IC plots, importance plots,
-    and feature analysis summaries.
-
-This module now provides only basic export utilities. For feature analysis
-visualizations, use::
-
-    from ml4t.diagnostic.visualization import (
-        plot_importance_summary,
-        plot_importance_bar,
-        plot_importance_heatmap,
-    )
-    from ml4t.diagnostic.visualization.feature_plots import plot_importance_distribution
+For feature analysis visualizations (IC, importance, drift),
+use ``ml4t.diagnostic.visualization``.
 """
 
 from __future__ import annotations
@@ -23,39 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
-
-
-def plot_feature_analysis_summary(*args: Any, **kwargs: Any) -> Any:
-    """Create unified 3-panel feature analysis summary.
-
-    .. deprecated:: 0.1.0a8
-        This function has been moved to ``ml4t-diagnostic``.
-
-    Use the following instead::
-
-        from ml4t.diagnostic.visualization import plot_importance_summary
-        from ml4t.diagnostic.evaluation import FeatureOutcome
-
-        analyzer = FeatureOutcome()
-        results = analyzer.run_analysis(features_df, outcomes_df)
-        fig = plot_importance_summary(results)
-
-    Raises
-    ------
-    NotImplementedError
-        Always. Directs users to ml4t.diagnostic.
-    """
-    msg = (
-        "plot_feature_analysis_summary has been moved to ml4t-diagnostic. "
-        "Install with: pip install ml4t-diagnostic\n\n"
-        "Usage:\n"
-        "  from ml4t.diagnostic.visualization import plot_importance_summary\n"
-        "  from ml4t.diagnostic.evaluation import FeatureOutcome\n\n"
-        "  analyzer = FeatureOutcome()\n"
-        "  results = analyzer.run_analysis(features_df, outcomes_df)\n"
-        "  fig = plot_importance_summary(results)"
-    )
-    raise NotImplementedError(msg)
 
 
 def export_plot(

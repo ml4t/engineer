@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc"
 import numpy as np
 import polars as pl
 
@@ -18,6 +17,7 @@ from ml4t.engineer.logging import logged_feature
     normalized=False,
     formula="",
     ta_lib_compatible=False,
+    parameters={"period": 24.0},
 )
 def cyclical_encode(
     value: pl.Expr | str,

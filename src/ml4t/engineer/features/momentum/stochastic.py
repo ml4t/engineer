@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 STOCHASTIC - TA-Lib compatible implementation.
 

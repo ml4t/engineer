@@ -335,17 +335,18 @@ class TestTripleBarrierDynamicColumns:
         assert "label" in result.columns
 
     def test_trailing_stop_true_no_lower_barrier(self, sample_data):
-        """Test that trailing_stop=True with no lower_barrier uses default."""
+        """Test that trailing_stop=True with no lower_barrier raises error."""
+        from ml4t.engineer.core.exceptions import DataValidationError
+
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,
             lower_barrier=None,
             max_holding_period=20,
-            trailing_stop=True,  # Should use default 1%
+            trailing_stop=True,
         )
 
-        result = triple_barrier_labels(sample_data, config, price_col="close")
-
-        assert "label" in result.columns
+        with pytest.raises(DataValidationError, match="trailing_stop=True requires"):
+            triple_barrier_labels(sample_data, config, price_col="close")
 
 
 class TestShortPositionLabeling:

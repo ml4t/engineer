@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 TRIMA (Triangular Moving Average) - TA-Lib compatible implementation.
 

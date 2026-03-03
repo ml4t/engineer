@@ -1,4 +1,3 @@
-# mypy: disable-error-code="arg-type"
 """
 ATR-Adjusted Triple Barrier Labeling
 
@@ -71,7 +70,7 @@ from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.features.volatility import atr_polars
 from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
-from ml4t.engineer.labeling.utils import resolve_labeling_columns
+from ml4t.engineer.labeling.utils import resolve_labeling_columns, validate_price_no_nans
 
 if TYPE_CHECKING:
     from ml4t.engineer.config import DataContractConfig
@@ -279,6 +278,8 @@ def atr_triple_barrier_labels(
         require_timestamp=True,
     )
 
+    validate_price_no_nans(data, resolved_price_col)
+
     # Compute ATR
     data_with_atr = data.with_columns(
         atr_polars("high", "low", "close", period=atr_period).alias("atr"),
@@ -294,12 +295,22 @@ def atr_triple_barrier_labels(
     )
 
     # Create barrier configuration with dynamic barriers
-    # Note: triple_barrier_labels requires int for max_holding_period, not None
-    # Use a large default (len of data) if not specified
-    # Note: LazyFrame doesn't support len(), but in practice this is always DataFrame
-    holding_period = (
-        max_holding_bars if max_holding_bars is not None else len(data_with_barriers)  # type: ignore[arg-type]
-    )
+    # When max_holding_bars is None, we use len(data) as the horizon which makes
+    # barrier scanning O(N*L) where L=N. Warn for large datasets.
+    if max_holding_bars is None:
+        import warnings
+
+        n = len(data_with_barriers)
+        if n > 5000:
+            warnings.warn(
+                f"max_holding_bars=None with {n:,} rows sets holding period to {n:,} bars. "
+                f"This makes barrier scanning O(N*{n:,}) which may be slow. "
+                f"Consider setting max_holding_bars explicitly (e.g., 50-200).",
+                stacklevel=2,
+            )
+        holding_period: int | str = n
+    else:
+        holding_period = max_holding_bars
 
     barrier_config = LabelingConfig.triple_barrier(
         upper_barrier="upper_barrier_distance",

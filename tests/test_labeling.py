@@ -300,7 +300,9 @@ class TestEdgeCases:
         assert result["label"][0] == 0
 
     def test_all_nan_prices(self):
-        """Test with all NaN prices."""
+        """Test with all NaN prices - validation catches at entry."""
+        from ml4t.engineer.core.exceptions import DataValidationError
+
         df = pl.DataFrame(
             {
                 "timestamp": [datetime(2024, 1, 1) + timedelta(minutes=i) for i in range(10)],
@@ -309,10 +311,8 @@ class TestEdgeCases:
         )
         config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
 
-        result = triple_barrier_labels(df, config, price_col="price")
-        # With NaN prices, all events timeout (label=0) and returns are NaN
-        assert (result["label"] == 0).all()
-        assert result["label_return"].is_nan().all()
+        with pytest.raises(DataValidationError, match="null/NaN"):
+            triple_barrier_labels(df, config, price_col="price")
 
     def test_invalid_barriers(self):
         """Test with invalid barrier configuration."""

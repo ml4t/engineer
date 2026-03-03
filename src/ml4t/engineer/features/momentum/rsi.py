@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Relative Strength Index (RSI) - TA-Lib compatible implementation.
 

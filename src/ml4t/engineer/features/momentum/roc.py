@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """Rate of Change (ROC) implementation."""
 
 import numpy as np

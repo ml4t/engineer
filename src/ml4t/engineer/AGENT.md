@@ -45,11 +45,9 @@ Package-level navigation for feature engineering library.
 | `preprocessing_config.py` | Scaler config | `PreprocessingConfig`, `ScalerConfig` |
 | `base.py` | Base config classes | `BaseConfig` |
 
-## selection/ - Feature Selection
+## selection/ - Deprecated (Moved to ml4t-diagnostic)
 
-| File | Purpose |
-|------|---------|
-| `systematic.py` | Correlation-based, variance threshold, mutual info |
+FeatureSelector has moved to `ml4t.diagnostic.selection`.
 
 ## store/ - Storage
 

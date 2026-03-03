@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Directional Movement indicators - TA-Lib compatible implementation.
 

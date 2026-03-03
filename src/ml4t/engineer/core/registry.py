@@ -59,7 +59,7 @@ class FeatureMetadata:
     """
 
     name: str
-    func: Callable[..., pl.DataFrame | pl.LazyFrame]
+    func: Callable[..., pl.Expr | dict[str, pl.Expr] | pl.DataFrame | pl.LazyFrame]
     category: str
     description: str
     formula: str = ""

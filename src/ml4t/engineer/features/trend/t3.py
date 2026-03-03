@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 T3 - Triple Exponential Moving Average (T3).
 

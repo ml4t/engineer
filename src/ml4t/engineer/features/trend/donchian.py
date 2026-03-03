@@ -1,4 +1,3 @@
-# mypy: disable-error-code="operator,assignment,union-attr,call-arg"
 """
 Donchian Channels - Price channel indicator.
 

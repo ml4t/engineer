@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,no-any-return,type-arg"
 # ruff: noqa: E721
 """Base configuration classes and shared utilities.
 

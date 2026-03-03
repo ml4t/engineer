@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,arg-type,union-attr"
 """
 BOP - Balance of Power.
 

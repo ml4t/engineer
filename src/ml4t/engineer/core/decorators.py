@@ -1,4 +1,3 @@
-# mypy: disable-error-code="misc,arg-type,assignment"
 """Feature registration decorators.
 
 Simple decorator-based registration for features with zero overhead.

@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,union-attr"
 """
 MINUS_DM - Minus Directional Movement.
 

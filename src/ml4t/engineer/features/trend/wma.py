@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Weighted Moving Average (WMA) - TA-Lib compatible implementation.
 
@@ -82,10 +81,11 @@ def wma_polars(column: str, period: int) -> pl.Expr:
     name="wma",
     category="trend",
     description="WMA - Weighted Moving Average",
-    lookback=0,
+    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,
+    parameters={"period": 20},
 )
 def wma(
     close: npt.NDArray[np.float64] | pl.Series | str,

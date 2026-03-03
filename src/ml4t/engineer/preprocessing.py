@@ -179,6 +179,22 @@ class BaseScaler(ABC):
         """
         return self.fit(X).transform(X)
 
+    def clone(self) -> BaseScaler:
+        """Create an unfitted copy of this scaler with the same parameters.
+
+        Returns
+        -------
+        BaseScaler
+            New scaler instance with the same configuration but no fitted state.
+        """
+        import copy
+
+        new = copy.copy(self)
+        new._fitted_columns = []
+        new._statistics = {}
+        new._is_fitted = False
+        return new
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize scaler to dictionary.
 
@@ -287,26 +303,27 @@ class StandardScaler(BaseScaler):
 
     def _apply_transform(self, X: pl.DataFrame) -> pl.DataFrame:
         """Apply z-score normalization."""
+        fitted_set = set(self._fitted_columns)
         exprs = []
-        for col in self._fitted_columns:
-            mean_val = self._statistics[col]["mean"]
-            std_val = self._statistics[col]["std"]
+        for col in X.columns:
+            if col in fitted_set:
+                mean_val = self._statistics[col]["mean"]
+                std_val = self._statistics[col]["std"]
 
-            if self.with_mean and self.with_std:
-                expr = ((pl.col(col) - mean_val) / std_val).alias(col)
-            elif self.with_mean:
-                expr = (pl.col(col) - mean_val).alias(col)
-            elif self.with_std:
-                expr = (pl.col(col) / std_val).alias(col)
+                if self.with_mean and self.with_std:
+                    expr = ((pl.col(col) - mean_val) / std_val).alias(col)
+                elif self.with_mean:
+                    expr = (pl.col(col) - mean_val).alias(col)
+                elif self.with_std:
+                    expr = (pl.col(col) / std_val).alias(col)
+                else:
+                    expr = pl.col(col)
             else:
                 expr = pl.col(col)
 
             exprs.append(expr)
 
-        # Keep non-fitted columns unchanged
-        other_cols = [pl.col(c) for c in X.columns if c not in self._fitted_columns]
-
-        return X.select(exprs + other_cols)
+        return X.select(exprs)
 
 
 class MinMaxScaler(BaseScaler):
@@ -341,11 +358,16 @@ class MinMaxScaler(BaseScaler):
         stats = {}
         for col in columns:
             series = X[col].drop_nulls()
-            # Note: min/max on numeric columns return numeric types
-            min_val = float(series.min())  # type: ignore[arg-type]
-            max_val = float(series.max())  # type: ignore[arg-type]
 
-            # Handle constant column (min == max)
+            # Handle empty series (all nulls)
+            if len(series) == 0:
+                min_val = 0.0
+                max_val = 0.0
+            else:
+                min_val = float(series.min())  # type: ignore[arg-type]
+                max_val = float(series.max())  # type: ignore[arg-type]
+
+            # Handle constant column (min == max) or empty
             range_val = max_val - min_val
             if range_val == 0.0:
                 range_val = 1.0
@@ -357,20 +379,21 @@ class MinMaxScaler(BaseScaler):
         """Apply min-max scaling."""
         target_min, target_max = self.feature_range
         target_range = target_max - target_min
+        fitted_set = set(self._fitted_columns)
 
         exprs = []
-        for col in self._fitted_columns:
-            min_val = self._statistics[col]["min"]
-            range_val = self._statistics[col]["range"]
-
-            # Scale to [0, 1] then to target range
-            expr = (((pl.col(col) - min_val) / range_val) * target_range + target_min).alias(col)
+        for col in X.columns:
+            if col in fitted_set:
+                min_val = self._statistics[col]["min"]
+                range_val = self._statistics[col]["range"]
+                expr = (((pl.col(col) - min_val) / range_val) * target_range + target_min).alias(
+                    col
+                )
+            else:
+                expr = pl.col(col)
             exprs.append(expr)
 
-        # Keep non-fitted columns unchanged
-        other_cols = [pl.col(c) for c in X.columns if c not in self._fitted_columns]
-
-        return X.select(exprs + other_cols)
+        return X.select(exprs)
 
 
 class RobustScaler(BaseScaler):
@@ -418,42 +441,47 @@ class RobustScaler(BaseScaler):
         for col in columns:
             series = X[col].drop_nulls()
 
-            # Note: median/quantile on numeric columns return numeric types
-            median_val = float(series.median()) if self.with_centering else 0.0  # type: ignore[arg-type]
-            if self.with_scaling:
-                q1 = float(series.quantile(q_low))  # type: ignore[arg-type]
-                q3 = float(series.quantile(q_high))  # type: ignore[arg-type]
-                iqr_val = q3 - q1
-                if iqr_val == 0.0:
-                    iqr_val = 1.0
-            else:
+            # Handle empty series (all nulls)
+            if len(series) == 0:
+                median_val = 0.0
                 iqr_val = 1.0
+            else:
+                median_val = float(series.median()) if self.with_centering else 0.0  # type: ignore[arg-type]
+                if self.with_scaling:
+                    q1 = float(series.quantile(q_low))  # type: ignore[arg-type]
+                    q3 = float(series.quantile(q_high))  # type: ignore[arg-type]
+                    iqr_val = q3 - q1
+                    if iqr_val == 0.0:
+                        iqr_val = 1.0
+                else:
+                    iqr_val = 1.0
 
             stats[col] = {"median": median_val, "iqr": iqr_val}
         return stats
 
     def _apply_transform(self, X: pl.DataFrame) -> pl.DataFrame:
         """Apply robust scaling."""
+        fitted_set = set(self._fitted_columns)
         exprs = []
-        for col in self._fitted_columns:
-            median_val = self._statistics[col]["median"]
-            iqr_val = self._statistics[col]["iqr"]
+        for col in X.columns:
+            if col in fitted_set:
+                median_val = self._statistics[col]["median"]
+                iqr_val = self._statistics[col]["iqr"]
 
-            if self.with_centering and self.with_scaling:
-                expr = ((pl.col(col) - median_val) / iqr_val).alias(col)
-            elif self.with_centering:
-                expr = (pl.col(col) - median_val).alias(col)
-            elif self.with_scaling:
-                expr = (pl.col(col) / iqr_val).alias(col)
+                if self.with_centering and self.with_scaling:
+                    expr = ((pl.col(col) - median_val) / iqr_val).alias(col)
+                elif self.with_centering:
+                    expr = (pl.col(col) - median_val).alias(col)
+                elif self.with_scaling:
+                    expr = (pl.col(col) / iqr_val).alias(col)
+                else:
+                    expr = pl.col(col)
             else:
                 expr = pl.col(col)
 
             exprs.append(expr)
 
-        # Keep non-fitted columns unchanged
-        other_cols = [pl.col(c) for c in X.columns if c not in self._fitted_columns]
-
-        return X.select(exprs + other_cols)
+        return X.select(exprs)
 
 
 # =============================================================================

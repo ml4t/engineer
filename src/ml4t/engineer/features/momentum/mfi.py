@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return"
 """
 Money Flow Index (MFI) - TA-Lib compatible implementation.
 

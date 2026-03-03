@@ -1,4 +1,3 @@
-# mypy: disable-error-code="no-any-return,return-value"
 """
 Simple Moving Average (SMA) - TA-Lib compatible implementation.
 
@@ -96,10 +95,11 @@ def sma_polars(column: str, period: int) -> pl.Expr:
     name="sma",
     category="trend",
     description="SMA - Simple Moving Average",
-    lookback=0,
+    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,
+    parameters={"period": 20},
 )
 def sma(
     close: npt.NDArray[np.float64] | pl.Series | str,

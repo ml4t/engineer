@@ -1,4 +1,3 @@
-# mypy: disable-error-code="operator,assignment,union-attr,arg-type"
 import polars as pl
 
 from ml4t.engineer.core.decorators import feature
