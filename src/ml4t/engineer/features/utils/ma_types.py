@@ -4,7 +4,7 @@ Moving Average Type Dispatcher for TA-Lib compatibility.
 Maps TA-Lib MA type codes to ml4t.engineer implementations.
 """
 
-from typing import TypeAlias, cast
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -19,7 +19,7 @@ from ml4t.engineer.features.trend.trima import trima_numba
 from ml4t.engineer.features.trend.wma import wma_numba
 
 # Type alias for NDArray
-NDArrayFloat: TypeAlias = npt.NDArray[np.float64]
+type NDArrayFloat = npt.NDArray[np.float64]
 
 
 def apply_ma(

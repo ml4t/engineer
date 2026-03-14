@@ -1,6 +1,6 @@
 name: ml4t-engineer
 version: 1.0.0
-python_requires: ">=3.11"
+python_requires: ">=3.12"
 description: High-performance feature engineering for financial machine learning
 
 modules:
