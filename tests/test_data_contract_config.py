@@ -137,3 +137,16 @@ class TestDataContractConfig:
         assert contract.high_col == "high"
         assert contract.low_col == "low"
         assert contract.volume_col == "volume"
+
+    def test_from_market_data_spec_defaults_when_schema_is_missing(self):
+        """Empty shared specs should fall back to engineer's canonical columns."""
+        contract = data_contract_from_market_data_spec({})
+
+        assert contract.timestamp_col == "timestamp"
+        assert contract.symbol_col == "symbol"
+        assert contract.price_col == "close"
+        assert contract.open_col == "open"
+        assert contract.high_col == "high"
+        assert contract.low_col == "low"
+        assert contract.close_col == "close"
+        assert contract.volume_col == "volume"
