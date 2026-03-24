@@ -71,6 +71,8 @@ requires-python = ">=3.12"
 
 # Core dependencies
 dependencies = [
+    "ml4t-data>=0.1.0b7",
+
     # Data processing (Polars-first)
     "polars>=0.20.0",
     "pandas>=2.0.0",
@@ -287,3 +289,6 @@ exclude_lines = [
     "pass",
     "except ImportError:",
 ]
+
+[tool.uv.sources]
+ml4t-data = { path = "../ml4t-data", editable = true }
