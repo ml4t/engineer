@@ -1,9 +1,6 @@
 """Tests for DataContractConfig."""
 
-import sys
-from types import ModuleType, SimpleNamespace
-
-import pytest
+from types import SimpleNamespace
 
 from ml4t.engineer.config import DataContractConfig, data_contract_from_market_data_spec
 
@@ -49,49 +46,6 @@ class TestDataContractConfig:
         assert contract.symbol_col == "asset_id"
         assert contract.price_col == "mid_price"
 
-    def test_from_ml4t_data_or_actionable_error(self):
-        """Bridge should either work or fail with an explicit import message."""
-        try:
-            contract = DataContractConfig.from_ml4t_data()
-            assert contract.timestamp_col == "timestamp"
-            assert contract.symbol_col == "symbol"
-            assert contract.price_col == "close"
-        except ImportError as exc:
-            assert "ml4t-data is required" in str(exc)
-
-    def test_from_ml4t_data_uses_available_schema_aliases(self, monkeypatch: pytest.MonkeyPatch):
-        """Bridge should map to available schema aliases when canonical names differ."""
-
-        class _SchemaWithAliases:
-            SCHEMA = {
-                "ts_event": object(),
-                "ticker": object(),
-                "open_price": object(),
-                "high_price": object(),
-                "low_price": object(),
-                "last_price": object(),
-                "volume_base": object(),
-            }
-
-        data_module = ModuleType("ml4t.data")
-        data_module.__path__ = []  # type: ignore[attr-defined]
-        core_module = ModuleType("ml4t.data.core")
-        core_module.MultiAssetSchema = _SchemaWithAliases
-        data_module.core = core_module
-
-        monkeypatch.setitem(sys.modules, "ml4t.data", data_module)
-        monkeypatch.setitem(sys.modules, "ml4t.data.core", core_module)
-
-        contract = DataContractConfig.from_ml4t_data()
-        assert contract.timestamp_col == "ts_event"
-        assert contract.symbol_col == "ticker"
-        assert contract.open_col == "open_price"
-        assert contract.high_col == "high_price"
-        assert contract.low_col == "low_price"
-        assert contract.close_col == "last_price"
-        assert contract.price_col == "last_price"
-        assert contract.volume_col == "volume_base"
-
     def test_from_market_data_spec_mapping(self):
         """Shared market-data mappings should convert into engineer contracts."""
         contract = data_contract_from_market_data_spec(
@@ -100,6 +54,7 @@ class TestDataContractConfig:
                 "schema": {
                     "timestamp_col": "ts_event",
                     "entity_col": "asset_id",
+                    "price_col": "mid_price",
                     "open_col": "open_price",
                     "high_col": "high_price",
                     "low_col": "low_price",
@@ -111,7 +66,7 @@ class TestDataContractConfig:
 
         assert contract.timestamp_col == "ts_event"
         assert contract.symbol_col == "asset_id"
-        assert contract.price_col == "mid_close"
+        assert contract.price_col == "mid_price"
         assert contract.open_col == "open_price"
         assert contract.high_col == "high_price"
         assert contract.low_col == "low_price"
@@ -123,15 +78,16 @@ class TestDataContractConfig:
         spec = SimpleNamespace(
             schema=SimpleNamespace(
                 timestamp_col="bar_end",
-                entity_col="symbol",
+                entity_col="asset",
+                price_col="mid_close",
                 close_col="close_bid_price",
             )
         )
 
         contract = data_contract_from_market_data_spec(spec)
         assert contract.timestamp_col == "bar_end"
-        assert contract.symbol_col == "symbol"
-        assert contract.price_col == "close_bid_price"
+        assert contract.symbol_col == "asset"
+        assert contract.price_col == "mid_close"
         assert contract.close_col == "close_bid_price"
         assert contract.open_col == "open"
         assert contract.high_col == "high"
@@ -143,7 +99,7 @@ class TestDataContractConfig:
         contract = data_contract_from_market_data_spec({})
 
         assert contract.timestamp_col == "timestamp"
-        assert contract.symbol_col == "symbol"
+        assert contract.symbol_col == "asset"
         assert contract.price_col == "close"
         assert contract.open_col == "open"
         assert contract.high_col == "high"

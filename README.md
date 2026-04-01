@@ -164,6 +164,7 @@ ibars = TickImbalanceBarSampler(expected_imbalance=100).sample(tick_data)
 
 ## Related Libraries
 
+- **ml4t-specs**: Shared feed and artifact schema definitions across the ML4T stack
 - **ml4t-data**: Market data acquisition and storage
 - **ml4t-diagnostic**: Signal evaluation and statistical validation
 - **ml4t-backtest**: Event-driven backtesting

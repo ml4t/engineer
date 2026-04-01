@@ -7,6 +7,34 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0b3] - 2026-04-01
+
+### Added
+- Public documentation overhaul with a workflow-first landing page, Book Guide,
+  and tighter API/user-guide routing
+- Expanded `AGENTS.md` coverage across the package, including secondary modules
+  and wheel artifacts
+
+### Changed
+- Shared feed and artifact schema definitions now come from `ml4t-specs`
+- `data_contract_from_market_data_spec()` now normalizes inputs through
+  `ml4t.specs.FeedSpec`
+- Artifact schema defaults align with shared spec naming:
+  `asset`, `label_value`, and `prediction_value`
+
+### Removed
+- `DataContractConfig.from_ml4t_data()` in favor of shared spec-driven contracts
+
+## [0.1.0b2] - 2026-03-23
+
+### Added
+- Engineered artifact spec dataclasses for feature, label, and prediction outputs
+
+### Changed
+- Shared market data specs can now be bridged directly into engineer config
+
+## [0.1.0b1] - 2026-03-03
+
 ### Removed
 - Dead modules: `selection/`, `validation/`, `visualization/`, `pipeline/`
 - Diagnostic config classes (`feature_config.py`) — moved to ml4t-diagnostic
@@ -118,7 +146,10 @@ Initial public alpha release.
 - `MLDatasetBuilder` for dataset construction
 - `PreprocessingPipeline` for feature transformation
 
-[Unreleased]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0a11...HEAD
+[Unreleased]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b3...HEAD
+[0.1.0b3]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b2...v0.1.0b3
+[0.1.0b2]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b1...v0.1.0b2
+[0.1.0b1]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0a11...v0.1.0b1
 [0.1.0a11]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0a10...v0.1.0a11
 [0.1.0a10]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0a9...v0.1.0a10
 [0.1.0a9]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0a8...v0.1.0a9

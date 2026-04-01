@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ml4t.data.artifacts.base import (
+from ml4t.specs.base import (
     ArtifactKind,
     ArtifactProvenance,
     ArtifactSpec,
@@ -19,8 +19,8 @@ class LabelSchema:
     """Column layout for a label artifact."""
 
     timestamp_col: str = "timestamp"
-    entity_col: str = "symbol"
-    label_col: str = "label"
+    entity_col: str = "asset"
+    label_col: str = "label_value"
 
     @classmethod
     def from_mapping(cls, mapping: dict[str, Any] | None) -> LabelSchema:
@@ -28,8 +28,8 @@ class LabelSchema:
             return cls()
         return cls(
             timestamp_col=str(mapping.get("timestamp_col", "timestamp")),
-            entity_col=str(mapping.get("entity_col", "symbol")),
-            label_col=str(mapping.get("label_col", "label")),
+            entity_col=str(mapping.get("entity_col", "asset")),
+            label_col=str(mapping.get("label_col", "label_value")),
         )
 
 

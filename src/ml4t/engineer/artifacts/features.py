@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ml4t.data.artifacts.base import ArtifactKind, ArtifactProvenance, ArtifactSpec, ArtifactStorage
+from ml4t.specs.base import ArtifactKind, ArtifactProvenance, ArtifactSpec, ArtifactStorage
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,7 +13,7 @@ class FeatureSchema:
     """Column layout for a feature artifact."""
 
     timestamp_col: str = "timestamp"
-    entity_col: str = "symbol"
+    entity_col: str = "asset"
     feature_columns: tuple[str, ...] = ()
 
     @classmethod
@@ -23,7 +23,7 @@ class FeatureSchema:
         feature_columns = mapping.get("feature_columns", ())
         return cls(
             timestamp_col=str(mapping.get("timestamp_col", "timestamp")),
-            entity_col=str(mapping.get("entity_col", "symbol")),
+            entity_col=str(mapping.get("entity_col", "asset")),
             feature_columns=tuple(str(item) for item in feature_columns),
         )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ml4t.data.artifacts.base import (
+from ml4t.specs.base import (
     ArtifactKind,
     ArtifactProvenance,
     ArtifactSpec,
@@ -19,8 +19,8 @@ class PredictionSchema:
     """Column layout for a prediction artifact."""
 
     timestamp_col: str = "timestamp"
-    entity_col: str = "symbol"
-    prediction_col: str = "prediction"
+    entity_col: str = "asset"
+    prediction_col: str = "prediction_value"
 
     @classmethod
     def from_mapping(cls, mapping: dict[str, Any] | None) -> PredictionSchema:
@@ -28,8 +28,8 @@ class PredictionSchema:
             return cls()
         return cls(
             timestamp_col=str(mapping.get("timestamp_col", "timestamp")),
-            entity_col=str(mapping.get("entity_col", "symbol")),
-            prediction_col=str(mapping.get("prediction_col", "prediction")),
+            entity_col=str(mapping.get("entity_col", "asset")),
+            prediction_col=str(mapping.get("prediction_col", "prediction_value")),
         )
 
 
