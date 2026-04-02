@@ -29,15 +29,6 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
-      - name: Check out ml4t-specs
-        uses: actions/checkout@v4
-        with:
-          repository: ml4t/specs
-          path: ml4t-specs
-
-      - name: Link ml4t-specs sibling path
-        run: ln -s "$GITHUB_WORKSPACE/ml4t-specs" ../ml4t-specs
-
       - name: Install dependencies
         run: uv sync --dev --extra docs
 

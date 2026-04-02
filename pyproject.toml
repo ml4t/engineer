@@ -289,6 +289,3 @@ exclude_lines = [
     "pass",
     "except ImportError:",
 ]
-
-[tool.uv.sources]
-ml4t-specs = { path = "../ml4t-specs", editable = true }
