@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0b4] - 2026-04-02
+
+### Changed
+- Vendored the shared ML4T docs theme into `docs/overrides/` using MkDocs
+  Material `custom_dir`, removing the external theme-package requirement
+- Public `engineer` workflows now resolve `ml4t-specs` from PyPI instead of a
+  local sibling checkout or editable path override
+
+### Fixed
+- GitHub Docs workflow now builds and deploys from the public repo without
+  depending on private adjacent repositories
+
 ## [0.1.0b3] - 2026-04-01
 
 ### Added
@@ -146,7 +158,8 @@ Initial public alpha release.
 - `MLDatasetBuilder` for dataset construction
 - `PreprocessingPipeline` for feature transformation
 
-[Unreleased]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b3...HEAD
+[Unreleased]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b4...HEAD
+[0.1.0b4]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b3...v0.1.0b4
 [0.1.0b3]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b2...v0.1.0b3
 [0.1.0b2]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b1...v0.1.0b2
 [0.1.0b1]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0a11...v0.1.0b1
