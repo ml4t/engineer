@@ -24,6 +24,9 @@ jobs:
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
+      - name: Check out ml4t-specs sibling repo
+        run: git clone --depth 1 https://github.com/ml4t/specs ../ml4t-specs
+
       - name: Install dependencies
         run: uv sync --dev
 
@@ -46,6 +49,9 @@ jobs:
 
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Check out ml4t-specs sibling repo
+        run: git clone --depth 1 https://github.com/ml4t/specs ../ml4t-specs
 
       - name: Install dependencies
         run: uv sync --dev
@@ -81,6 +87,9 @@ jobs:
           make
           sudo make install
           sudo ldconfig
+
+      - name: Check out ml4t-specs sibling repo
+        run: git clone --depth 1 https://github.com/ml4t/specs ../ml4t-specs
 
       - name: Install dependencies
         run: uv sync --dev --extra ta
