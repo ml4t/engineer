@@ -16,26 +16,34 @@ library calls.
 
 <div class="grid cards" markdown>
 
--   :material-chart-line:{ .lg .middle } __120 Indicators, One Call__
+-   :material-chart-line:{ .lg .middle } __120 Features, One Call__
+
     ---
-    Momentum, volatility, microstructure, trend, and 7 more categories through
+
+    Momentum, volatility, microstructure, trend, and other feature families through
     `compute_features(df, indicators)`.
     [:octicons-arrow-right-24: Features](user-guide/features.md)
 
 -   :material-check-decagram:{ .lg .middle } __60 TA-Lib Validated__
+
     ---
+
     Indicators tested against TA-Lib to `1e-6` tolerance so notebook and pipeline
     outputs stay aligned.
     [:octicons-arrow-right-24: Quickstart](getting-started/quickstart.md)
 
 -   :material-label:{ .lg .middle } __Labels, Bars, and Leakage Control__
+
     ---
+
     Triple-barrier labels, alternative bars, preprocessing, and dataset splitting in
     the same workflow.
     [:octicons-arrow-right-24: Labeling](user-guide/labeling.md)
 
 -   :material-book-open-variant:{ .lg .middle } __Book to Production__
+
     ---
+
     The book teaches the methods step by step. This library turns them into reusable
     calls for research and scheduled pipelines.
     [:octicons-arrow-right-24: Book Guide](book-guide/index.md)

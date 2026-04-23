@@ -7,6 +7,9 @@ site_url: https://ml4trading.io/docs/engineer/
 repo_url: https://github.com/ml4t/engineer
 repo_name: ml4t/engineer
 
+exclude_docs: |
+  audit/**
+
 # Theme configuration — vendored ML4T overlay on top of MkDocs Material
 theme:
   name: material
