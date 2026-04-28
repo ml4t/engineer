@@ -10,7 +10,7 @@ Feature engineering for financial machine learning: technical indicators, labeli
 
 This library is one of five interconnected libraries supporting the machine learning for trading workflow described in [Machine Learning for Trading](https://mlfortrading.io):
 
-![ML4T Library Ecosystem](docs/images/ml4t_ecosystem_workflow_print.jpeg)
+![ML4T Library Ecosystem](docs/images/ml4t_ecosystem_workflow_color.svg)
 
 Each library addresses a distinct stage: data infrastructure, feature engineering, signal evaluation, strategy backtesting, and live deployment.
 
