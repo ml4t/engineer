@@ -31,4 +31,5 @@ class DataContractConfig(BaseConfig):
         """Create contract from a generic mapping source."""
         return cls(**dict(mapping))
 
+
 __all__ = ["DataContractConfig"]
