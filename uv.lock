@@ -1426,7 +1426,7 @@ requires-dist = [
     { name = "numba", marker = "python_full_version >= '3.14'", specifier = ">=0.64.0" },
     { name = "numpy", specifier = ">=1.24.0,<2.5" },
     { name = "pandas", marker = "python_full_version < '3.14'", specifier = ">=2.0.0" },
-    { name = "pandas", marker = "python_full_version >= '3.14'", specifier = ">=3.0.0" },
+    { name = "pandas", marker = "python_full_version >= '3.14'", specifier = ">=2.3.3" },
     { name = "pandas-market-calendars", marker = "extra == 'all'", specifier = ">=4.0.0" },
     { name = "pandas-market-calendars", marker = "extra == 'calendars'", specifier = ">=4.0.0" },
     { name = "pandas-market-calendars", marker = "extra == 'dev'", specifier = ">=4.0.0" },
