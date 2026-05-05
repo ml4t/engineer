@@ -5,6 +5,14 @@ All notable changes to ml4t-engineer are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0b8] - 2026-05-05
+
+### Fixed
+- Dropped the Python 3.14-specific dependency split pins for `pandas`,
+  `pyarrow`, `scipy`, `scikit-learn`, `statsmodels`, and `numba`, keeping the
+  source-level minimums as unconditional requirements so resolvers can choose
+  the newest compatible builds for each platform
+
 ## [0.1.0b7] - 2026-05-05
 
 ### Fixed
