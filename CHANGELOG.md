@@ -5,7 +5,11 @@ All notable changes to ml4t-engineer are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0b5] - 2026-05-05
+
+### Fixed
+- Restored actual Python 3.14 installability by routing compiled scientific
+  dependencies onto release lines that publish `cp314` wheels
 
 ## [0.1.0b4] - 2026-04-02
 
@@ -158,7 +162,8 @@ Initial public alpha release.
 - `MLDatasetBuilder` for dataset construction
 - `PreprocessingPipeline` for feature transformation
 
-[Unreleased]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b4...HEAD
+[Unreleased]: https://github.com/ml4t/engineer/compare/v0.1.0b5...HEAD
+[0.1.0b5]: https://github.com/ml4t/engineer/compare/v0.1.0b4...v0.1.0b5
 [0.1.0b4]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b3...v0.1.0b4
 [0.1.0b3]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b2...v0.1.0b3
 [0.1.0b2]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b1...v0.1.0b2
