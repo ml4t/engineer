@@ -5,6 +5,13 @@ All notable changes to ml4t-engineer are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0b6] - 2026-05-05
+
+### Fixed
+- Lowered the Python 3.14 `scikit-learn` floor from `>=1.8.0` to `>=1.7.2`,
+  which already publishes `cp314` wheels and avoids unnecessary dependency
+  conflicts downstream
+
 ## [0.1.0b5] - 2026-05-05
 
 ### Fixed
