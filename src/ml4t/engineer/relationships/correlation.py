@@ -150,7 +150,7 @@ def compute_correlation_matrix(
         # Ensure features are numeric or all-null
         non_numeric = []
         for feat in features:
-            is_numeric = np.issubdtype(df[feat].dtype, np.number)
+            is_numeric = pd.api.types.is_numeric_dtype(df[feat].dtype)
             is_all_null = df[feat].dtype == object and df[feat].isna().all()
             if not (is_numeric or is_all_null):
                 non_numeric.append(feat)
