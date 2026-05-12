@@ -19,7 +19,7 @@ If you standardize on `uv`, `uv pip install ml4t-engineer` is equivalent.
 ## Install from Source
 
 ```bash
-git clone https://github.com/stefan-jansen/ml4t-engineer.git
+git clone https://github.com/ml4t/engineer.git
 cd ml4t-engineer
 pip install -e .
 ```

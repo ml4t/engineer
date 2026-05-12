@@ -4,11 +4,14 @@
 [![PyPI](https://img.shields.io/pypi/v/ml4t-engineer)](https://pypi.org/project/ml4t-engineer/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Feature engineering for financial machine learning: technical indicators, labeling methods, and alternative bar sampling.
+Feature engineering for financial machine learning: validated features, labeling
+methods, alternative bars, and leakage-safe dataset preparation.
 
 ## Part of the ML4T Library Ecosystem
 
-This library is one of six interconnected libraries supporting the machine learning for trading workflow described in [Machine Learning for Trading](https://ml4trading.io):
+This library is one of six interconnected libraries supporting the machine
+learning for trading workflow described in
+[Machine Learning for Trading](https://www.ml4trading.io/):
 
 ![ML4T Library Ecosystem](docs/images/ml4t_ecosystem_workflow_color.png)
 
@@ -16,14 +19,19 @@ Together they cover data infrastructure, feature engineering, modeling, signal e
 
 ## What This Library Does
 
-Transforming raw price data into predictive features is a core task in quantitative research. ml4t-engineer provides:
+Transforming raw price data into predictive features is a core task in
+quantitative research. `ml4t-engineer` provides:
 
-- 120 technical indicators across 11 categories (momentum, volatility, trend, microstructure, etc.)
-- Triple-barrier labeling and other target construction methods from *Advances in Financial Machine Learning*
+- 120 registry features across 11 categories (momentum, volatility, trend,
+  microstructure, and more)
+- Triple-barrier, ATR-based, percentile, trend-scanning, and meta-labeling
+  methods from *Advances in Financial Machine Learning*
 - Alternative bar sampling (volume bars, dollar bars, tick imbalance bars)
-- A feature registry for discovery and configuration
+- Dataset building, preprocessing, and feature discovery for leakage-safe ML
+  workflows
 
-The library is built on Polars with Numba JIT compilation for numerical operations. 60 indicators are validated against TA-Lib at 1e-6 tolerance.
+The library is built on Polars with Numba JIT compilation for numerical
+operations. 60 features are validated against TA-Lib at `1e-6` tolerance.
 
 ![ml4t-engineer Architecture](docs/images/ml4t_engineer_architecture_print.jpeg)
 
@@ -67,7 +75,7 @@ from ml4t.engineer.core.registry import get_registry
 registry = get_registry()
 print(registry.list_all())                    # All 120 features
 print(registry.list_by_category("momentum"))  # 31 momentum indicators
-print(registry.list_ta_lib_compatible())      # 60 TA-Lib validated
+print(registry.list_ta_lib_compatible())      # 60 TA-Lib validated features
 print(registry.list_normalized())             # 37 bounded (0-100, -1 to 1)
 ```
 
@@ -134,31 +142,35 @@ labels = triple_barrier_labels(
 from ml4t.engineer.bars import VolumeBarSampler, DollarBarSampler, TickImbalanceBarSampler
 
 # Volume bars (equal volume per bar)
-vbars = VolumeBarSampler(volume_threshold=1000).sample(tick_data)
+vbars = VolumeBarSampler(volume_per_bar=1000).sample(tick_data)
 
 # Dollar bars (equal dollar volume per bar)
-dbars = DollarBarSampler(dollar_threshold=1_000_000).sample(tick_data)
+dbars = DollarBarSampler(dollars_per_bar=1_000_000).sample(tick_data)
 
 # Tick imbalance bars (information-driven)
-ibars = TickImbalanceBarSampler(expected_imbalance=100).sample(tick_data)
+ibars = TickImbalanceBarSampler(expected_ticks_per_bar=100).sample(tick_data)
 ```
 
 ## Documentation
 
-- [Features](docs/user-guide/features.md) - 120 technical indicators across 11 categories
-- [Labeling](docs/user-guide/labeling.md) - 7 labeling methods for supervised learning
-- [Alternative Bars](docs/user-guide/bars.md) - Information-driven bar sampling
-- [Feature Discovery](docs/user-guide/discovery.md) - Registry, catalog, and search
-- [Fractional Differencing](docs/user-guide/fractional-differencing.md) - Memory-preserving stationarity
-- [ML-Readiness](docs/user-guide/ml-readiness.md) - Normalized features and preprocessing
-- [Preprocessing](docs/user-guide/preprocessing.md) - Scalers and leakage prevention
-- [Dataset Builder](docs/user-guide/dataset-builder.md) - Leakage-safe train/test preparation
+- [Docs Home](https://www.ml4trading.io/docs/engineer/) - library overview and
+  workflow map
+- [Quickstart](https://www.ml4trading.io/docs/engineer/getting-started/quickstart/) -
+  first working feature and labeling workflow
+- [Features](https://www.ml4trading.io/docs/engineer/user-guide/features/) -
+  120 features across 11 registry categories
+- [Labeling](https://www.ml4trading.io/docs/engineer/user-guide/labeling/) -
+  7 labeling methods for supervised learning
+- [Dataset Builder](https://www.ml4trading.io/docs/engineer/user-guide/dataset-builder/) -
+  leakage-safe train/test preparation
+- [Examples](https://github.com/ml4t/engineer/blob/main/examples/README.md) -
+  runnable scripts for complete workflows and focused features
 
 ## Technical Characteristics
 
 - **Polars-native**: All computations use Polars expressions
 - **Numba-accelerated**: JIT compilation for numerical kernels
-- **TA-Lib validated**: 60 indicators validated at 1e-6 tolerance
+- **TA-Lib validated**: 60 features validated at `1e-6` tolerance
 - **AFML-compliant**: Labeling methods verified against *Advances in Financial Machine Learning*
 - **ML-ready outputs**: 37 features produce bounded outputs (0-100, -1 to 1) for direct model input; remaining features work with standard preprocessing (returns, z-scores, robust scaling)
 
@@ -173,7 +185,7 @@ ibars = TickImbalanceBarSampler(expected_imbalance=100).sample(tick_data)
 ## Development
 
 ```bash
-git clone https://github.com/applied-ai/ml4t-engineer.git
+git clone https://github.com/ml4t/engineer.git
 cd ml4t-engineer
 uv sync
 uv run pytest tests/ -q

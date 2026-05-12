@@ -1,31 +1,31 @@
 # ML4T Engineer Examples
 
-This directory contains example scripts and notebooks demonstrating the Financial Machine Learning (FML) features of the ml4t-engineer library.
+This directory contains runnable example scripts for the main `ml4t-engineer`
+workflows.
 
-## Core FML Examples
+## End-to-End Workflows
 
-### 1. **fml_features_demo.py** - Complete FML Features Demonstration
+### 1. **complete_workflow_example.py** - End-to-End Workflow
 
-Comprehensive example showing all FML features working together:
+Shows the main workflow in one place:
 
-- Information-driven bars (tick, volume, dollar, imbalance)
-- Fractional differencing for stationarity
-- Triple-barrier labeling for ML targets
-- Pipeline integration
-- Visualizations and statistics
+- feature computation
+- labeling
+- preprocessing and dataset preparation
+- reusable workflow orchestration
 
 ```bash
-python examples/fml_features_demo.py
+python examples/complete_workflow_example.py
 ```
 
-### 2. **fml_features_notebook.py** - Interactive Jupyter Notebook
+### 2. **fml_features_demo.py** - Financial ML Feature Demo
 
-Interactive exploration of FML features with detailed explanations:
+Focused demonstration of the finance-specific feature stack:
 
-- Step-by-step walkthrough of each component
-- Statistical analysis and visualizations
-- Example ML model training
-- Convert to notebook: `jupyter nbconvert --to notebook --execute fml_features_notebook.py`
+- information-driven bars
+- fractional differencing
+- triple-barrier labeling
+- pipeline integration
 
 ## Individual Feature Examples
 
@@ -54,33 +54,15 @@ Demonstrates advanced labeling for ML:
 - Trailing stops
 - Pipeline integration
 
-### 6. **labeling_simple.py** - Simple Labeling Example
-
-Quick introduction to triple-barrier labeling with minimal code.
-
 ## Pipeline Examples
 
-### 7. **pipeline_example.py** - Pipeline API
+### 6. **pipeline_example.py** - Pipeline API
 
 Shows how to chain transformations:
 
 - Feature engineering pipelines
 - Combining technical indicators
 - Data preprocessing workflows
-
-## Technical Analysis Examples
-
-### 8. **indicator_comparison.py** - TA Indicator Comparison
-
-Compare ml4t-engineer indicators with TA-Lib for validation.
-
-### 9. **performance_comparison.py** - Performance Benchmarks
-
-Benchmark performance against TA-Lib implementations.
-
-### 10. **multi_asset_example.py** - Multi-Asset Analysis
-
-Demonstrate multi-asset capabilities using the Pipeline API.
 
 ## Data Requirements
 
@@ -94,24 +76,19 @@ Examples will use real data if available, otherwise create synthetic data:
 Each example can be run directly:
 
 ```bash
-# Run complete FML demo
+# Run the full workflow
+python examples/complete_workflow_example.py
+
+# Run the financial-ML feature demo
 python examples/fml_features_demo.py
 
 # Run specific feature example
 python examples/bars_example.py
-
-# Convert notebook to Jupyter format
-jupyter nbconvert --to notebook --execute fml_features_notebook.py
 ```
 
 ## Output
 
-Examples generate visualizations in the `examples/` directory:
-
-- `fml_features_demo.png` - Overview of all FML features
-- `bars_comparison.png` - Bar sampling comparison
-- `fdiff_results.png` - Fractional differencing analysis
-- `labeling_results.png` - Labeling visualization
+Some examples generate plots or derived outputs in the working directory.
 
 ## Next Steps
 

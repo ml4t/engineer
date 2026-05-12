@@ -1,6 +1,8 @@
 # Technical Indicators
 
-ML4T Engineer provides 120 technical indicators across 11 categories, built on Polars with Numba JIT for performance-critical kernels. 59 indicators are validated against TA-Lib at 1e-6 tolerance.
+ML4T Engineer provides 120 registry features across 11 categories, built on
+Polars with Numba JIT for performance-critical kernels. 60 indicators are
+validated against TA-Lib at 1e-6 tolerance.
 
 ## Overview
 
@@ -17,7 +19,10 @@ ML4T Engineer provides 120 technical indicators across 11 categories, built on P
 | Regime | 4 | 0 | Hurst Exponent, Choppiness, Fractal Efficiency |
 | Volume | 3 | 3 | OBV, AD, ADOSC |
 | Math | 3 | 3 | Maximum, Minimum, Summation |
-| Cross-Asset | 10 | 0 | Beta, Correlation, Cointegration (standalone functions) |
+
+Standalone cross-asset utilities such as beta, rolling correlation, and
+cointegration are documented below, but they are not part of the 120-feature
+registry count.
 
 > **Book**: *ML for Trading, 3rd ed.* — Ch8 notebooks (`01_price_volume_features.py` through `04_fundamentals_macro_calendar.py`) build features manually to explain the economics. Case studies (ETFs, US Equities Panel, CME Futures) then use `compute_features()` in production pipelines.
 

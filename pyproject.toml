@@ -183,11 +183,11 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/stefan-jansen/ml4t-engineer"
-Documentation = "https://ml4trading.io/docs/engineer/"
-Repository = "https://github.com/stefan-jansen/ml4t-engineer"
-Issues = "https://github.com/stefan-jansen/ml4t-engineer/issues"
-Changelog = "https://github.com/stefan-jansen/ml4t-engineer/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/ml4t/engineer"
+Documentation = "https://www.ml4trading.io/docs/engineer/"
+Repository = "https://github.com/ml4t/engineer"
+Issues = "https://github.com/ml4t/engineer/issues"
+Changelog = "https://github.com/ml4t/engineer/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
