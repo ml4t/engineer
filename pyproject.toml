@@ -223,6 +223,7 @@ markers = [
     "integration: marks tests as integration tests",
     "benchmark: marks benchmark tests",
     "perf: marks performance comparison tests (excluded from default runs, use pytest -m perf)",
+    "performance: marks performance tests",
     "validation: marks tests that validate against TA-Lib",
     "property: marks property-based tests using hypothesis",
 ]
