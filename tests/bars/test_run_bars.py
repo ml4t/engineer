@@ -12,6 +12,7 @@ import pytest
 
 from ml4t.engineer.bars.run import (
     DollarRunBarSampler,
+    FixedTickRunBarSampler,
     TickRunBarSampler,
     VolumeRunBarSampler,
     _calculate_run_bars_nb,
@@ -679,3 +680,83 @@ class TestAFMLRunBarCompliance:
         # The theta should be 5 or more (cumulative buys)
         if len(thetas) > 0:
             assert thetas[0] >= 5
+
+
+class TestFixedTickRunBarSampler:
+    """Tests for the stable, fixed-threshold run bar sampler."""
+
+    def test_init_valid(self):
+        sampler = FixedTickRunBarSampler(threshold=50)
+        assert sampler.threshold == 50
+
+    def test_init_invalid_threshold_zero(self):
+        with pytest.raises(ValueError, match="threshold must be positive"):
+            FixedTickRunBarSampler(threshold=0)
+
+    def test_init_invalid_threshold_negative(self):
+        with pytest.raises(ValueError, match="threshold must be positive"):
+            FixedTickRunBarSampler(threshold=-10)
+
+    def test_sample_missing_side(self, sample_tick_data):
+        sampler = FixedTickRunBarSampler(threshold=10)
+        data = sample_tick_data.drop("side")
+        with pytest.raises(DataValidationError, match="side"):
+            sampler.sample(data)
+
+    def test_sample_empty_data(self):
+        sampler = FixedTickRunBarSampler(threshold=10)
+        empty = pl.DataFrame({"timestamp": [], "price": [], "volume": [], "side": []})
+        bars = sampler.sample(empty)
+        assert len(bars) == 0
+
+    def test_sample_basic(self, sample_tick_data):
+        sampler = FixedTickRunBarSampler(threshold=10)
+        bars = sampler.sample(sample_tick_data)
+        assert len(bars) >= 1
+        for col in ("open", "high", "low", "close", "volume", "theta", "threshold"):
+            assert col in bars.columns
+        # Every completed bar must have reached the threshold.
+        assert (bars["theta"] >= 10).all()
+        assert (bars["threshold"] == 10).all()
+
+    def test_threshold_controls_count_monotonically(self, large_tick_data):
+        """Larger threshold => fewer (or equal) bars. Predictable, no spiral."""
+        few = FixedTickRunBarSampler(threshold=100).sample(large_tick_data)
+        many = FixedTickRunBarSampler(threshold=20).sample(large_tick_data)
+        assert len(many) >= len(few)
+
+    def test_stable_on_one_sided_flow(self):
+        """A persistently one-sided stream must NOT threshold-spiral.
+
+        With an all-buy stream and threshold T, a bar forms every T ticks, so
+        the count is deterministic: floor(n / T).
+        """
+        n = 1000
+        timestamps = [datetime(2024, 1, 1, 9, 30, i // 60, (i % 60) * 1000) for i in range(n)]
+        data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "price": [100.0 + i * 0.01 for i in range(n)],
+                "volume": [10.0] * n,
+                "side": [1] * n,
+            }
+        )
+        bars = FixedTickRunBarSampler(threshold=50).sample(data)
+        assert len(bars) == n // 50  # exactly 20 — bounded and predictable
+
+    def test_cumulative_not_consecutive(self, alternating_sides_data):
+        """Counts are cumulative within a bar (do not reset on direction change)."""
+        # 50 alternating ticks => 25 buys, 25 sells. With threshold=25, one bar
+        # forms once cumulative buys (or sells) reaches 25, at the last tick.
+        bars = FixedTickRunBarSampler(threshold=25).sample(alternating_sides_data)
+        assert len(bars) == 1
+        assert bars["theta"][0] >= 25
+
+    def test_include_incomplete(self, sample_tick_data):
+        complete = FixedTickRunBarSampler(threshold=10).sample(
+            sample_tick_data, include_incomplete=False
+        )
+        with_incomplete = FixedTickRunBarSampler(threshold=10).sample(
+            sample_tick_data, include_incomplete=True
+        )
+        assert len(with_incomplete) >= len(complete)

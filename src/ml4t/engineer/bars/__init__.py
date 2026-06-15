@@ -31,7 +31,12 @@ from ml4t.engineer.bars.imbalance import (
 from ml4t.engineer.bars.imbalance import ImbalanceBarSampler as ImbalanceBarSamplerOriginal
 
 # Import run bars (new implementation)
-from ml4t.engineer.bars.run import DollarRunBarSampler, TickRunBarSampler, VolumeRunBarSampler
+from ml4t.engineer.bars.run import (
+    DollarRunBarSampler,
+    FixedTickRunBarSampler,
+    TickRunBarSampler,
+    VolumeRunBarSampler,
+)
 from ml4t.engineer.bars.tick import TickBarSampler as TickBarSamplerOriginal
 
 # Import vectorized implementations as default
@@ -72,6 +77,7 @@ __all__ = [
     "WindowVolumeImbalanceBarSampler",
     # Run bars
     "TickRunBarSampler",
+    "FixedTickRunBarSampler",
     "VolumeRunBarSampler",
     "DollarRunBarSampler",
     # Original implementations (if needed)

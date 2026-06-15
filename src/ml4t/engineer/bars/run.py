@@ -759,8 +759,250 @@ class DollarRunBarSampler(BarSampler):
         )
 
 
+@jit(nopython=True, cache=True)  # type: ignore[misc]
+def _calculate_fixed_tick_run_bars_nb(
+    sides: npt.NDArray[np.float64],
+    threshold: float,
+) -> tuple[
+    npt.NDArray[np.int64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+]:
+    """Calculate fixed-threshold tick run bar indices.
+
+    Simple, stable algorithm with no adaptation. A bar forms when the larger
+    of the cumulative buy-tick and sell-tick counts within the bar reaches a
+    fixed threshold:
+
+        θ = max(Σ buys in bar, Σ sells in bar)  >=  threshold
+
+    Counts are cumulative within the bar and reset only at bar boundaries
+    (direction changes do NOT reset them), matching the AFML run definition.
+
+    Parameters
+    ----------
+    sides : ndarray
+        Array of trade signs (+1 for buy, -1 for sell)
+    threshold : float
+        Fixed run threshold (bar forms when max(cum_buys, cum_sells) >= threshold)
+
+    Returns
+    -------
+    tuple of arrays
+        (bar_indices, thetas, cumulative_buys, cumulative_sells)
+    """
+    n = len(sides)
+
+    bar_indices = []
+    thetas = []
+    cumulative_buys_out = []
+    cumulative_sells_out = []
+
+    cumulative_buys = 0.0
+    cumulative_sells = 0.0
+
+    for i in range(n):
+        if sides[i] > 0:
+            cumulative_buys += 1.0
+        else:
+            cumulative_sells += 1.0
+
+        theta = max(cumulative_buys, cumulative_sells)
+
+        if theta >= threshold:
+            bar_indices.append(i)
+            thetas.append(theta)
+            cumulative_buys_out.append(cumulative_buys)
+            cumulative_sells_out.append(cumulative_sells)
+
+            cumulative_buys = 0.0
+            cumulative_sells = 0.0
+
+    return (
+        np.array(bar_indices, dtype=np.int64),
+        np.array(thetas, dtype=np.float64),
+        np.array(cumulative_buys_out, dtype=np.float64),
+        np.array(cumulative_sells_out, dtype=np.float64),
+    )
+
+
+class FixedTickRunBarSampler(BarSampler):
+    """Sample tick run bars using a fixed run threshold.
+
+    Unlike the adaptive AFML algorithm (:class:`TickRunBarSampler`), this uses
+    a fixed threshold that does not change during sampling. This avoids the
+    threshold-spiral instability that occurs with the adaptive algorithm when
+    order flow is persistently one-sided.
+
+    **Recommended for production use** — more stable and predictable than the
+    adaptive version (mirrors :class:`FixedTickImbalanceBarSampler`).
+
+    A bar forms when the larger of the cumulative buy-tick and sell-tick counts
+    within the bar reaches the threshold:
+
+        θ = max(Σ buys in bar, Σ sells in bar)  >=  threshold
+
+    Parameters
+    ----------
+    threshold : int
+        Fixed run threshold. Bar forms when max(cum_buys, cum_sells) >= threshold.
+        Typical values: 20-500 depending on desired bar frequency.
+
+    Calibration
+    -----------
+    To calibrate threshold for N bars per day, test a range and pick the
+    threshold giving the desired bar count; larger thresholds yield fewer bars.
+
+    Examples
+    --------
+    >>> sampler = FixedTickRunBarSampler(threshold=50)
+    >>> bars = sampler.sample(tick_data)
+
+    Notes
+    -----
+    Advantages over the adaptive (AFML) algorithm:
+
+    - No threshold spiral with imbalanced order flow
+    - Predictable bar count based on run statistics
+    - No feedback loops — stable by construction
+    - Works consistently across all market conditions
+
+    References
+    ----------
+    .. [1] López de Prado, M. (2018). Advances in Financial Machine Learning.
+           John Wiley & Sons. Chapter 2.3: Information-Driven Bars.
+    """
+
+    def __init__(self, threshold: int):
+        """Initialize fixed tick run bar sampler.
+
+        Parameters
+        ----------
+        threshold : int
+            Fixed run threshold (positive integer)
+        """
+        if threshold <= 0:
+            raise ValueError("threshold must be positive")
+
+        self.threshold = threshold
+
+    def sample(
+        self,
+        data: pl.DataFrame,
+        include_incomplete: bool = False,
+    ) -> pl.DataFrame:
+        """Sample fixed tick run bars from data.
+
+        Parameters
+        ----------
+        data : pl.DataFrame
+            Tick data with columns: timestamp, price, volume, side
+        include_incomplete : bool, default False
+            Whether to include incomplete final bar
+
+        Returns
+        -------
+        pl.DataFrame
+            Sampled tick run bars
+        """
+        self._validate_data(data)
+
+        if "side" not in data.columns:
+            raise DataValidationError("Run bars require 'side' column")
+
+        if len(data) == 0:
+            return self._empty_bars_df()
+
+        volumes = data["volume"].to_numpy().astype(np.float64)
+        sides = data["side"].to_numpy().astype(np.float64)
+
+        bar_indices, thetas, cumulative_buys, cumulative_sells = _calculate_fixed_tick_run_bars_nb(
+            sides, float(self.threshold)
+        )
+
+        bars = []
+        start_idx = 0
+
+        for i, end_idx in enumerate(bar_indices):
+            bar_ticks = data.slice(start_idx, end_idx - start_idx + 1)
+            bar_volumes = volumes[start_idx : end_idx + 1]
+            bar_sides = sides[start_idx : end_idx + 1]
+
+            buy_volume = float(np.sum(bar_volumes[bar_sides > 0]))
+            sell_volume = float(np.sum(bar_volumes[bar_sides < 0]))
+
+            bar = self._create_ohlcv_bar(
+                bar_ticks,
+                additional_cols={
+                    "buy_volume": buy_volume,
+                    "sell_volume": sell_volume,
+                    "run_length": int(thetas[i]),
+                    "theta": float(thetas[i]),
+                    "cumulative_buys": float(cumulative_buys[i]),
+                    "cumulative_sells": float(cumulative_sells[i]),
+                    "threshold": float(self.threshold),
+                },
+            )
+            bars.append(bar)
+            start_idx = end_idx + 1
+
+        # Handle incomplete final bar
+        if include_incomplete and start_idx < len(data):
+            bar_ticks = data.slice(start_idx)
+            if len(bar_ticks) > 0:
+                bar_volumes = volumes[start_idx:]
+                bar_sides = sides[start_idx:]
+
+                buy_volume = float(np.sum(bar_volumes[bar_sides > 0]))
+                sell_volume = float(np.sum(bar_volumes[bar_sides < 0]))
+                cum_buys = float(np.sum(bar_sides > 0))
+                cum_sells = float(np.sum(bar_sides < 0))
+
+                bar = self._create_ohlcv_bar(
+                    bar_ticks,
+                    additional_cols={
+                        "buy_volume": buy_volume,
+                        "sell_volume": sell_volume,
+                        "run_length": int(max(cum_buys, cum_sells)),
+                        "theta": float(max(cum_buys, cum_sells)),
+                        "cumulative_buys": cum_buys,
+                        "cumulative_sells": cum_sells,
+                        "threshold": float(self.threshold),
+                    },
+                )
+                bars.append(bar)
+
+        if not bars:
+            return self._empty_bars_df()
+
+        return pl.DataFrame(bars)
+
+    def _empty_bars_df(self) -> pl.DataFrame:
+        """Return empty DataFrame with correct schema."""
+        return pl.DataFrame(
+            {
+                "timestamp": [],
+                "open": [],
+                "high": [],
+                "low": [],
+                "close": [],
+                "volume": [],
+                "tick_count": [],
+                "buy_volume": [],
+                "sell_volume": [],
+                "run_length": [],
+                "theta": [],
+                "cumulative_buys": [],
+                "cumulative_sells": [],
+                "threshold": [],
+            },
+        )
+
+
 __all__ = [
     "DollarRunBarSampler",
+    "FixedTickRunBarSampler",
     "TickRunBarSampler",
     "VolumeRunBarSampler",
 ]
