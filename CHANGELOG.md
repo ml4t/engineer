@@ -5,6 +5,19 @@ All notable changes to ml4t-engineer are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0b9] - 2026-06-21
+
+### Added
+- `FixedTickRunBarSampler` for stable, fixed-threshold tick run bars
+
+### Fixed
+- Public package metadata links now point to the `ml4t/engineer` repository and
+  published documentation
+- Added the missing MIT license file to the source distribution
+- Synced lockfile metadata with relaxed dependency bounds
+- Reduced pytest warning noise for performance markers and cyclical feature
+  metadata
+
 ## [0.1.0b8] - 2026-05-05
 
 ### Fixed
@@ -184,7 +197,11 @@ Initial public alpha release.
 - `MLDatasetBuilder` for dataset construction
 - `PreprocessingPipeline` for feature transformation
 
-[Unreleased]: https://github.com/ml4t/engineer/compare/v0.1.0b5...HEAD
+[Unreleased]: https://github.com/ml4t/engineer/compare/v0.1.0b9...HEAD
+[0.1.0b9]: https://github.com/ml4t/engineer/compare/v0.1.0b8...v0.1.0b9
+[0.1.0b8]: https://github.com/ml4t/engineer/compare/v0.1.0b7...v0.1.0b8
+[0.1.0b7]: https://github.com/ml4t/engineer/compare/v0.1.0b6...v0.1.0b7
+[0.1.0b6]: https://github.com/ml4t/engineer/compare/v0.1.0b5...v0.1.0b6
 [0.1.0b5]: https://github.com/ml4t/engineer/compare/v0.1.0b4...v0.1.0b5
 [0.1.0b4]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b3...v0.1.0b4
 [0.1.0b3]: https://github.com/stefan-jansen/ml4t-engineer/compare/v0.1.0b2...v0.1.0b3
