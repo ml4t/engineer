@@ -4,8 +4,6 @@ Moving Average Type Dispatcher for TA-Lib compatibility.
 Maps TA-Lib MA type codes to ml4t.engineer implementations.
 """
 
-from typing import cast
-
 import numpy as np
 import numpy.typing as npt
 
@@ -64,19 +62,19 @@ def apply_ma(
     beyond period. Use KAMA (matype=6) as an adaptive alternative.
     """
     if matype == 0:
-        return cast(NDArrayFloat, sma_numba(close, period))
+        return sma_numba(close, period)
     elif matype == 1:
-        return cast(NDArrayFloat, ema_numba(close, period))
+        return ema_numba(close, period)
     elif matype == 2:
-        return cast(NDArrayFloat, wma_numba(close, period))
+        return wma_numba(close, period)
     elif matype == 3:
-        return cast(NDArrayFloat, dema_numba(close, period))
+        return dema_numba(close, period)
     elif matype == 4:
-        return cast(NDArrayFloat, tema_numba(close, period))
+        return tema_numba(close, period)
     elif matype == 5:
-        return cast(NDArrayFloat, trima_numba(close, period))
+        return trima_numba(close, period)
     elif matype == 6:
-        return cast(NDArrayFloat, kama_numba(close, timeperiod=period))
+        return kama_numba(close, timeperiod=period)
     elif matype == 7:
         raise ValueError(
             "MAMA (matype=7) is not supported. "
@@ -84,7 +82,7 @@ def apply_ma(
             "Use KAMA (matype=6) as an adaptive alternative."
         )
     elif matype == 8:
-        return cast(NDArrayFloat, t3_numba(close, period))
+        return t3_numba(close, period)
     else:
         raise ValueError(
             f"Invalid matype={matype}. Must be 0-8 (excluding 7). See docstring for valid MA types."

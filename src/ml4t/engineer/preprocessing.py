@@ -29,13 +29,13 @@ Example:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import polars as pl
 
 
-class ScalerMethod(str, Enum):
+class ScalerMethod(StrEnum):
     """Scaling method options."""
 
     STANDARD = "standard"  # Z-score: (x - mean) / std
@@ -489,7 +489,7 @@ class RobustScaler(BaseScaler):
 # =============================================================================
 
 
-class TransformType(str, Enum):
+class TransformType(StrEnum):
     """Transform types supported by PreprocessingPipeline.
 
     These align with ml4t.diagnostic.integration.engineer_contract.TransformType.
