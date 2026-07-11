@@ -367,6 +367,21 @@ class TestTrendScanningLabels:
         # Should have some nulls at the end
         assert null_count > 0
 
+    def test_no_directional_trend_returns_null_labels(self):
+        """Test flat prices do not default to negative labels."""
+        flat_prices = pl.DataFrame(
+            {
+                "timestamp": [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(20)],
+                "close": [100.0] * 20,
+            }
+        )
+
+        result = trend_scanning_labels(flat_prices, min_window=5, max_window=10)
+
+        assert result["label"].null_count() == result.height
+        assert result["t_value"].null_count() == result.height
+        assert result["optimal_window"].null_count() == result.height
+
 
 class TestLabelingComparison:
     """Compare different labeling methods."""

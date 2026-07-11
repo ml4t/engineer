@@ -884,7 +884,7 @@ class TestBollingerBandsComprehensive:
         u10, m10, l10 = bollinger_bands(close, period=10)
         u50, m50, l50 = bollinger_bands(close, period=50)
 
-        # Longer period has fewer NaN at start
+        # Longer period has more NaN values at the start.
         assert np.sum(np.isnan(m10)) < np.sum(np.isnan(m50))
 
         # Both should have valid values
