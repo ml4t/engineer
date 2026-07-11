@@ -190,9 +190,10 @@ class BaseConfig(BaseModel):
             return []
         except Exception as e:
             # Parse validation errors from Pydantic
-            if hasattr(e, "errors") and callable(getattr(e, "errors", None)):
+            errors_method = getattr(e, "errors", None)
+            if callable(errors_method):
                 errors = []
-                for error in e.errors():  # type: ignore[operator]
+                for error in errors_method():
                     loc = ".".join(str(x) for x in error["loc"])
                     msg = error["msg"]
                     errors.append(f"{loc}: {msg}")

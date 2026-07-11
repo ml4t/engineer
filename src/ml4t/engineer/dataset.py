@@ -47,7 +47,7 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 import polars as pl
@@ -274,8 +274,9 @@ class MLDatasetBuilder:
         >>> builder.set_scaler(PreprocessingConfig.robust())
         """
         # Handle PreprocessingConfig by creating the scaler
-        if hasattr(scaler, "create_scaler"):
-            self._scaler = scaler.create_scaler()  # type: ignore[union-attr]
+        create_scaler = getattr(scaler, "create_scaler", None)
+        if callable(create_scaler):
+            self._scaler = cast("BaseScaler | None", create_scaler())
         else:
             self._scaler = scaler
         return self

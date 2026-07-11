@@ -64,9 +64,11 @@ def volatility_percentile_rank(
     # Calculate rolling percentile rank
     # Use rolling_map to properly calculate percentile rank within each lookback window
     rank = vol.rolling_map(
-        lambda x: ((x[-1] > x[:-1]).sum() + 0.5 * (x[-1] == x[:-1]).sum()) / len(x) * 100
-        if len(x) > 0
-        else None,
+        lambda x: (
+            ((x[-1] > x[:-1]).sum() + 0.5 * (x[-1] == x[:-1]).sum()) / len(x) * 100
+            if len(x) > 0
+            else None
+        ),
         window_size=lookback,
     )
 

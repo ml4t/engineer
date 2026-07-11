@@ -72,9 +72,11 @@ def percentile_rank_features(
         # Count how many close in the window are less than or equal to current value
         # This properly calculates percentile rank within each rolling window
         rank = feature.rolling_map(
-            lambda x: ((x[-1] > x[:-1]).sum() + 0.5 * (x[-1] == x[:-1]).sum()) / len(x) * 100
-            if len(x) > 0
-            else None,
+            lambda x: (
+                ((x[-1] > x[:-1]).sum() + 0.5 * (x[-1] == x[:-1]).sum()) / len(x) * 100
+                if len(x) > 0
+                else None
+            ),
             window_size=window,
         )
         ranks[f"rank_{window}"] = rank
