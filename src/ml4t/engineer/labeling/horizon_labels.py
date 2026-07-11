@@ -389,7 +389,8 @@ def trend_scanning_labels(
 
     For each observation, fits linear trends over windows of varying lengths
     and selects the window with the highest absolute t-statistic. The label
-    is assigned based on the trend direction (sign of the t-statistic).
+    is assigned based on the trend direction when a non-zero t-statistic is
+    found. Observations with no directional trend remain null.
 
     This method is more robust than fixed-horizon labeling as it adapts to
     the local trend structure in the data.
@@ -423,9 +424,9 @@ def trend_scanning_labels(
     -------
     pl.DataFrame
         Original data with additional columns:
-        - label: ±1 based on trend direction
-        - t_value: t-statistic of the selected trend
-        - optimal_window: window size with highest |t-value|
+        - label: +1, -1, or null based on trend direction
+        - t_value: t-statistic of the selected trend, or null
+        - optimal_window: window size with highest |t-value|, or null
 
     Examples
     --------
@@ -445,7 +446,7 @@ def trend_scanning_labels(
     2. Fits a linear regression to each window
     3. Computes t-statistic for the slope coefficient
     4. Selects the window with highest absolute t-statistic
-    5. Assigns label = sign(t-statistic)
+    5. Assigns label = sign(t-statistic), or null if no directional trend is found
 
     This approach:
     - Adapts to local trend structure
