@@ -355,14 +355,19 @@ def _trend_scanning_single_group(
                 # Handle numerical issues
                 continue
 
-        # Assign label based on trend direction
-        labels[i] = 1 if best_t > 0 else -1
+        # Assign label only when a directional trend was found.
+        if best_t > 0:
+            labels[i] = 1
+        elif best_t < 0:
+            labels[i] = -1
+        else:
+            continue
         t_values[i] = best_t
         windows[i] = best_window
 
     # Add results to dataframe
     label_series = pl.Series("label", labels).fill_nan(None).cast(pl.Int8)
-    t_value_series = pl.Series("t_value", t_values)
+    t_value_series = pl.Series("t_value", t_values).fill_nan(None)
     window_series = pl.Series("optimal_window", windows).fill_nan(None).cast(pl.Int32)
 
     return data.with_columns([label_series, t_value_series, window_series])

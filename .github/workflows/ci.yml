@@ -19,13 +19,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
-          version: "latest"
+          version: "0.10.9"
 
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev
 
       - name: Run ruff check
         run: uv run ruff check src/ tests/
@@ -42,13 +42,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
-          version: "latest"
+          version: "0.10.9"
 
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev
 
       - name: Run ty check
         run: uv run ty check
@@ -67,7 +67,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
-          version: "latest"
+          version: "0.10.9"
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -83,7 +83,7 @@ jobs:
           sudo ldconfig
 
       - name: Install dependencies
-        run: uv sync --dev --extra ta
+        run: uv sync --python ${{ matrix.python-version }} --dev --extra ta
 
       - name: Run tests
         run: |
@@ -113,7 +113,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
-          version: "latest"
+          version: "0.10.9"
 
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}

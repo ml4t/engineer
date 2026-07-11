@@ -1423,7 +1423,7 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
     { name = "ml4t-specs", specifier = ">=0.1.0b0" },
     { name = "numba", specifier = ">=0.57.0" },
-    { name = "numpy", specifier = ">=1.24.0,<2.5" },
+    { name = "numpy", specifier = ">=1.24.0,<2.6" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pandas-market-calendars", marker = "extra == 'all'", specifier = ">=4.0.0" },
     { name = "pandas-market-calendars", marker = "extra == 'calendars'", specifier = ">=4.0.0" },
