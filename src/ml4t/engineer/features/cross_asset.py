@@ -97,22 +97,18 @@ def rolling_correlation(
     if min_periods is None:
         min_periods = window // 2
 
-    # Standardize series
-    mean1 = series1.rolling_mean(window, min_samples=min_periods)
-    mean2 = series2.rolling_mean(window, min_samples=min_periods)
-    std1 = series1.rolling_std(window, min_samples=min_periods)
-    std2 = series2.rolling_std(window, min_samples=min_periods)
+    # Delegate to Polars' native rolling correlation.
+    #
+    # This previously built the estimator by hand as
+    #     cov = ((s1 - rolling_mean(s1)) * (s2 - rolling_mean(s2))).rolling_mean(w)
+    # which is NOT a covariance: for a point s inside the window ending at t it
+    # subtracts the mean of the window ending at *s*, not the mean of the window
+    # being averaged. Combined with a rolling_mean numerator (divides by n) over a
+    # rolling_std denominator (divides by n-1), the result failed the defining
+    # identity corr(x, x) == 1 (it returned ~0.974 on daily returns at window=60).
+    corr = pl.rolling_corr(series1, series2, window_size=window, min_samples=min_periods)
 
-    # Calculate covariance
-    cov = ((series1 - mean1) * (series2 - mean2)).rolling_mean(
-        window,
-        min_samples=min_periods,
-    )
-
-    # Correlation = covariance / (std1 * std2)
-    corr = cov / (std1 * std2 + 1e-10)
-
-    return corr.clip(-1, 1)  # Ensure valid correlation range
+    return corr.clip(-1, 1)  # Guard float error at the +/-1 boundary
 
 
 def beta_to_market(
@@ -164,20 +160,26 @@ def beta_to_market(
     if min_periods is None:
         min_periods = window // 2
 
-    # Calculate covariance and market variance
-    mean_asset = asset_returns.rolling_mean(window, min_samples=min_periods)
-    mean_market = market_returns.rolling_mean(window, min_samples=min_periods)
-
-    covariance = ((asset_returns - mean_asset) * (market_returns - mean_market)).rolling_mean(
-        window,
+    # Beta = Cov(asset, market) / Var(market), both over the SAME window and with the
+    # same ddof so the identity beta(x, x) == 1 holds exactly.
+    #
+    # This previously hand-rolled the covariance as
+    #     ((a - rolling_mean(a)) * (m - rolling_mean(m))).rolling_mean(w)
+    # which is not a covariance: for a point s inside the window ending at t it
+    # subtracts the mean of the window ending at *s*, not the mean of the window being
+    # averaged. That numerator also divides by n while the rolling_var denominator
+    # divides by n-1. The result was biased low by ~2.4% on daily equity returns and
+    # returned 0.977 for an asset regressed on itself, where 1.0 is the only correct
+    # answer. Polars' rolling_cov and rolling_var both default to ddof=1.
+    covariance = pl.rolling_cov(
+        asset_returns,
+        market_returns,
+        window_size=window,
         min_samples=min_periods,
     )
     market_variance = market_returns.rolling_var(window, min_samples=min_periods)
 
-    # Beta = Cov(asset, market) / Var(market)
-    beta = covariance / (market_variance + 1e-10)
-
-    return beta
+    return covariance / market_variance
 
 
 def correlation_regime_indicator(

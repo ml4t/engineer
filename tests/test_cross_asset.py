@@ -103,6 +103,71 @@ class TestCrossAssetFeatures:
         beta_values = result["beta"].drop_nulls()
         assert 0.5 < beta_values.mean() < 1.2
 
+    def test_beta_to_market_self_beta_is_one(self, sample_data):
+        """Beta of a series against itself must be exactly 1.
+
+        This is the defining identity Cov(x, x) / Var(x) == 1. It is the cheapest
+        possible check on the estimator and it is what the original hand-rolled
+        implementation failed: it subtracted each point's own trailing mean before
+        averaging the products (not a covariance) and mixed a divide-by-n numerator
+        with a divide-by-(n-1) denominator, returning ~0.977 on daily returns.
+        """
+        result = sample_data.select(
+            beta_to_market("market_returns", "market_returns", window=30).alias("beta"),
+        )
+        beta_values = result["beta"].drop_nulls()
+
+        assert len(beta_values) > 0
+        assert beta_values.min() == pytest.approx(1.0, abs=1e-9)
+        assert beta_values.max() == pytest.approx(1.0, abs=1e-9)
+
+    def test_beta_to_market_recovers_known_beta(self):
+        """A noiseless linear relationship must return its exact slope."""
+        rng = np.random.default_rng(0)
+        market = rng.normal(0, 0.01, 200)
+        for true_beta in (0.5, 1.0, 1.75, -0.4):
+            df = pl.DataFrame({"m": market, "a": true_beta * market})
+            beta_values = df.select(
+                beta_to_market("a", "m", window=30).alias("beta"),
+            )["beta"].drop_nulls()
+            assert beta_values.mean() == pytest.approx(true_beta, abs=1e-9)
+
+    def test_beta_to_market_undefined_when_market_is_constant(self):
+        """A zero-variance market makes beta undefined; it must not silently read 0.
+
+        The previous implementation added 1e-10 to the denominator, so a constant
+        market returned beta == 0.0 - a fabricated "no market sensitivity" reading
+        for a quantity that does not exist. NaN propagates visibly instead.
+        """
+        rng = np.random.default_rng(1)
+        df = pl.DataFrame({"a": rng.normal(0, 0.01, 100), "m": np.zeros(100)})
+        beta = df.select(beta_to_market("a", "m", window=30).alias("beta"))["beta"]
+
+        finite = [v for v in beta.to_list() if v is not None and not np.isnan(v)]
+        assert finite == []
+
+    def test_rolling_correlation_self_correlation_is_one(self, sample_data):
+        """Correlation of a series with itself must be exactly 1."""
+        result = sample_data.select(
+            rolling_correlation("market_returns", "market_returns", window=30).alias("corr"),
+        )
+        corr_values = result["corr"].drop_nulls()
+
+        assert len(corr_values) > 0
+        assert corr_values.min() == pytest.approx(1.0, abs=1e-9)
+
+    def test_rolling_correlation_matches_numpy(self, sample_data):
+        """Rolling correlation must agree with numpy on the trailing window."""
+        window = 30
+        result = sample_data.select(
+            rolling_correlation("asset1_returns", "asset2_returns", window=window).alias("corr"),
+        )
+        a = sample_data["asset1_returns"].to_numpy()
+        b = sample_data["asset2_returns"].to_numpy()
+        expected = np.corrcoef(a[-window:], b[-window:])[0, 1]
+
+        assert result["corr"][-1] == pytest.approx(expected, abs=1e-9)
+
     def test_correlation_regime_indicator(self, sample_data):
         """Test correlation regime identification."""
         # First calculate correlation

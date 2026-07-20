@@ -318,7 +318,13 @@ class TestPropertyBasedValidation:
         if "rolling_correlation" not in result.columns:
             return
 
-        corr_values = result["rolling_correlation"].drop_nulls()
+        # Correlation is undefined when either window is constant (0/0), and Hypothesis
+        # will find that case. Drop NaN as well as null: in Polars a float NaN is NOT a
+        # null, so drop_nulls() alone leaves NaN in the series, and every comparison
+        # against NaN is False - so the bounds assertion below would fail on a value
+        # that is not a bounds violation at all. (Same drop_nulls-misses-NaN trap that
+        # produced the ch08 feature-selection defect recorded as erratum E8.2.)
+        corr_values = result["rolling_correlation"].drop_nulls().drop_nans()
 
         if len(corr_values) > 0:
             assert (corr_values >= -1.0).all()

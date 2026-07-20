@@ -250,14 +250,25 @@ class TestDMIndicators:
 
         import time
 
-        # Test PLUS_DM
-        start = time.perf_counter()
-        _ = plus_dm(high, low, timeperiod=14)
-        our_plus_time = time.perf_counter() - start
+        def best_of(fn, *args, repeats: int = 7, **kwargs) -> float:
+            """Fastest of `repeats` runs.
 
-        start = time.perf_counter()
-        _ = talib.PLUS_DM(high, low, timeperiod=14)
-        talib_plus_time = time.perf_counter() - start
+            A single perf_counter sample is dominated by scheduler noise on a loaded
+            machine, which made this test flake (it failed roughly one run in three in
+            isolation while the implementation was unchanged). The minimum is the
+            standard robust estimator for a microbenchmark: noise only ever adds time,
+            so the fastest observed run is the closest estimate of the true cost.
+            """
+            best = float("inf")
+            for _ in range(repeats):
+                start = time.perf_counter()
+                fn(*args, **kwargs)
+                best = min(best, time.perf_counter() - start)
+            return best
+
+        # Test PLUS_DM
+        our_plus_time = best_of(plus_dm, high, low, timeperiod=14)
+        talib_plus_time = best_of(talib.PLUS_DM, high, low, timeperiod=14)
 
         print(f"\nPLUS_DM Performance ({len(high):,} rows):")
         print(f"Our implementation: {our_plus_time * 1000:.2f}ms")
@@ -265,13 +276,8 @@ class TestDMIndicators:
         print(f"Ratio: {our_plus_time / talib_plus_time:.2f}x")
 
         # Test MINUS_DM
-        start = time.perf_counter()
-        _ = minus_dm(high, low, timeperiod=14)
-        our_minus_time = time.perf_counter() - start
-
-        start = time.perf_counter()
-        _ = talib.MINUS_DM(high, low, timeperiod=14)
-        talib_minus_time = time.perf_counter() - start
+        our_minus_time = best_of(minus_dm, high, low, timeperiod=14)
+        talib_minus_time = best_of(talib.MINUS_DM, high, low, timeperiod=14)
 
         print(f"\nMINUS_DM Performance ({len(high):,} rows):")
         print(f"Our implementation: {our_minus_time * 1000:.2f}ms")
