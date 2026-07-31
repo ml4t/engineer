@@ -53,13 +53,14 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import numpy as np
 import polars as pl
 
+from ml4t.engineer.config.preprocessing_config import PreprocessingConfig
 from ml4t.engineer.preprocessing import BaseScaler, StandardScaler
 
 if TYPE_CHECKING:
+    from datetime import date, datetime
+
     import pandas as pd
     from numpy.typing import NDArray
-
-    from ml4t.engineer.config import PreprocessingConfig
 
 
 class SplitterProtocol(Protocol):
@@ -304,8 +305,8 @@ class MLDatasetBuilder:
 
         if self.dates is None:
             return
-        train_max = self.dates.gather(train_idx).max()
-        test_min = self.dates.gather(test_idx).min()
+        train_max = cast("date | datetime", self.dates.gather(train_idx).max())
+        test_min = cast("date | datetime", self.dates.gather(test_idx).min())
         if train_max >= test_min:
             raise ValueError(
                 f"Fold {fold_number} training dates must strictly precede test dates; "
@@ -361,11 +362,14 @@ class MLDatasetBuilder:
         >>> builder.set_scaler(PreprocessingConfig.robust())
         """
         # Handle PreprocessingConfig by creating the scaler
-        create_scaler = getattr(scaler, "create_scaler", None)
-        if callable(create_scaler):
-            self._scaler = cast("BaseScaler | None", create_scaler())
-        else:
+        if scaler is None or isinstance(scaler, BaseScaler):
             self._scaler = scaler
+        elif isinstance(scaler, PreprocessingConfig):
+            self._scaler = scaler.create_scaler()
+        else:
+            raise TypeError(
+                f"scaler must be BaseScaler, PreprocessingConfig, or None. Got {type(scaler)}"
+            )
         return self
 
     @property
@@ -744,9 +748,6 @@ def create_dataset_builder(
 
     if scaler is None:
         pass
-    elif hasattr(scaler, "create_scaler"):
-        # PreprocessingConfig - use set_scaler which handles the conversion
-        builder.set_scaler(scaler)  # type: ignore[arg-type]
     elif isinstance(scaler, str):
         scaler_map = {
             "standard": StandardScaler,
@@ -758,7 +759,7 @@ def create_dataset_builder(
                 f"Unknown scaler: {scaler}. Options: {list(scaler_map.keys())} or None"
             )
         builder.set_scaler(scaler_map[scaler.lower()]())
-    elif isinstance(scaler, BaseScaler):
+    elif isinstance(scaler, BaseScaler | PreprocessingConfig):
         builder.set_scaler(scaler)
     else:
         raise TypeError(

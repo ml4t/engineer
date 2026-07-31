@@ -64,7 +64,7 @@ from __future__ import annotations
 
 import math
 from numbers import Real
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import polars as pl
 
@@ -261,7 +261,7 @@ def atr_triple_barrier_labels(
         if max_holding_bars is None and isinstance(config.max_holding_period, int | str):
             max_holding_bars = config.max_holding_period
         if side is None:
-            side = config.side  # type: ignore[assignment]
+            side = cast("Literal[1, -1, 0] | str | None", config.side)
         if trailing_stop is False and config.trailing_stop is not False:
             trailing_stop = config.trailing_stop
 

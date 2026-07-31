@@ -27,25 +27,20 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-try:
-    import duckdb
-
-    HAS_DUCKDB = True
-except ImportError:
-    HAS_DUCKDB = False
-    duckdb = None  # type: ignore[assignment]
-
-try:
-    import polars as pl
-
-    HAS_POLARS = True
-except ImportError:
-    HAS_POLARS = False
-    pl = None  # type: ignore[assignment]
+import polars as pl
 
 if TYPE_CHECKING:
     import duckdb
-    import polars as pl
+
+    HAS_DUCKDB = True
+else:
+    try:
+        import duckdb
+
+        HAS_DUCKDB = True
+    except ImportError:
+        HAS_DUCKDB = False
+        duckdb = None
 
 
 class FeatureStoreError(Exception):
@@ -121,9 +116,6 @@ class OfflineFeatureStore:
         """
         if not HAS_DUCKDB:
             raise FeatureStoreError("DuckDB not installed. Install with: pip install duckdb")
-
-        if not HAS_POLARS:
-            raise FeatureStoreError("Polars not installed. Install with: pip install polars")
 
         self.path = Path(path) if path else None
         self.read_only = read_only

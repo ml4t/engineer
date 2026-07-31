@@ -300,7 +300,7 @@ def rolling_percentile_binary_labels(
     """
     percentile_label = _canonical_percentile(percentile)
     horizon_label, is_time_based_horizon = _canonical_horizon(horizon)
-    bar_horizon = None if is_time_based_horizon else int(horizon)
+    bar_horizon = horizon if isinstance(horizon, int) else 0
     is_time_based_lookback = _validate_lookback_window(lookback_window)
     if direction not in {"long", "short"}:
         raise ValueError(f"Invalid direction: {direction}. Must be 'long' or 'short'.")
@@ -334,7 +334,8 @@ def rolling_percentile_binary_labels(
     # Step 1: Compute forward returns
     if is_time_based_horizon:
         # Time-based forward returns using join_asof
-        td = parse_duration(horizon)  # type: ignore[arg-type]
+        assert isinstance(horizon, str)
+        td = parse_duration(horizon)
         lookup = _get_future_price_lookup(
             data=result,
             time_horizon=td,
@@ -434,6 +435,7 @@ def rolling_percentile_binary_labels(
 
     decision_index_col = resolved_ts_col if is_time_based_lookback else row_index_col
     availability_col = availability_time_col if is_time_based_lookback else availability_row_col
+    assert decision_index_col is not None
     rolling_threshold = _rolling_realized_quantile(
         result=result,
         forward_return_col=forward_return_col,
