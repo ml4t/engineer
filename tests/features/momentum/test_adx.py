@@ -175,8 +175,7 @@ class TestValidation:
         low = high - 1
         close = high - 0.5
 
-        # ADX raises ZeroDivisionError for period=0
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(ValueError, match="period must be at least 2"):
             adx(high, low, close, period=0)
 
     def test_invalid_period_negative(self):
@@ -185,10 +184,8 @@ class TestValidation:
         low = high - 1
         close = high - 0.5
 
-        # ADX with negative period has undefined behavior but doesn't crash
-        # It may return values or NaN depending on implementation
-        result = adx(high, low, close, period=-1)
-        assert result is not None  # Just verify it returns something
+        with pytest.raises(ValueError, match="period must be at least 2"):
+            adx(high, low, close, period=-1)
 
     def test_mismatched_array_lengths(self):
         """Test ADX with mismatched array lengths."""
@@ -196,14 +193,8 @@ class TestValidation:
         low = np.random.randn(50)  # Different length
         close = np.random.randn(100)
 
-        # Should handle gracefully or raise
-        try:
-            result = adx(high, low, close, period=14)
-            # If it doesn't raise, should return something valid
-            assert result is not None
-        except (ValueError, IndexError):
-            # Or it might raise - both are acceptable
-            pass
+        with pytest.raises(ValueError, match="must have the same length"):
+            adx(high, low, close, period=14)
 
 
 class TestNumericalAccuracy:

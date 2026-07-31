@@ -49,6 +49,9 @@ def ad_numba(
         A/D Line close
     """
     n = len(high)
+    if len(low) != n or len(close) != n or len(volume) != n:
+        raise ValueError("high, low, close, and volume must have the same length")
+
     result = np.zeros(n)
     ad_value = 0.0
 
