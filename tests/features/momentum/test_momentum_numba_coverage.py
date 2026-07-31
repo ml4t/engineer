@@ -501,8 +501,14 @@ class TestMACDNumbaDirectCoverage:
         """Test INT_EMA with insufficient data (lines 43-45)."""
         close = np.array([100.0, 101.0])
         result = _int_ema_talib_nb(close, start_idx=5, end_idx=10, period=5, k=0.333)
-        # start_idx > len(close) -> all NaN
+        assert result.shape == close.shape
         assert np.all(np.isnan(result))
+
+    def test_int_ema_talib_clamps_end_to_input(self):
+        """Test INT_EMA does not read beyond the input range."""
+        close = np.array([100.0, 102.0, 104.0, 106.0])
+        result = _int_ema_talib_nb(close, start_idx=2, end_idx=10, period=3, k=0.5)
+        np.testing.assert_allclose(result[2:], [102.0, 104.0])
 
     def test_int_ema_talib_start_after_end(self):
         """Test INT_EMA when start > end (lines 43-45)."""

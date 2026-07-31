@@ -30,12 +30,15 @@ def _int_ema_talib_nb(
     """
     n = len(close)
     result = np.full(n, np.nan)
+    if n == 0 or period <= 0:
+        return result
 
     # Calculate lookback exactly like TA-Lib
     lookback_total = period - 1
 
     # Move up start if not enough data (line 291-292)
     start_idx = max(start_idx, lookback_total)
+    end_idx = min(end_idx, n - 1)
 
     # Check if anything to evaluate (line 295-300)
     if start_idx > end_idx:
