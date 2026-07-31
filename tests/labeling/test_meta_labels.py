@@ -14,6 +14,7 @@ import pytest
 from ml4t.engineer.labeling import (
     apply_meta_model,
     compute_bet_size,
+    fixed_time_horizon_labels,
     meta_labels,
 )
 
@@ -117,6 +118,51 @@ class TestMetaLabels:
         assert "fwd_return" in result.columns
         assert len(result.columns) == 3  # original 2 + meta_label
 
+    def test_missing_signal_or_return_remains_unknown(self):
+        """Test that incomplete outcomes do not become negative targets."""
+        data = pl.DataFrame(
+            {
+                "signal": [1.0, None, 0.0],
+                "fwd_return": [None, 0.01, None],
+            }
+        )
+
+        result = meta_labels(data, "signal", "fwd_return")
+
+        assert result["meta_label"].to_list() == [None, None, None]
+
+    def test_preserves_fixed_horizon_tail_as_unknown(self):
+        """Test that unavailable forward returns remain unavailable meta-labels."""
+        data = pl.DataFrame({"price": [100.0, 101.0, 102.0], "signal": [1, 1, 1]})
+        labeled = fixed_time_horizon_labels(
+            data,
+            horizon=1,
+            method="returns",
+            price_col="price",
+            group_col=[],
+        )
+
+        result = meta_labels(labeled, "signal", "label_return_1p")
+
+        assert result["meta_label"].to_list() == [1, 1, None]
+
+    @pytest.mark.parametrize("column", ["signal", "fwd_return"])
+    @pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+    def test_rejects_nonfinite_inputs(self, column, value):
+        """Test that undefined numeric inputs cannot create training targets."""
+        data = pl.DataFrame({"signal": [1.0], "fwd_return": [0.01]}).with_columns(
+            pl.lit(value).alias(column)
+        )
+
+        with pytest.raises(ValueError, match="finite"):
+            meta_labels(data, "signal", "fwd_return")
+
+    @pytest.mark.parametrize("threshold", [-0.01, np.nan, np.inf, -np.inf])
+    def test_rejects_invalid_threshold(self, signal_data, threshold):
+        """Test that the profitability threshold is finite and non-negative."""
+        with pytest.raises(ValueError, match="threshold"):
+            meta_labels(signal_data, "signal", "fwd_return", threshold=threshold)
+
 
 # =============================================================================
 # Tests for compute_bet_size
@@ -212,6 +258,18 @@ class TestComputeBetSize:
                 compute_bet_size("prob", method="unknown").alias("bet_size")  # type: ignore[arg-type]
             )
 
+    @pytest.mark.parametrize("scale", [0.0, -1.0, np.nan, np.inf, -np.inf])
+    def test_sigmoid_rejects_invalid_scale(self, scale):
+        """Test that sigmoid scale is finite and positive."""
+        with pytest.raises(ValueError, match="scale"):
+            compute_bet_size("prob", method="sigmoid", scale=scale)
+
+    @pytest.mark.parametrize("threshold", [-0.1, 1.1, np.nan, np.inf, -np.inf])
+    def test_discrete_rejects_invalid_threshold(self, threshold):
+        """Test that discrete thresholds are valid probabilities."""
+        with pytest.raises(ValueError, match="threshold"):
+            compute_bet_size("prob", method="discrete", threshold=threshold)
+
 
 # =============================================================================
 # Tests for apply_meta_model
@@ -231,15 +289,11 @@ class TestApplyMetaModel:
         assert sized > 0.5  # High probability should give strong signal
 
     def test_low_prob_short_signal(self, full_pipeline_data):
-        """Test low probability dampens short signal."""
+        """Test low probability filters a short signal."""
         result = apply_meta_model(
             full_pipeline_data, "signal", "meta_prob", bet_size_method="sigmoid"
         )
-        # Row 1: signal=-1, prob=0.3 -> weak negative (low confidence)
-        sized = result["sized_signal"][1]
-        # Direction is negative (short), but magnitude is reduced
-        assert sized < 0  # Still negative (short direction)
-        assert abs(sized) < 0.5  # But weak (low probability)
+        assert result["sized_signal"][1] == 0.0
 
     def test_half_prob_gives_near_zero(self, full_pipeline_data):
         """Test that 0.5 probability gives near-zero sized signal."""
@@ -293,6 +347,60 @@ class TestApplyMetaModel:
         # Row 1: signal=-1, prob=0.3 <= 0.5 -> sized = -1 * 0 = 0
         assert result["sized_signal"][1] == 0.0
 
+    @pytest.mark.parametrize(
+        ("method", "kwargs"),
+        [
+            ("linear", {}),
+            ("sigmoid", {"scale": 5.0}),
+            ("discrete", {"threshold": 0.6}),
+        ],
+    )
+    @pytest.mark.parametrize("direction", [-1, 1])
+    def test_magnitude_is_monotonic_in_success_probability(self, method, kwargs, direction):
+        """Test the central meta-model sizing invariant for both directions."""
+        data = pl.DataFrame(
+            {
+                "signal": [direction] * 5,
+                "meta_prob": [0.0, 0.25, 0.5, 0.75, 1.0],
+            }
+        )
+
+        result = apply_meta_model(
+            data,
+            "signal",
+            "meta_prob",
+            bet_size_method=method,
+            **kwargs,
+        )
+        sized = result["sized_signal"].to_numpy()
+
+        assert np.all(np.diff(np.abs(sized)) >= 0)
+        assert np.all(sized * direction >= 0)
+        assert sized[0] == 0.0
+        assert abs(sized[-1]) > 0.0
+
+    @pytest.mark.parametrize("value", [-0.1, 1.1, np.nan, np.inf, -np.inf])
+    def test_rejects_invalid_probabilities(self, value):
+        """Test that sized signals require finite probabilities in [0, 1]."""
+        data = pl.DataFrame({"signal": [1.0], "meta_prob": [value]})
+
+        with pytest.raises(ValueError, match="probability"):
+            apply_meta_model(data, "signal", "meta_prob")
+
+    @pytest.mark.parametrize("method", ["linear", "sigmoid", "discrete"])
+    def test_missing_probability_or_signal_propagates(self, method):
+        """Test that unavailable sizing inputs produce unavailable positions."""
+        data = pl.DataFrame(
+            {
+                "signal": [1.0, None, 0.0],
+                "meta_prob": [None, 0.9, None],
+            }
+        )
+
+        result = apply_meta_model(data, "signal", "meta_prob", bet_size_method=method)
+
+        assert result["sized_signal"].to_list() == [None, None, None]
+
 
 # =============================================================================
 # Integration Tests
@@ -338,9 +446,9 @@ class TestMetaLabelingPipeline:
         assert sized[0] > 0.5  # Long, high prob
         assert sized[1] < -0.5  # Short, high prob
 
-        # Low confidence wrong predictions -> small magnitude
-        assert 0 < sized[2] < 0.5  # Long, low prob (still positive direction)
-        assert -0.5 < sized[3] < 0  # Short, low prob
+        # Low-confidence predictions are filtered
+        assert sized[2] == 0.0
+        assert sized[3] == 0.0
 
     def test_transaction_cost_threshold(self):
         """Test using threshold to filter trades below transaction cost."""

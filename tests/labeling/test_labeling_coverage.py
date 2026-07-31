@@ -135,6 +135,7 @@ class TestCalculateSampleWeights:
             weights = calculate_sample_weights(uniqueness, returns, scheme)
             assert len(weights) == 3
             assert all(w >= 0 for w in weights)
+            assert np.isclose(weights.sum(), len(weights))
 
     def test_zero_total_weight_fallback(self):
         """Test fallback when total weight is zero."""
@@ -145,6 +146,57 @@ class TestCalculateSampleWeights:
 
         # Should fall back to uniform weights
         assert_array_almost_equal(weights, [1.0, 1.0, 1.0])
+
+    def test_unknown_scheme_raises_error(self):
+        """Test that a misspelled scheme cannot silently select equal weights."""
+        with pytest.raises(ValueError, match="weight_scheme"):
+            calculate_sample_weights(
+                np.array([0.5]),
+                np.array([0.01]),
+                "return_uniqueness",  # type: ignore[arg-type]
+            )
+
+    @pytest.mark.parametrize("input_name", ["uniqueness", "returns"])
+    @pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+    def test_nonfinite_inputs_raise_error(self, input_name, value):
+        """Test that non-finite inputs cannot silently produce equal weights."""
+        inputs = {
+            "uniqueness": np.array([0.5], dtype=np.float64),
+            "returns": np.array([0.01], dtype=np.float64),
+        }
+        inputs[input_name][0] = value
+
+        with pytest.raises(ValueError, match="finite"):
+            calculate_sample_weights(inputs["uniqueness"], inputs["returns"])
+
+    @pytest.mark.parametrize("value", [-0.1, 1.1])
+    def test_uniqueness_outside_unit_interval_raises_error(self, value):
+        """Test that invalid uniqueness scores are rejected."""
+        with pytest.raises(ValueError, match="uniqueness"):
+            calculate_sample_weights(np.array([value]), np.array([0.01]))
+
+    @pytest.mark.parametrize(
+        ("uniqueness", "returns"),
+        [
+            (np.array([[0.5]]), np.array([0.01])),
+            (np.array([0.5]), np.array([[0.01]])),
+        ],
+    )
+    def test_non_vector_inputs_raise_error(self, uniqueness, returns):
+        """Test that sample weights require one-dimensional input vectors."""
+        with pytest.raises(ValueError, match="one-dimensional"):
+            calculate_sample_weights(uniqueness, returns)
+
+    @pytest.mark.parametrize("scheme", ["returns_uniqueness", "returns_only"])
+    def test_return_weighting_is_scale_invariant(self, scheme):
+        """Test normalization removes a uniform change in return units."""
+        uniqueness = np.array([0.2, 0.5, 1.0])
+        returns = np.array([-0.01, 0.02, 0.04])
+
+        base = calculate_sample_weights(uniqueness, returns, scheme)
+        scaled = calculate_sample_weights(uniqueness, returns * 100.0, scheme)
+
+        assert_array_almost_equal(base, scaled)
 
 
 class TestSequentialBootstrap:
