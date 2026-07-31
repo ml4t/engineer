@@ -118,6 +118,9 @@ class TestFeatureCatalogList:
         result = catalog.list(ta_lib_compatible=True)
         assert len(result) == 4
 
+    def test_list_not_ta_lib_compatible(self, catalog):
+        assert catalog.list(ta_lib_compatible=False) == []
+
     def test_list_by_input_type(self, catalog):
         result = catalog.list(input_type="close")
         assert set(result) == {"rsi", "sma", "macd"}
@@ -125,6 +128,10 @@ class TestFeatureCatalogList:
     def test_list_by_input_type_ohlcv(self, catalog):
         result = catalog.list(input_type="OHLCV")
         assert result == ["atr"]
+
+    def test_list_by_output_type(self, catalog):
+        assert catalog.list(output_type="indicator") == ["atr", "macd", "rsi", "sma"]
+        assert catalog.list(output_type="label") == []
 
     def test_list_with_tags(self, catalog):
         result = catalog.list(tags=["momentum"])
@@ -174,6 +181,17 @@ class TestFeatureCatalogDescribe:
         with pytest.raises(KeyError, match="not found"):
             catalog.describe("nonexistent")
 
+    def test_describe_tolerates_unavailable_lookback(self, registry):
+        metadata = registry.get("rsi")
+        assert metadata is not None
+
+        def unavailable(**_parameters):
+            raise ValueError("not configurable")
+
+        metadata.lookback = unavailable
+
+        assert FeatureCatalog(registry).describe("rsi")["lookback_period"] is None
+
 
 class TestFeatureCatalogSearch:
     """Tests for FeatureCatalog.search()."""
@@ -218,6 +236,16 @@ class TestFeatureCatalogSearch:
         assert "rsi" in names
         assert "macd" in names
 
+    def test_search_category_references_and_unknown_fields(self, registry):
+        metadata = registry.get("rsi")
+        assert metadata is not None
+        metadata.references.append("Wilder 1978")
+        catalog = FeatureCatalog(registry)
+
+        assert catalog.search("momentum", search_fields=["category"])
+        assert catalog.search("Wilder", search_fields=["references"]) == [("rsi", 0.5)]
+        assert catalog.search("rsi", search_fields=["unknown"]) == []
+
 
 class TestFeatureCatalogConvenience:
     """Tests for convenience methods."""
@@ -231,6 +259,17 @@ class TestFeatureCatalogConvenience:
         assert "rsi" in result
         assert "atr" in result
         assert "macd" not in result  # lookback = 35
+
+    def test_by_lookback_skips_unavailable_metadata(self, registry):
+        metadata = registry.get("rsi")
+        assert metadata is not None
+
+        def unavailable(**_parameters):
+            raise ValueError("not configurable")
+
+        metadata.lookback = unavailable
+
+        assert "rsi" not in FeatureCatalog(registry).by_lookback(100)
 
     def test_configured_lookback(self, catalog):
         assert catalog.lookback("sma", period=50) == 50

@@ -79,7 +79,7 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
     ci_jobs = _load_workflow("ci.yml")["jobs"]
     build_steps = ci_jobs["build"]["steps"]
     build_commands = {step["name"]: step["run"] for step in build_steps if "run" in step}
-    assert ci_jobs["build"]["needs"] == ["lint", "typecheck", "security", "test"]
+    assert ci_jobs["build"]["needs"] == ["lint", "typecheck", "security", "test", "coverage"]
     assert "twine check dist/*" in build_commands["Validate package metadata"]
     assert "uv pip install" in build_commands["Validate wheel installation"]
     assert 'python -c "import ml4t.engineer"' in build_commands["Validate wheel installation"]
@@ -92,6 +92,20 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
     publish_steps = release_jobs["publish"]["steps"]
     download = next(step for step in publish_steps if step["name"] == "Download build artifacts")
     assert download["with"] == {"name": "dist", "path": "dist/"}
+
+
+def test_ci_enforces_independent_line_and_branch_coverage_thresholds() -> None:
+    coverage_steps = _load_workflow("ci.yml")["jobs"]["coverage"]["steps"]
+    commands = {step["name"]: step["run"] for step in coverage_steps if "run" in step}
+    measurement = next(
+        step for step in coverage_steps if step.get("name") == "Measure line and branch coverage"
+    )
+
+    assert measurement["env"] == {"NUMBA_DISABLE_JIT": "1"}
+    assert "--cov-report=json:coverage.json" in commands["Measure line and branch coverage"]
+    assert commands["Enforce release thresholds"] == (
+        "uv run python scripts/check_coverage.py coverage.json"
+    )
 
 
 def test_ci_audits_core_and_complete_locked_environments() -> None:

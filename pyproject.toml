@@ -266,6 +266,7 @@ include = ["src"]
 exclude = ["tests", "benchmarks", "examples", "docs"]
 
 [tool.coverage.run]
+branch = true
 source = ["src/ml4t/engineer"]
 omit = [
     "*/tests/*",

@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+import polars as pl
 import pytest
 import yaml
 
@@ -440,6 +441,64 @@ class TestStandaloneLabelingRoundtrip:
 
         assert loaded.max_holding_period == holding_period
         assert type(loaded.max_holding_period) is type(holding_period)
+
+
+class TestPreprocessingConfig:
+    """Scaler factories preserve every configured parameter."""
+
+    def test_standard_factory_and_scaler(self):
+        config = PreprocessingConfig.standard(
+            with_mean=False,
+            with_std=True,
+            columns=["a"],
+        )
+
+        scaler = config.create_scaler()
+        assert scaler is not None
+        assert config.scaler == "standard"
+        assert scaler.with_mean is False
+        assert scaler.with_std is True
+        transformed = scaler.fit_transform(pl.DataFrame({"a": [1.0, 2.0], "b": [9.0, 8.0]}))
+        assert transformed["b"].to_list() == [9.0, 8.0]
+        assert scaler.to_dict()["config"]["columns"] == ["a"]
+
+    def test_minmax_factory_and_scaler(self):
+        config = PreprocessingConfig.minmax(
+            feature_range=(-1.0, 2.0),
+            columns=["a"],
+        )
+
+        scaler = config.create_scaler()
+        assert scaler is not None
+        assert config.scaler == "minmax"
+        assert scaler.feature_range == (-1.0, 2.0)
+        transformed = scaler.fit_transform(pl.DataFrame({"a": [1.0, 3.0], "b": [9.0, 8.0]}))
+        assert transformed["a"].to_list() == [-1.0, 2.0]
+        assert scaler.to_dict()["config"]["columns"] == ["a"]
+
+    def test_robust_factory_and_scaler(self):
+        config = PreprocessingConfig.robust(
+            with_centering=False,
+            with_scaling=False,
+            quantile_range=(10.0, 80.0),
+            columns=["a"],
+        )
+
+        scaler = config.create_scaler()
+        assert scaler is not None
+        assert config.scaler == "robust"
+        assert scaler.with_centering is False
+        assert scaler.with_scaling is False
+        assert scaler.quantile_range == (10.0, 80.0)
+        data = pl.DataFrame({"a": [1.0, 3.0], "b": [9.0, 8.0]})
+        assert scaler.fit_transform(data).equals(data)
+        assert scaler.to_dict()["config"]["columns"] == ["a"]
+
+    def test_none_factory_has_no_scaler(self):
+        config = PreprocessingConfig.none()
+
+        assert config.scaler is None
+        assert config.create_scaler() is None
 
 
 class TestExperimentConfigDataclass:

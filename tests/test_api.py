@@ -14,9 +14,10 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+import ml4t.engineer.api as api
 from ml4t.engineer.api import compute_features
 from ml4t.engineer.core.exceptions import DataSchemaError
-from ml4t.engineer.core.registry import get_registry
+from ml4t.engineer.core.registry import FeatureMetadata, FeatureRegistry, get_registry
 
 
 @pytest.fixture
@@ -419,3 +420,253 @@ def test_features_without_params_raises_clear_error(sample_ohlcv_data):
     """Test that unregistered features raise a clear error."""
     with pytest.raises(ValueError, match="not found in registry"):
         compute_features(sample_ohlcv_data, ["nonexistent_feature_xyz"])
+
+
+@pytest.mark.parametrize(
+    ("feature_spec", "match"),
+    [
+        ([1], "every list item"),
+        ([{"name": "sma", "unknown": True}], "Unknown feature spec fields"),
+        ([{"name": ""}], "non-empty string"),
+        ([{"name": "sma", "params": []}], "params must be a mapping"),
+        ([{"name": "sma", "output": 1}], "output must be a non-empty string"),
+    ],
+)
+def test_malformed_feature_specs_are_rejected_before_execution(
+    sample_ohlcv_data: pl.DataFrame,
+    feature_spec: object,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        compute_features(sample_ohlcv_data, feature_spec)  # type: ignore[arg-type]
+
+
+def test_yaml_document_requires_a_feature_list(
+    sample_ohlcv_data: pl.DataFrame,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "invalid.yaml"
+    path.write_text("metadata: {}\n")
+
+    with pytest.raises(ValueError, match="Invalid YAML format"):
+        compute_features(sample_ohlcv_data, path)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"group_col": "missing"}, "Grouping columns not found"),
+        ({"timestamp_col": "missing"}, "Timestamp column 'missing' not found"),
+    ],
+)
+def test_explicit_ordering_columns_must_exist(
+    sample_ohlcv_data: pl.DataFrame,
+    kwargs: dict[str, str],
+    match: str,
+) -> None:
+    with pytest.raises(DataSchemaError, match=match):
+        compute_features(sample_ohlcv_data, ["sma"], **kwargs)  # type: ignore[arg-type]
+
+
+def test_explicit_group_and_timestamp_columns_are_honored() -> None:
+    data = pl.DataFrame(
+        {
+            "event_time": [datetime(2024, 1, 2), datetime(2024, 1, 1)],
+            "instrument": ["A", "A"],
+            "open": [2.0, 1.0],
+            "high": [2.0, 1.0],
+            "low": [2.0, 1.0],
+            "close": [2.0, 1.0],
+            "volume": [1.0, 1.0],
+        }
+    )
+
+    result = compute_features(
+        data,
+        [{"name": "sma", "params": {"period": 2}}],
+        group_col="instrument",
+        timestamp_col="event_time",
+    )
+
+    assert result["event_time"].to_list() == sorted(data["event_time"].to_list())
+    assert result["sma"].to_list() == [None, 1.5]
+
+
+def test_ordering_columns_require_temporal_dtype_and_non_null_values(
+    sample_ohlcv_data: pl.DataFrame,
+) -> None:
+    invalid_dtype = sample_ohlcv_data.with_columns(pl.col("timestamp").cast(pl.String))
+    with pytest.raises(DataSchemaError, match="must be .*Date"):
+        compute_features(invalid_dtype, ["sma"])
+
+    null_group = sample_ohlcv_data.with_columns(
+        pl.when(pl.int_range(pl.len()) == 0).then(None).otherwise(pl.lit("A")).alias("asset_id")
+    )
+    with pytest.raises(DataSchemaError, match="cannot contain nulls"):
+        compute_features(null_group, ["sma"])
+
+
+def _registry_with_feature(
+    func: object,
+    *,
+    name: str = "test_feature",
+    parameters: dict[str, object] | None = None,
+    dependencies: list[str] | None = None,
+) -> FeatureRegistry:
+    registry = FeatureRegistry()
+    registry.register(
+        FeatureMetadata(
+            name=name,
+            func=func,  # type: ignore[arg-type]
+            category="ml",
+            description="API dispatch contract fixture",
+            parameters=parameters or {},
+            dependencies=dependencies or [],
+        )
+    )
+    return registry
+
+
+def test_dependency_resolution_rejects_unknown_and_cyclic_features(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = FeatureRegistry()
+    monkeypatch.setattr(api, "get_registry", lambda: registry)
+    with pytest.raises(ValueError, match="not found in registry"):
+        api._resolve_dependencies([{"name": "missing", "params": {}, "output": "missing"}])
+
+    first = _registry_with_feature(
+        lambda close: pl.col(close),
+        name="first",
+        dependencies=["second"],
+    )
+    first.register(
+        FeatureMetadata(
+            name="second",
+            func=lambda close: pl.col(close),
+            category="ml",
+            description="Second cyclic feature",
+            dependencies=["first"],
+        )
+    )
+    monkeypatch.setattr(api, "get_registry", lambda: first)
+    with pytest.raises(ValueError, match="Circular dependency"):
+        api._resolve_dependencies(
+            [
+                {"name": "first", "params": {}, "output": "first"},
+                {"name": "second", "params": {}, "output": "second"},
+            ]
+        )
+
+
+def test_feature_dispatch_passes_columns_defaults_and_keyword_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    received: list[tuple[str, str, int, str]] = []
+
+    def expression(
+        close: str,
+        high: str = "high",
+        period: int = 2,
+        *,
+        implementation: str = "polars",
+    ) -> pl.Expr:
+        received.append((close, high, period, implementation))
+        return pl.col(close).rolling_mean(period)
+
+    registry = _registry_with_feature(
+        expression,
+        parameters={"period": 3, "implementation": "native"},
+    )
+    monkeypatch.setattr(api, "get_registry", lambda: registry)
+    data = pl.DataFrame({"asset": ["A"] * 4, "close": [1.0, 2.0, 3.0, 4.0]})
+
+    result = api._execute_feature(data, "test_feature", {}, "mean", ["asset"])
+
+    assert received == [("close", "high", 3, "native")]
+    assert result["mean"].to_list() == [None, None, 2.0, 3.0]
+
+
+def test_feature_dispatch_reports_missing_parameters_and_type_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing_parameter(close: str, required: int) -> pl.Expr:
+        return pl.col(close) + required
+
+    registry = _registry_with_feature(missing_parameter)
+    monkeypatch.setattr(api, "get_registry", lambda: registry)
+    data = pl.DataFrame({"close": [1.0]})
+    with pytest.raises(ValueError, match="requires parameter 'required'"):
+        api._execute_feature(data, "test_feature", {}, "result", [])
+    with pytest.raises(ValueError, match="not found in registry"):
+        api._execute_feature(data, "missing", {}, "result", [])
+
+    def raises_type_error(close: str) -> pl.Expr:
+        raise TypeError(f"cannot process {close}")
+
+    registry = _registry_with_feature(raises_type_error)
+    monkeypatch.setattr(api, "get_registry", lambda: registry)
+    with pytest.raises(ValueError, match="Failed to execute feature"):
+        api._execute_feature(data, "test_feature", {}, "result", [])
+
+
+@pytest.mark.parametrize(
+    ("result", "match"),
+    [
+        ({"invalid": 1}, "dict without Expr"),
+        ([1, "invalid"], "tuple/list without Expr"),
+        (1, "unexpected type"),
+    ],
+)
+def test_feature_dispatch_rejects_unsupported_results(
+    monkeypatch: pytest.MonkeyPatch,
+    result: object,
+    match: str,
+) -> None:
+    registry = _registry_with_feature(lambda close: result if close else result)
+    monkeypatch.setattr(api, "get_registry", lambda: registry)
+
+    with pytest.raises((TypeError, ValueError), match=match):
+        api._execute_feature(
+            pl.DataFrame({"close": [1.0]}),
+            "test_feature",
+            {},
+            "result",
+            [],
+        )
+
+
+@pytest.mark.parametrize("as_mapping", [True, False])
+def test_feature_dispatch_keeps_only_expression_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+    as_mapping: bool,
+) -> None:
+    result: object
+    if as_mapping:
+        result = {"valid": pl.col("close") + 1, "ignored": 1}
+    else:
+        result = [pl.col("close") + 1, 1]
+    registry = _registry_with_feature(lambda close: result if close else result)
+    monkeypatch.setattr(api, "get_registry", lambda: registry)
+
+    output = api._execute_feature(
+        pl.DataFrame({"close": [1.0]}),
+        "test_feature",
+        {},
+        "result",
+        [],
+    )
+
+    expected_column = "result_valid" if as_mapping else "result_0"
+    assert output[expected_column].to_list() == [2.0]
+
+
+def test_appending_feature_expressions_rejects_conflicts_and_duplicates() -> None:
+    data = pl.DataFrame({"close": [1.0]})
+    with pytest.raises(ValueError, match="conflict with existing columns"):
+        api._append_feature_expressions(data, [("close", pl.lit(2.0))])
+    with pytest.raises(ValueError, match="duplicate output columns"):
+        api._append_feature_expressions(
+            data,
+            [("result", pl.lit(2.0)), ("result", pl.lit(3.0))],
+        )

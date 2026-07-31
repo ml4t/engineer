@@ -10,7 +10,7 @@ import pytest
 
 from ml4t.engineer import compute_features
 from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP
-from ml4t.engineer.core.lookbacks import FEATURE_LOOKBACKS
+from ml4t.engineer.core.lookbacks import FEATURE_LOOKBACKS, bind_feature_lookback
 from ml4t.engineer.core.registry import get_registry
 
 
@@ -238,3 +238,43 @@ def test_optional_and_alternate_paths_match_lookbacks(lookback_data: pl.DataFram
         metadata = get_registry().get(feature_name)
         assert metadata is not None
         assert _first_usable_row(lookback_data, feature_name, params) == metadata.lookback(**params)
+
+
+def test_first_party_lookback_rejects_duplicate_declaration() -> None:
+    with pytest.raises(TypeError, match="authoritative lookback"):
+        bind_feature_lookback("sma", {"period": 20}, 19)
+
+
+@pytest.mark.parametrize("declared", [None, "", object()])
+def test_third_party_lookback_rejects_invalid_declarations(declared: object) -> None:
+    with pytest.raises(TypeError, match="lookback"):
+        bind_feature_lookback("third_party_feature", {}, declared)  # type: ignore[arg-type]
+
+
+def test_third_party_lookback_supports_fixed_parameter_and_callable_forms() -> None:
+    fixed = bind_feature_lookback("fixed_feature", {}, 3)
+    parameter = bind_feature_lookback("parameter_feature", {"period": 5}, "period")
+
+    def calculate(*, period: int = 4) -> int:
+        return period - 1
+
+    callable_lookback = bind_feature_lookback("callable_feature", {}, calculate)
+
+    assert fixed() == 3
+    assert fixed(period=100) == 3
+    assert parameter() == 5
+    assert parameter(period=8) == 8
+    assert callable_lookback() == 3
+    assert callable_lookback(period=7) == 6
+
+
+@pytest.mark.parametrize("invalid_value", [True, -1, 1.5])
+def test_first_party_lookback_rejects_invalid_result(
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_value: object,
+) -> None:
+    monkeypatch.setitem(FEATURE_LOOKBACKS, "invalid_feature", lambda _params: invalid_value)
+    lookback = bind_feature_lookback("invalid_feature", {}, None)
+
+    with pytest.raises(ValueError, match="invalid lookback"):
+        lookback()
