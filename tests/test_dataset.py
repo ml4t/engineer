@@ -11,6 +11,7 @@ Comprehensive tests covering:
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -121,6 +122,22 @@ class MockSplitter:
         return self.n_splits
 
 
+class StaticSplitter:
+    """Return one predefined fold for index-contract tests."""
+
+    def __init__(self, train_indices: Any, test_indices: Any) -> None:
+        self.train_indices = train_indices
+        self.test_indices = test_indices
+
+    def split(
+        self,
+        X: Any,
+        y: Any = None,
+        groups: Any = None,
+    ) -> Generator[tuple[Any, Any], None, None]:
+        yield self.train_indices, self.test_indices
+
+
 # =============================================================================
 # Initialization Tests
 # =============================================================================
@@ -181,6 +198,35 @@ class TestMLDatasetBuilderInit:
                 labels=sample_labels,
                 dates=dates,
             )
+
+    def test_descending_dates_are_rejected(self) -> None:
+        features = pl.DataFrame({"row": list(range(5))})
+        labels = pl.Series("label", list(range(5)))
+        dates = pl.Series(
+            "date",
+            [datetime(2026, 1, 5) - timedelta(days=index) for index in range(5)],
+        )
+
+        with pytest.raises(ValueError, match="nondecreasing"):
+            MLDatasetBuilder(features, labels, dates)
+
+    def test_null_dates_are_rejected(self) -> None:
+        features = pl.DataFrame({"row": [0, 1, 2]})
+        labels = pl.Series("label", [0, 1, 2])
+        dates = pl.Series(
+            "date",
+            [datetime(2026, 1, 1), None, datetime(2026, 1, 3)],
+        )
+
+        with pytest.raises(ValueError, match="null"):
+            MLDatasetBuilder(features, labels, dates)
+
+    def test_dates_require_temporal_dtype(self) -> None:
+        features = pl.DataFrame({"row": [0, 1, 2]})
+        labels = pl.Series("label", [0, 1, 2])
+
+        with pytest.raises(ValueError, match="Date or Datetime"):
+            MLDatasetBuilder(features, labels, pl.Series("date", [1, 2, 3]))
 
 
 # =============================================================================
@@ -296,6 +342,69 @@ class TestTrainTestSplit:
         original_train = builder.features[:80]
         assert X_train.equals(original_train)
 
+    @pytest.mark.parametrize(
+        "train_size",
+        [-0.2, 0.0, 1.0, 1.5, float("nan"), float("inf"), True, "0.8"],
+    )
+    def test_invalid_train_sizes_are_rejected(self, builder, train_size) -> None:
+        with pytest.raises(ValueError, match="train_size"):
+            builder.train_test_split(train_size=train_size)
+
+    def test_split_requires_nonempty_partitions(self) -> None:
+        builder = MLDatasetBuilder(
+            pl.DataFrame({"row": [0]}),
+            pl.Series("label", [0]),
+        )
+
+        with pytest.raises(ValueError, match="at least one"):
+            builder.train_test_split(train_size=0.8)
+
+    def test_dates_forbid_shuffle(self, builder_with_dates: MLDatasetBuilder) -> None:
+        with pytest.raises(ValueError, match="shuffle"):
+            builder_with_dates.train_test_split(shuffle=True)
+
+    def test_panel_timestamp_group_is_not_split(self) -> None:
+        first = datetime(2026, 1, 1, tzinfo=UTC)
+        dates = pl.Series(
+            "date",
+            [
+                first,
+                first,
+                first + timedelta(days=1),
+                first + timedelta(days=1),
+                first + timedelta(days=2),
+                first + timedelta(days=2),
+            ],
+        )
+        features = pl.DataFrame(
+            {
+                "row": list(range(6)),
+                "asset": ["A", "B"] * 3,
+            }
+        )
+        builder = MLDatasetBuilder(
+            features,
+            pl.Series("label", list(range(6))),
+            dates,
+        )
+
+        X_train, X_test, _, _ = builder.train_test_split(train_size=0.5)
+
+        assert X_train["row"].to_list() == [0, 1]
+        assert X_test["row"].to_list() == [2, 3, 4, 5]
+        assert dates[len(X_train) - 1] < dates[len(X_train)]
+
+    def test_identical_dates_have_no_leakage_safe_boundary(self) -> None:
+        date = datetime(2026, 1, 1)
+        builder = MLDatasetBuilder(
+            pl.DataFrame({"row": list(range(4))}),
+            pl.Series("label", list(range(4))),
+            pl.Series("date", [date] * 4),
+        )
+
+        with pytest.raises(ValueError, match="distinct timestamp"):
+            builder.train_test_split(train_size=0.5)
+
 
 # =============================================================================
 # Cross-Validation Split Tests
@@ -366,6 +475,62 @@ class TestCVSplit:
 
         for fold in folds:
             assert fold.scaler is None
+
+    @pytest.mark.parametrize(
+        ("train_indices", "test_indices", "match"),
+        [
+            ([0, 1, 2], [2, 3], "overlap"),
+            ([0, 0], [2, 3], "duplicate"),
+            ([0, 1], [2, 2], "duplicate"),
+            (np.array([0.0, 1.0]), [2, 3], "integer"),
+            (np.array([[0, 1]]), [2, 3], "one-dimensional"),
+            ([-1, 0], [2, 3], "out of bounds"),
+            ([0, 1], [2, 100], "out of bounds"),
+            ([], [2, 3], "nonempty"),
+            ([0, 1], [], "nonempty"),
+        ],
+    )
+    def test_invalid_splitter_indices_are_rejected(
+        self,
+        builder,
+        train_indices,
+        test_indices,
+        match,
+    ) -> None:
+        splitter = StaticSplitter(train_indices, test_indices)
+
+        with pytest.raises(ValueError, match=match):
+            next(builder.split(splitter))
+
+    def test_temporally_reversed_fold_is_rejected(self) -> None:
+        dates = pl.Series(
+            "date",
+            [datetime(2026, 1, 1) + timedelta(days=index // 2) for index in range(6)],
+        )
+        builder = MLDatasetBuilder(
+            pl.DataFrame({"row": list(range(6))}),
+            pl.Series("label", list(range(6))),
+            dates,
+        )
+        splitter = StaticSplitter([0, 1, 4], [2, 3])
+
+        with pytest.raises(ValueError, match="strictly precede"):
+            next(builder.split(splitter))
+
+    def test_valid_panel_fold_has_strict_temporal_boundary(self) -> None:
+        dates = pl.Series(
+            "date",
+            [datetime(2026, 1, 1) + timedelta(days=index // 2) for index in range(6)],
+        )
+        builder = MLDatasetBuilder(
+            pl.DataFrame({"row": list(range(6))}),
+            pl.Series("label", list(range(6))),
+            dates,
+        )
+
+        fold = next(builder.split(StaticSplitter([0, 1], [4, 5])))
+
+        assert dates.gather(fold.train_indices).max() < dates.gather(fold.test_indices).min()
 
 
 # =============================================================================
