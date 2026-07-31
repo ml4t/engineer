@@ -105,7 +105,7 @@ def sma(
     close: npt.NDArray[np.float64] | pl.Series | str,
     period: int,
     implementation: Literal["auto", "numba", "polars"] = "auto",
-) -> npt.NDArray[np.float64] | pl.Expr:
+) -> npt.NDArray[np.float64] | pl.Expr | pl.Series:
     """
     Simple Moving Average with automatic implementation selection.
 

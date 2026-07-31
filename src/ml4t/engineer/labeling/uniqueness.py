@@ -21,10 +21,10 @@ from ml4t.engineer.labeling.numba_ops import _build_concurrency_nb
 
 
 def build_concurrency(
-    event_indices: npt.NDArray[np.float64],
-    label_indices: npt.NDArray[np.float64],
+    event_indices: npt.NDArray[np.int64],
+    label_indices: npt.NDArray[np.int64],
     n_bars: int | None = None,
-) -> npt.NDArray[np.float64]:
+) -> npt.NDArray[np.int64]:
     """
     Calculate per-bar concurrency (how many labels are active at each time).
 

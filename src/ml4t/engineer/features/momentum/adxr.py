@@ -137,7 +137,7 @@ def adxr(
         # Type narrowing: at this point all must be Expr
         assert isinstance(low, pl.Expr) and isinstance(close, pl.Expr)
 
-        def calc_adxr(s: pl.Series) -> float:
+        def calc_adxr(s: pl.Series) -> pl.Series:
             if isinstance(s[0], dict):
                 # When using struct, we get a list of dicts
                 h = np.array([x["high"] for x in s])
@@ -148,7 +148,7 @@ def adxr(
                 h = s.struct.field("high").to_numpy()
                 lo = s.struct.field("low").to_numpy()
                 c = s.struct.field("close").to_numpy()
-            return adxr_numba(h, lo, c, timeperiod)
+            return pl.Series(adxr_numba(h, lo, c, timeperiod))
 
         return pl.struct(
             [high.alias("high"), low.alias("low"), close.alias("close")],

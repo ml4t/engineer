@@ -281,27 +281,24 @@ def _parse_feature_input(
                 f"Invalid YAML format. Expected list or dict with 'features' key, got: {type(config)}"
             )
 
-    # Handle list of strings (feature names only)
-    if isinstance(features, list) and all(isinstance(f, str) for f in features):
-        return [{"name": name, "params": {}, "output": name} for name in features]
+    if not isinstance(features, list):
+        raise ValueError(
+            f"Invalid features format. Expected list[str], list[dict], or Path, "
+            f"got: {type(features)}"
+        )
 
-    # Handle list of dicts
-    if isinstance(features, list) and all(isinstance(f, dict) for f in features):
-        return [_normalize_feature_spec(spec) for spec in features]
-
-    # Handle mixed list of strings and dicts
-    if isinstance(features, list) and all(isinstance(f, str | dict) for f in features):
-        result: list[_FeatureSpec] = []
-        for item in features:
-            if isinstance(item, str):
-                result.append({"name": item, "params": {}, "output": item})
-            elif isinstance(item, dict):
-                result.append(_normalize_feature_spec(item))
-        return result
-
-    raise ValueError(
-        f"Invalid features format. Expected list[str], list[dict], or Path, got: {type(features)}"
-    )
+    result: list[_FeatureSpec] = []
+    for item in features:
+        if isinstance(item, str):
+            result.append({"name": item, "params": {}, "output": item})
+        elif isinstance(item, dict):
+            result.append(_normalize_feature_spec(item))
+        else:
+            raise ValueError(
+                "Invalid features format. Expected every list item to be a string "
+                f"or mapping, got: {type(item)}"
+            )
+    return result
 
 
 def _normalize_feature_spec(spec: dict[str, Any]) -> _FeatureSpec:
