@@ -25,7 +25,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import timedelta
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Literal
@@ -33,12 +32,15 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from ml4t.engineer.config.base import (
+    _decode_portable_timedelta,
+    _encode_portable_timedelta,
+)
 from ml4t.engineer.config.labeling import LabelingConfig
 from ml4t.engineer.config.preprocessing_config import PreprocessingConfig
 
 _SCHEMA_VERSION = 1
 _RECOGNIZED_SECTIONS = frozenset({"schema_version", "features", "labeling", "preprocessing"})
-_DURATION_TYPE_KEY = "__ml4t_type__"
 
 
 class _FeatureConfiguration(BaseModel):
@@ -308,15 +310,8 @@ def _validate_document_structure(raw: dict[str, Any]) -> None:
 
 def _encode_labeling_values(labeling: dict[str, Any]) -> dict[str, Any]:
     """Encode non-primitive labeling values in the versioned YAML schema."""
-    holding_period = labeling.get("max_holding_period")
-    if isinstance(holding_period, timedelta):
-        total_microseconds = (
-            holding_period.days * 86_400 + holding_period.seconds
-        ) * 1_000_000 + holding_period.microseconds
-        labeling["max_holding_period"] = {
-            _DURATION_TYPE_KEY: "timedelta",
-            "microseconds": total_microseconds,
-        }
+    if "max_holding_period" in labeling:
+        labeling["max_holding_period"] = _encode_portable_timedelta(labeling["max_holding_period"])
     return labeling
 
 
@@ -330,17 +325,10 @@ def _decode_document_values(raw: dict[str, Any]) -> dict[str, Any]:
     holding_period = labeling.get("max_holding_period")
     if not isinstance(holding_period, dict):
         return decoded
-    if holding_period.get(_DURATION_TYPE_KEY) != "timedelta":
-        return decoded
-    if set(holding_period) != {_DURATION_TYPE_KEY, "microseconds"}:
-        raise ValueError(
-            "labeling.max_holding_period timedelta encoding must contain only "
-            f"{_DURATION_TYPE_KEY!r} and 'microseconds'"
-        )
-    microseconds = holding_period["microseconds"]
-    if not isinstance(microseconds, int) or isinstance(microseconds, bool):
-        raise ValueError("labeling.max_holding_period timedelta microseconds must be an integer")
-    labeling["max_holding_period"] = timedelta(microseconds=microseconds)
+    labeling["max_holding_period"] = _decode_portable_timedelta(
+        holding_period,
+        field_name="labeling.max_holding_period",
+    )
     return decoded
 
 

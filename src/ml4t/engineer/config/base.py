@@ -16,6 +16,40 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+_TIMEDELTA_TYPE_KEY = "__ml4t_type__"
+
+
+def _encode_portable_timedelta(value: Any) -> Any:
+    """Encode a timedelta without Python-specific YAML or lossy floats."""
+    from datetime import timedelta
+
+    if not isinstance(value, timedelta):
+        return value
+    total_microseconds = (value.days * 86_400 + value.seconds) * 1_000_000 + value.microseconds
+    return {
+        _TIMEDELTA_TYPE_KEY: "timedelta",
+        "microseconds": total_microseconds,
+    }
+
+
+def _decode_portable_timedelta(value: Any, *, field_name: str) -> Any:
+    """Decode the portable timedelta representation before model validation."""
+    from datetime import timedelta
+
+    if not isinstance(value, dict):
+        return value
+    if value.get(_TIMEDELTA_TYPE_KEY) != "timedelta":
+        return value
+    if set(value) != {_TIMEDELTA_TYPE_KEY, "microseconds"}:
+        raise ValueError(
+            f"{field_name} timedelta encoding must contain only "
+            f"{_TIMEDELTA_TYPE_KEY!r} and 'microseconds'"
+        )
+    microseconds = value["microseconds"]
+    if not isinstance(microseconds, int) or isinstance(microseconds, bool):
+        raise ValueError(f"{field_name} timedelta microseconds must be an integer")
+    return timedelta(microseconds=microseconds)
+
 
 class BaseConfig(BaseModel):
     """Base configuration class with serialization and comparison utilities.

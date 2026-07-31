@@ -27,9 +27,13 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any, Literal
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_serializer, field_validator
 
-from ml4t.engineer.config.base import BaseConfig
+from ml4t.engineer.config.base import (
+    BaseConfig,
+    _decode_portable_timedelta,
+    _encode_portable_timedelta,
+)
 from ml4t.engineer.config.data_contract import DataContractConfig
 
 
@@ -245,6 +249,20 @@ class LabelingConfig(BaseConfig):
         if isinstance(v, int) and v not in (-1, 0, 1):
             raise ValueError("side must be -1, 0, 1, or a column name")
         return v
+
+    @field_validator("max_holding_period", mode="before")
+    @classmethod
+    def deserialize_holding_period(cls, value: Any) -> Any:
+        """Restore safely serialized timedeltas before union validation."""
+        return _decode_portable_timedelta(
+            value,
+            field_name="max_holding_period",
+        )
+
+    @field_serializer("max_holding_period", when_used="json")
+    def serialize_holding_period(self, value: int | str | timedelta) -> Any:
+        """Serialize timedeltas without changing integer or string forms."""
+        return _encode_portable_timedelta(value)
 
     @field_validator("max_horizon")
     @classmethod

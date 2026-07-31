@@ -416,6 +416,32 @@ class TestRoundtrip:
         assert loaded.preprocessing == preprocessing
 
 
+class TestStandaloneLabelingRoundtrip:
+    """Standalone config writers preserve every holding-period value form."""
+
+    @pytest.mark.parametrize("suffix", [".yaml", ".json"])
+    @pytest.mark.parametrize("holding_period", [20, "4h", timedelta(hours=4, microseconds=5)])
+    def test_holding_period_type_survives_safe_roundtrip(
+        self,
+        tmp_path,
+        suffix,
+        holding_period,
+    ):
+        path = tmp_path / f"labeling{suffix}"
+        original = LabelingConfig.triple_barrier(max_holding_period=holding_period)
+
+        if suffix == ".yaml":
+            original.to_yaml(path)
+            loaded = LabelingConfig.from_yaml(path)
+            yaml.safe_load(path.read_text())
+        else:
+            original.to_json(path)
+            loaded = LabelingConfig.from_json(path)
+
+        assert loaded.max_holding_period == holding_period
+        assert type(loaded.max_holding_period) is type(holding_period)
+
+
 class TestExperimentConfigDataclass:
     """Tests for ExperimentConfig dataclass."""
 
