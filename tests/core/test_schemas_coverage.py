@@ -170,6 +170,23 @@ class TestValidateOHLCVSchema:
         with pytest.raises(DataSchemaError, match="Missing required 'asset_id'"):
             validate_ohlcv_schema(df, require_asset_id=True)
 
+    def test_validate_ohlcv_requires_time_when_flexible_time_is_disabled(self):
+        from ml4t.engineer.core.exceptions import DataSchemaError
+
+        df = pl.DataFrame(
+            {
+                "asset_id": ["AAPL"],
+                "open": [100.0],
+                "high": [101.0],
+                "low": [99.0],
+                "close": [100.5],
+                "volume": [1000.0],
+            }
+        )
+
+        with pytest.raises(DataSchemaError, match="No time column found"):
+            validate_ohlcv_schema(df, allow_flexible_time=False)
+
     def test_validate_ohlcv_no_asset_id_optional(self):
         """Test validate_ohlcv_schema with asset_id optional."""
         df = pl.DataFrame(

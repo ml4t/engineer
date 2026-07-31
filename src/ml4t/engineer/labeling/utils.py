@@ -12,7 +12,7 @@ import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 # Datetime types for timestamp detection

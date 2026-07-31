@@ -23,7 +23,7 @@ from ml4t.engineer.labeling.uniqueness import (
     calculate_sample_weights,
 )
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 from ml4t.engineer.labeling.utils import (

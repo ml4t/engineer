@@ -18,7 +18,7 @@ from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
 from ml4t.engineer.labeling.utils import resolve_labeling_columns
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 
@@ -30,14 +30,14 @@ class TradingCalendar(Protocol):
 
     def is_trading_time(self, timestamp: datetime) -> bool:
         """Check if given timestamp is during trading hours."""
-        ...
+        ...  # pragma: no cover - protocol declaration has no runtime implementation
 
     def next_session_break(self, timestamp: datetime) -> datetime | None:
         """Get the next session break at or after the given timestamp.
 
         Returns None if no break before end of data.
         """
-        ...
+        ...  # pragma: no cover - protocol declaration has no runtime implementation
 
 
 class SimpleTradingCalendar:

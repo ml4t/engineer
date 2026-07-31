@@ -25,7 +25,7 @@ from pydantic import Field
 
 from ml4t.engineer.config.base import BaseConfig
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.preprocessing import BaseScaler
 
 

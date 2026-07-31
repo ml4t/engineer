@@ -67,12 +67,11 @@ def validate_schema(df: pl.DataFrame, schema: dict[str, pl.DataType]) -> None:
 
     # Check data types
     for col, expected_type in schema.items():
-        if col in df.columns:
-            actual_type = df[col].dtype
-            if actual_type != expected_type:
-                raise ValueError(
-                    f"Column '{col}' has type {actual_type}, expected {expected_type}",
-                )
+        actual_type = df[col].dtype
+        if actual_type != expected_type:
+            raise ValueError(
+                f"Column '{col}' has type {actual_type}, expected {expected_type}",
+            )
 
 
 def validate_ohlcv_schema(
@@ -150,13 +149,12 @@ def validate_ohlcv_schema(
 
     # Validate OHLCV column types (must be numeric)
     for col in ohlcv_cols:
-        if col in schema:
-            dtype = schema[col]
-            if not dtype.is_numeric():
-                raise DataSchemaError(
-                    f"Column '{col}' must be numeric, got {dtype}. "
-                    "OHLCV columns must be numeric types (float or int).",
-                )
+        dtype = schema[col]
+        if not dtype.is_numeric():
+            raise DataSchemaError(
+                f"Column '{col}' must be numeric, got {dtype}. "
+                "OHLCV columns must be numeric types (float or int).",
+            )
 
     # Validate time column type if present
     for time_col in time_cols:
@@ -171,33 +169,23 @@ def validate_ohlcv_schema(
     # Validate data integrity (only for materialized DataFrames)
     if isinstance(df, pl.DataFrame) and len(df) > 0:
         # Check high >= low
-        try:
-            invalid_hl = df.filter(pl.col("high") < pl.col("low"))
-            if len(invalid_hl) > 0:
-                raise DataSchemaError(
-                    f"Found {len(invalid_hl)} rows where high < low. "
-                    "This violates OHLCV constraints. First invalid row: "
-                    f"{invalid_hl.head(1).to_dict(as_series=False)}",
-                )
-        except Exception as e:
-            if isinstance(e, DataSchemaError):
-                raise
-            # If comparison fails (e.g., due to nulls), just warn
+        invalid_hl = df.filter(pl.col("high") < pl.col("low"))
+        if len(invalid_hl) > 0:
+            raise DataSchemaError(
+                f"Found {len(invalid_hl)} rows where high < low. "
+                "This violates OHLCV constraints. First invalid row: "
+                f"{invalid_hl.head(1).to_dict(as_series=False)}",
+            )
 
         # Check for negative prices
         price_cols = ["open", "high", "low", "close"]
         for col in price_cols:
-            if col in df.columns:
-                try:
-                    negative = df.filter(pl.col(col) < 0)
-                    if len(negative) > 0:
-                        raise DataSchemaError(
-                            f"Found {len(negative)} rows with negative prices in '{col}'. "
-                            f"First invalid row: {negative.head(1).to_dict(as_series=False)}",
-                        )
-                except Exception as e:
-                    if isinstance(e, DataSchemaError):
-                        raise
+            negative = df.filter(pl.col(col) < 0)
+            if len(negative) > 0:
+                raise DataSchemaError(
+                    f"Found {len(negative)} rows with negative prices in '{col}'. "
+                    f"First invalid row: {negative.head(1).to_dict(as_series=False)}",
+                )
 
 
 __all__ = [

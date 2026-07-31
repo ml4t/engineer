@@ -442,6 +442,23 @@ class TestStandaloneLabelingRoundtrip:
         assert loaded.max_holding_period == holding_period
         assert type(loaded.max_holding_period) is type(holding_period)
 
+    @pytest.mark.parametrize("side", [True, 2])
+    def test_invalid_side_is_rejected_before_coercion(self, side):
+        with pytest.raises(ValueError, match="side must be"):
+            LabelingConfig(side=side)
+
+    def test_boolean_holding_period_is_rejected_before_integer_coercion(self):
+        with pytest.raises(ValueError, match="positive interval"):
+            LabelingConfig(max_holding_period=True)
+
+    def test_non_finite_barrier_is_rejected(self):
+        with pytest.raises(ValueError, match="must be finite"):
+            LabelingConfig(upper_barrier=float("inf"))
+
+    def test_max_horizon_must_not_precede_minimum(self):
+        with pytest.raises(ValueError, match="max_horizon must be"):
+            LabelingConfig(min_horizon=10, max_horizon=9)
+
 
 class TestPreprocessingConfig:
     """Scaler factories preserve every configured parameter."""
@@ -499,6 +516,12 @@ class TestPreprocessingConfig:
 
         assert config.scaler is None
         assert config.create_scaler() is None
+
+    def test_invalid_constructed_scaler_is_rejected(self):
+        config = PreprocessingConfig.model_construct(scaler="unknown")
+
+        with pytest.raises(ValueError, match="Unknown scaler type"):
+            config.create_scaler()
 
 
 class TestExperimentConfigDataclass:

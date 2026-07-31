@@ -74,7 +74,7 @@ from ml4t.engineer.features.volatility import atr_polars
 from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
 from ml4t.engineer.labeling.utils import resolve_labeling_columns, validate_price_no_nans
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig
 
 

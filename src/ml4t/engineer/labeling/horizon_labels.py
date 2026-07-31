@@ -27,7 +27,7 @@ from ml4t.engineer.labeling.utils import (
     validate_price_no_nans,
 )
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 

@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any
 # Type alias to avoid shadowing by list() method
 _list = builtins.list
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.core.registry import FeatureMetadata, FeatureRegistry
 
 

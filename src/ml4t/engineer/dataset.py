@@ -57,7 +57,7 @@ import polars as pl
 from ml4t.engineer.config.preprocessing_config import PreprocessingConfig
 from ml4t.engineer.preprocessing import BaseScaler, StandardScaler
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from datetime import date, datetime
 
     import pandas as pd
@@ -85,7 +85,7 @@ class SplitterProtocol(Protocol):
         groups: Any = None,
     ) -> Generator[tuple[NDArray[np.intp], NDArray[np.intp]], None, None]:
         """Generate train/test indices."""
-        ...
+        ...  # pragma: no cover - protocol declaration has no runtime implementation
 
 
 @dataclass

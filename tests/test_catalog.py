@@ -3,7 +3,8 @@
 import pytest
 
 from ml4t.engineer.core.registry import FeatureMetadata, FeatureRegistry
-from ml4t.engineer.discovery.catalog import FeatureCatalog
+from ml4t.engineer.discovery import catalog as catalog_module
+from ml4t.engineer.discovery.catalog import FeatureCatalog, _FeatureCatalogProxy
 
 
 @pytest.fixture
@@ -310,3 +311,30 @@ class TestFeatureCatalogConvenience:
     def test_repr(self, catalog):
         assert "FeatureCatalog" in repr(catalog)
         assert "4" in repr(catalog)
+
+
+def test_default_catalog_and_proxy_delegate_to_global_registry(monkeypatch, catalog):
+    monkeypatch.setattr(catalog_module, "_features", catalog)
+    proxy = _FeatureCatalogProxy()
+
+    assert proxy.list(category="momentum") == catalog.list(category="momentum")
+    assert proxy.describe("rsi") == catalog.describe("rsi")
+    assert proxy.search("average") == catalog.search("average")
+    assert proxy.by_input_type("close") == catalog.by_input_type("close")
+    assert proxy.by_lookback(14) == catalog.by_lookback(14)
+    assert proxy.lookback("sma", period=50) == 50
+    assert proxy.categories() == catalog.categories()
+    assert proxy.tags() == catalog.tags()
+    assert proxy.input_types() == catalog.input_types()
+    assert proxy.stats() == catalog.stats()
+    assert len(proxy) == len(catalog)
+    assert repr(proxy) == repr(catalog)
+
+
+def test_default_catalog_is_created_lazily(monkeypatch):
+    monkeypatch.setattr(catalog_module, "_features", None)
+
+    created = catalog_module._get_features()
+
+    assert isinstance(created, FeatureCatalog)
+    assert catalog_module._get_features() is created

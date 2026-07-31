@@ -338,6 +338,19 @@ class TestDollarBarSampler:
         for dv in bars["dollar_volume"]:
             assert dv >= 40000  # Allow tolerance
 
+    def test_zero_volume_incomplete_bar_uses_mean_price_for_vwap(self) -> None:
+        data = pl.DataFrame(
+            {
+                "timestamp": [datetime(2026, 1, 1), datetime(2026, 1, 1, 0, 0, 1)],
+                "price": [100.0, 102.0],
+                "volume": [0.0, 0.0],
+            }
+        )
+
+        bars = DollarBarSampler(dollars_per_bar=1_000.0).sample(data, include_incomplete=True)
+
+        assert bars["vwap"].item() == 101.0
+
 
 # =============================================================================
 # Imbalance Bar Tests

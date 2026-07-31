@@ -18,6 +18,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from ml4t.engineer.config import PreprocessingConfig
 from ml4t.engineer.dataset import (
     DatasetInfo,
     FoldResult,
@@ -228,6 +229,12 @@ class TestMLDatasetBuilderInit:
         with pytest.raises(ValueError, match="Date or Datetime"):
             MLDatasetBuilder(features, labels, pl.Series("date", [1, 2, 3]))
 
+    def test_dates_require_polars_series(
+        self, sample_features: pl.DataFrame, sample_labels: pl.Series
+    ) -> None:
+        with pytest.raises(ValueError, match="dates must be a Polars Series"):
+            MLDatasetBuilder(sample_features, sample_labels, list(range(100)))  # type: ignore[arg-type]
+
 
 # =============================================================================
 # Scaler Tests
@@ -257,6 +264,16 @@ class TestMLDatasetBuilderScaler:
         for scaler_cls in [StandardScaler, MinMaxScaler, RobustScaler]:
             builder.set_scaler(scaler_cls())
             assert isinstance(builder.scaler, scaler_cls)
+
+    def test_preprocessing_config_constructs_scaler(self, builder: MLDatasetBuilder) -> None:
+        result = builder.set_scaler(PreprocessingConfig.robust(columns=["momentum"]))
+
+        assert result is builder
+        assert isinstance(builder.scaler, RobustScaler)
+
+    def test_invalid_scaler_is_rejected(self, builder: MLDatasetBuilder) -> None:
+        with pytest.raises(TypeError, match="scaler must be"):
+            builder.set_scaler("standard")  # type: ignore[arg-type]
 
 
 # =============================================================================
@@ -405,6 +422,23 @@ class TestTrainTestSplit:
         with pytest.raises(ValueError, match="distinct timestamp"):
             builder.train_test_split(train_size=0.5)
 
+    def test_split_moves_forward_when_first_timestamp_group_exceeds_request(self) -> None:
+        first = datetime(2026, 1, 1)
+        dates = pl.Series(
+            "date",
+            [first, first, first + timedelta(days=1), first + timedelta(days=1)],
+        )
+        builder = MLDatasetBuilder(
+            pl.DataFrame({"row": list(range(4))}),
+            pl.Series("label", list(range(4))),
+            dates,
+        )
+
+        X_train, X_test, _, _ = builder.train_test_split(train_size=0.25)
+
+        assert X_train["row"].to_list() == [0, 1]
+        assert X_test["row"].to_list() == [2, 3]
+
 
 # =============================================================================
 # Cross-Validation Split Tests
@@ -475,6 +509,10 @@ class TestCVSplit:
 
         for fold in folds:
             assert fold.scaler is None
+
+    def test_groups_must_align_with_features(self, builder: MLDatasetBuilder) -> None:
+        with pytest.raises(ValueError, match="groups must have the same length"):
+            next(builder.split(MockSplitter(), groups=pl.Series(["A"])))
 
     @pytest.mark.parametrize(
         ("train_indices", "test_indices", "match"),
