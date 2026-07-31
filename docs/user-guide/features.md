@@ -33,8 +33,22 @@ across Chapters 7-9 and the case studies.
 
 `compute_features()` accepts three input formats:
 
+<!-- ml4t-exec -->
 ```python
+from datetime import date, timedelta
+
+import polars as pl
 from ml4t.engineer import compute_features
+
+close = [100.0 + i * 0.1 + (i % 5) * 0.05 for i in range(100)]
+df = pl.DataFrame({
+    "timestamp": [date(2024, 1, 1) + timedelta(days=i) for i in range(100)],
+    "open": close,
+    "high": [price + 1.0 for price in close],
+    "low": [price - 1.0 for price in close],
+    "close": close,
+    "volume": [100_000 + i * 100 for i in range(100)],
+})
 
 # 1. List of names (default parameters)
 result = compute_features(df, ["rsi", "macd", "atr"])
@@ -49,8 +63,7 @@ result = compute_features(df, [
     },
 ])
 
-# 3. YAML config file (production pipelines)
-result = compute_features(df, "features.yaml")
+assert {"rsi", "sma", "bollinger_bands"} <= set(result.columns)
 ```
 
 Features are computed in dependency order (topological sort). Circular dependencies raise `ValueError`. The return type matches the input: `DataFrame` in, `DataFrame` out; `LazyFrame` in, `LazyFrame` out.

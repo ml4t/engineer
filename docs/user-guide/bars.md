@@ -23,7 +23,11 @@ information content and better statistical properties for ML models.
 
 ## Quick Start
 
+<!-- ml4t-exec -->
 ```python
+from datetime import datetime, timedelta
+
+import polars as pl
 from ml4t.engineer.bars import (
     TickBarSampler,
     VolumeBarSampler,
@@ -40,6 +44,16 @@ from ml4t.engineer.bars import (
     # Run bars
     TickRunBarSampler,
 )
+
+trades_df = pl.DataFrame({
+    "timestamp": [
+        datetime(2024, 1, 2, 9, 30) + timedelta(seconds=i)
+        for i in range(5_000)
+    ],
+    "price": [100.0 + (i % 100) * 0.01 for i in range(5_000)],
+    "volume": [100 + i % 50 for i in range(5_000)],
+    "side": [1 if i % 10 < 6 else -1 for i in range(5_000)],
+})
 
 # Tick bars: fixed number of trades per bar
 tick_bars = TickBarSampler(ticks_per_bar=100).sample(trades_df)
@@ -70,6 +84,10 @@ run_bars = TickRunBarSampler(expected_ticks_per_bar=50).sample(trades_df)
 # RECOMMENDED: Fixed threshold imbalance bars (stable, no calibration issues)
 fixed_tick_bars = FixedTickImbalanceBarSampler(threshold=100).sample(trades_df)
 fixed_volume_bars = FixedVolumeImbalanceBarSampler(threshold=50_000).sample(trades_df)
+
+assert len(tick_bars) == 50
+assert len(volume_bars) > 0
+assert len(dollar_bars) > 0
 ```
 
 ## Input Format

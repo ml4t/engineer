@@ -93,6 +93,7 @@ These 37 features produce bounded outputs and can be used directly in ML models:
 
 ## Using the Registry API
 
+<!-- ml4t-exec -->
 ```python
 from ml4t.engineer.core.registry import get_registry
 
@@ -113,6 +114,9 @@ momentum_normalized = [
     name for name in registry.list_by_category("momentum")
     if registry.get(name).normalized is True
 ]
+
+assert "rsi" in normalized_features
+assert "rsi" in momentum_normalized
 ```
 
 ## Preprocessing Non-Normalized Features

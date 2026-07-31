@@ -95,9 +95,25 @@ config = LabelingConfig.from_yaml("labeling_config.yaml")
 
 The triple-barrier method from AFML Chapter 3 creates labels based on which of three barriers is touched first: upper (profit target), lower (stop loss), or vertical (time limit).
 
+<!-- ml4t-exec -->
 ```python
+from datetime import datetime, timedelta
+
+import polars as pl
 from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.labeling import triple_barrier_labels
+
+close = [100.0 + i * 0.05 + (i % 6) * 0.2 for i in range(60)]
+df = pl.DataFrame({
+    "timestamp": [
+        datetime(2024, 1, 1) + timedelta(minutes=i)
+        for i in range(60)
+    ],
+    "open": close,
+    "high": [price + 0.5 for price in close],
+    "low": [price - 0.5 for price in close],
+    "close": close,
+})
 
 config = LabelingConfig.triple_barrier(
     upper_barrier=0.02,       # 2% profit target
@@ -114,9 +130,11 @@ result = triple_barrier_labels(
     high_col="high",                  # For intrabar barrier touches
     low_col="low",                    # For intrabar barrier touches
     timestamp_col="timestamp",        # Required for time-based max_holding
-    calculate_uniqueness=False,       # Compute sample weights
+    calculate_uniqueness=False,
     uniqueness_weight_scheme="returns_uniqueness",
 )
+
+assert {"label", "label_return", "barrier_hit"} <= set(result.columns)
 ```
 
 ### Parameters

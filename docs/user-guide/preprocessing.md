@@ -13,8 +13,19 @@ All scalers follow the sklearn pattern: `fit()` on training data, `transform()` 
 
 Z-score normalization: output has mean=0, std=1.
 
+<!-- ml4t-exec -->
 ```python
+import polars as pl
 from ml4t.engineer.preprocessing import StandardScaler
+
+train_df = pl.DataFrame({
+    "momentum": [1.0, 2.0, 3.0, 4.0],
+    "volatility": [0.1, 0.2, 0.3, 0.4],
+})
+test_df = pl.DataFrame({
+    "momentum": [5.0, 6.0],
+    "volatility": [0.5, 0.6],
+})
 
 scaler = StandardScaler(
     columns=None,          # None = all numeric columns
@@ -28,6 +39,9 @@ train_scaled = scaler.fit_transform(train_df)
 
 # Transform test data using training statistics
 test_scaled = scaler.transform(test_df)
+
+assert train_scaled.shape == train_df.shape
+assert test_scaled.shape == test_df.shape
 ```
 
 Best for: Approximately Gaussian features. Default choice for most ML models.

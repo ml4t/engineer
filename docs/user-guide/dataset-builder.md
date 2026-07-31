@@ -12,15 +12,33 @@ Chapter 7 teaching notebooks to reusable dataset workflows in the library.
 
 ## Basic Usage
 
+<!-- ml4t-exec -->
 ```python
+from datetime import date, timedelta
+
+import polars as pl
 from ml4t.engineer import create_dataset_builder
 
-builder = create_dataset_builder(
-    features=features_df,       # pl.DataFrame of feature columns
-    labels=labels_series,       # pl.Series of target labels
-    dates=dates_series,         # Optional: pl.Series of timestamps
-    scaler="standard",          # "standard", "minmax", "robust", or None
+features_df = pl.DataFrame({
+    "momentum": [float(i) for i in range(20)],
+    "volatility": [1.0 + (i % 4) * 0.1 for i in range(20)],
+})
+labels_series = pl.Series("label", [i % 2 for i in range(20)])
+dates_series = pl.Series(
+    "date",
+    [date(2024, 1, 1) + timedelta(days=i) for i in range(20)],
 )
+
+builder = create_dataset_builder(
+    features=features_df,
+    labels=labels_series,
+    dates=dates_series,
+    scaler="standard",
+)
+
+X_train, X_test, y_train, y_test = builder.train_test_split(train_size=0.8)
+assert len(X_train) == len(y_train) == 16
+assert len(X_test) == len(y_test) == 4
 ```
 
 ### Train/Test Split

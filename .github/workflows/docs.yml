@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --python 3.12 --dev --extra docs
 
+      - name: Run documented workflows
+        run: uv run python tests/documentation_workflows.py
+
       - name: Build docs
         run: uv run mkdocs build --strict
 

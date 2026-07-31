@@ -11,12 +11,16 @@ registry-driven workflows instead of hardcoding indicator names.
 
 ## Feature Registry
 
-The registry is the metadata backbone — every feature registers its name, category, parameters, input requirements, and validation status.
+The registry records every feature's name, category, parameters, input requirements,
+and validation status.
 
+<!-- ml4t-exec -->
 ```python
 from ml4t.engineer.core.registry import get_registry
 
 registry = get_registry()
+assert "rsi" in registry.list_all()
+assert registry.get("rsi").category == "momentum"
 ```
 
 ### List Features

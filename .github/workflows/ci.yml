@@ -130,6 +130,19 @@ jobs:
       - name: Build package
         run: uv build --python python
 
+      - name: Install built wheel
+        run: |
+          uv venv --python python .artifact-venv
+          python -c "import glob, subprocess; subprocess.check_call(['uv', 'pip', 'install', '--python', '.artifact-venv', glob.glob('dist/*.whl')[0]])"
+
+      - name: Import built wheel
+        run: uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
+
+      - name: Run documented workflows from built wheel
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python tests/documentation_workflows.py
+
   build:
     name: Build Package
     runs-on: ubuntu-latest
