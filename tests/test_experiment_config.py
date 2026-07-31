@@ -1,8 +1,11 @@
 """Tests for config/experiment.py - ExperimentConfig load/save/roundtrip."""
 
+from datetime import timedelta
+
 import pytest
 import yaml
 
+from ml4t.engineer.config.data_contract import DataContractConfig
 from ml4t.engineer.config.experiment import (
     ExperimentConfig,
     load_experiment_config,
@@ -104,6 +107,84 @@ class TestLoadExperimentConfig:
         config = load_experiment_config(str(yaml_file))
         assert len(config.features) == 2
 
+    @pytest.mark.parametrize(
+        ("document", "match"),
+        [
+            (["not", "a", "mapping"], "mapping"),
+            ({"features": {"name": "sma"}}, "features"),
+            ({"labeling": "triple_barrier"}, "labeling"),
+            ({"preprocessing": "robust"}, "preprocessing"),
+            ({"features": [{"name": "sma"}, 7]}, "features"),
+            ({"features": [{"name": "sma", "param": {"period": 2}}]}, "param"),
+            ({"preprocesssing": {"scaler": "robust"}}, "preprocessing"),
+        ],
+    )
+    def test_validation_rejects_malformed_recognized_sections(
+        self,
+        tmp_path,
+        document,
+        match,
+    ):
+        path = tmp_path / "malformed.yaml"
+        path.write_text(yaml.safe_dump(document))
+
+        with pytest.raises(ValueError, match=match):
+            load_experiment_config(path, validate=True)
+
+    def test_mixed_valid_and_invalid_sections_fail_atomically(self, tmp_path):
+        path = tmp_path / "mixed.yaml"
+        path.write_text(
+            yaml.safe_dump(
+                {
+                    "features": [{"name": "rsi"}],
+                    "labeling": {"method": "triple_barrier"},
+                    "preprocessing": {"scaleer": "robust"},
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="scaleer"):
+            load_experiment_config(path, validate=True)
+
+    def test_validate_false_still_rejects_wrong_section_shapes(self, tmp_path):
+        path = tmp_path / "malformed.yaml"
+        path.write_text(yaml.safe_dump({"labeling": "triple_barrier"}))
+
+        with pytest.raises(ValueError, match="labeling"):
+            load_experiment_config(path, validate=False)
+
+    @pytest.mark.parametrize(
+        "holding_period",
+        [
+            {"__ml4t_type__": "timedelta", "microseconds": 1.5},
+            {
+                "__ml4t_type__": "timedelta",
+                "microseconds": 1,
+                "unexpected": True,
+            },
+        ],
+    )
+    def test_malformed_duration_encodings_are_rejected(self, tmp_path, holding_period):
+        path = tmp_path / "duration.yaml"
+        path.write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": 1,
+                    "labeling": {"max_holding_period": holding_period},
+                }
+            )
+        )
+
+        with pytest.raises(ValueError, match="max_holding_period"):
+            load_experiment_config(path)
+
+    def test_unknown_schema_version_is_rejected_even_without_value_validation(self, tmp_path):
+        path = tmp_path / "future.yaml"
+        path.write_text(yaml.safe_dump({"schema_version": 2, "features": []}))
+
+        with pytest.raises(ValueError, match="schema_version"):
+            load_experiment_config(path, validate=False)
+
 
 class TestSaveExperimentConfig:
     """Tests for save_experiment_config()."""
@@ -153,6 +234,16 @@ class TestSaveExperimentConfig:
         # With include_defaults=True, default fields should appear
         assert "preprocessing" in raw
         assert raw["preprocessing"]["scaler"] == "standard"
+
+    def test_invalid_config_does_not_replace_existing_file(self, tmp_path):
+        path = tmp_path / "existing.yaml"
+        path.write_text("existing: true\n")
+        config = ExperimentConfig(features=[{"name": "sma", "param": {"period": 2}}])
+
+        with pytest.raises(ValueError, match="param"):
+            save_experiment_config(config, path)
+
+        assert path.read_text() == "existing: true\n"
 
 
 class TestRoundtrip:
@@ -212,6 +303,117 @@ class TestRoundtrip:
         assert loaded.labeling.upper_barrier == 0.02
         assert loaded.preprocessing is not None
         assert loaded.preprocessing.scaler == "standard"
+
+    def test_roundtrip_timedelta_uses_safe_portable_yaml(self, tmp_path):
+        original = ExperimentConfig(
+            labeling=LabelingConfig.triple_barrier(
+                max_holding_period=timedelta(hours=4, microseconds=500),
+            )
+        )
+        path = tmp_path / "duration.yaml"
+
+        save_experiment_config(original, path, include_defaults=True)
+        raw = yaml.safe_load(path.read_text())
+        loaded = load_experiment_config(path)
+
+        assert raw["schema_version"] == 1
+        assert loaded.labeling is not None
+        assert loaded.labeling.max_holding_period == timedelta(hours=4, microseconds=500)
+        assert isinstance(loaded.labeling.max_holding_period, timedelta)
+
+    def test_custom_sections_survive_typed_section_edits(self, tmp_path):
+        path = tmp_path / "custom.yaml"
+        custom = {
+            "features": [{"name": "rsi"}],
+            "execution": {
+                "seed": 7,
+                "venue": "paper",
+                "nested": {"retries": [1, 2, 3]},
+            },
+        }
+        path.write_text(yaml.safe_dump(custom))
+        config = load_experiment_config(path)
+        config.features = [{"name": "sma", "params": {"period": 20}}]
+
+        save_experiment_config(config, path)
+        saved = yaml.safe_load(path.read_text())
+
+        assert saved["execution"] == custom["execution"]
+        assert saved["features"] == config.features
+
+    @pytest.mark.parametrize("holding_period", [20, "4h", timedelta(hours=4)])
+    def test_every_holding_period_form_retains_its_type(self, tmp_path, holding_period):
+        path = tmp_path / "holding-period.yaml"
+        original = ExperimentConfig(
+            labeling=LabelingConfig.triple_barrier(max_holding_period=holding_period)
+        )
+
+        save_experiment_config(original, path, include_defaults=True)
+        loaded = load_experiment_config(path)
+
+        assert loaded.labeling is not None
+        assert loaded.labeling.max_holding_period == holding_period
+        assert type(loaded.labeling.max_holding_period) is type(holding_period)
+
+    def test_all_typed_fields_roundtrip_together(self, tmp_path):
+        path = tmp_path / "complete.yaml"
+        labeling = LabelingConfig(
+            method="triple_barrier",
+            price_col="settlement",
+            timestamp_col="event_time",
+            group_col=["venue", "symbol"],
+            data_contract=DataContractConfig(
+                timestamp_col="event_time",
+                symbol_col=["venue", "symbol"],
+                price_col="settlement",
+            ),
+            upper_barrier="take_profit",
+            lower_barrier="stop_loss",
+            max_holding_period=timedelta(days=2, seconds=3, microseconds=4),
+            side="trade_side",
+            trailing_stop="trailing_distance",
+            weight_scheme="returns",
+            weight_decay_rate=0.25,
+            atr_tp_multiple=3.0,
+            atr_sl_multiple=1.5,
+            atr_period=21,
+            horizon=15,
+            return_method="binary",
+            threshold=0.001,
+            min_horizon=4,
+            max_horizon=12,
+            t_value_threshold=3.0,
+            percentile_window=100,
+            n_bins=5,
+        )
+        preprocessing = PreprocessingConfig(
+            scaler="robust",
+            columns=["rsi", "atr"],
+            with_mean=False,
+            with_std=False,
+            feature_range=(-1.0, 1.0),
+            with_centering=False,
+            with_scaling=False,
+            quantile_range=(10.0, 90.0),
+        )
+        original = ExperimentConfig(
+            features=[
+                {
+                    "name": "sma",
+                    "params": {"period": 20},
+                    "output": "sma_20",
+                }
+            ],
+            labeling=labeling,
+            preprocessing=preprocessing,
+        )
+
+        save_experiment_config(original, path, include_defaults=True)
+        loaded = load_experiment_config(path)
+
+        assert loaded.features == original.features
+        assert loaded.labeling == labeling
+        assert loaded.preprocessing == preprocessing
 
 
 class TestExperimentConfigDataclass:
