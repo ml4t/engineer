@@ -327,14 +327,15 @@ def _trend_scanning_single_group(
     labels = np.full(n, np.nan)
     t_values = np.full(n, np.nan)
     windows = np.full(n, np.nan)
+    perfect_fit_t = np.finfo(np.float64).max
 
     # Scan each observation
-    for i in range(n - min_window):
+    for i in range(n - min_window + 1):
         best_t = 0.0
         best_window = min_window
 
         # Scan windows of different lengths
-        for window in range(min_window, min(max_window, n - i), step):
+        for window in range(min_window, min(max_window, n - i) + 1, step):
             # Extract window
             window_prices = prices[i : i + window]
             x = np.arange(window)
@@ -342,10 +343,17 @@ def _trend_scanning_single_group(
 
             # Fit linear regression
             try:
-                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                slope, _intercept, _r_value, _p_value, std_err = stats.linregress(x, y)
 
                 # Compute t-statistic
-                t_stat = slope / std_err if std_err > 0 else 0.0
+                if std_err > 0:
+                    t_stat = slope / std_err
+                elif slope > 0:
+                    t_stat = perfect_fit_t
+                elif slope < 0:
+                    t_stat = -perfect_fit_t
+                else:
+                    t_stat = 0.0
 
                 # Keep window with highest |t|
                 if abs(t_stat) > abs(best_t):
@@ -392,9 +400,6 @@ def trend_scanning_labels(
     is assigned based on the trend direction when a non-zero t-statistic is
     found. Observations with no directional trend remain null.
 
-    This method is more robust than fixed-horizon labeling as it adapts to
-    the local trend structure in the data.
-
     Parameters
     ----------
     data : pl.DataFrame
@@ -428,6 +433,9 @@ def trend_scanning_labels(
         - t_value: t-statistic of the selected trend, or null
         - optimal_window: window size with highest |t-value|, or null
 
+        Exact nonconstant linear fits use the largest finite float as the signed
+        t-value. Constant windows have null outputs.
+
     Examples
     --------
     >>> # Scan windows from 5 to 50 bars
@@ -447,11 +455,6 @@ def trend_scanning_labels(
     3. Computes t-statistic for the slope coefficient
     4. Selects the window with highest absolute t-statistic
     5. Assigns label = sign(t-statistic), or null if no directional trend is found
-
-    This approach:
-    - Adapts to local trend structure
-    - More robust than fixed horizons
-    - Computationally expensive (O(n * m) where m = window range)
 
     **Important**: Data is automatically sorted by [group_col, timestamp] before
     scanning. This is required because the algorithm scans forward in row order.

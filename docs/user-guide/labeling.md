@@ -212,7 +212,8 @@ result = atr_triple_barrier_labels(df, config=config)
 
 ## Rolling Percentile Labels
 
-Adaptive labeling where thresholds are computed from the rolling return distribution. Produces binary long/short signals based on whether forward returns exceed a historical percentile.
+Adaptive labeling computes each threshold from outcomes whose forward horizons have ended.
+An unresolved outcome never contributes to an earlier threshold.
 
 ```python
 from ml4t.engineer.labeling import rolling_percentile_binary_labels
@@ -238,6 +239,9 @@ result = rolling_percentile_binary_labels(
 | `forward_return_10` | 0.0123 | Forward return over horizon |
 | `threshold_p95_h10` | 0.0089 | Rolling 95th percentile threshold |
 | `label_long_p95_h10` | 1 | 1 if return exceeds threshold, 0 otherwise |
+
+Decimal percentiles use `p` in column names. For example, percentile `95.5`
+produces `threshold_p95p5_h10` and `label_long_p95p5_h10`.
 
 ### Multiple Horizons and Percentiles
 
@@ -292,14 +296,17 @@ from ml4t.engineer.labeling import trend_scanning_labels
 
 result = trend_scanning_labels(
     data=df,
-    min_horizon=5,
-    max_horizon=20,
-    t_value_threshold=2.0,
+    min_window=5,
+    max_window=20,
+    step=1,
     price_col="close",
 )
 ```
 
-Output includes `trend_label` (+1/-1/0), `optimal_horizon`, and `t_statistic`. Observations with |t-statistic| below the threshold receive label 0 (no trend).
+Output includes `label` (+1, -1, or null), `optimal_window`, and `t_value`.
+The function selects the tested window with the largest absolute slope t-statistic.
+Constant windows have null outputs. Exact nonconstant linear fits use the largest
+finite float as the signed `t_value`.
 
 > **Book**: Ch7 `03_label_methods.py` demonstrates trend scanning alongside triple-barrier and percentile methods, showing how the optimal horizon varies with market conditions.
 

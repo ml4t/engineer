@@ -673,9 +673,12 @@ class TestCalendarIntegration:
 
     def test_calendar_with_nan_prices(self, sample_intraday_data):
         """Test calendar-aware labels rejects NaN prices at entry."""
-        # Add some NaN values
-        data_with_nan = sample_intraday_data.with_columns(
-            pl.when(pl.col("close") > 100.5).then(None).otherwise(pl.col("close")).alias("close")
+        data_with_nan = (
+            sample_intraday_data.with_row_index("_row")
+            .with_columns(
+                pl.when(pl.col("_row") == 0).then(None).otherwise(pl.col("close")).alias("close")
+            )
+            .drop("_row")
         )
 
         cal = SimpleTradingCalendar(gap_threshold_minutes=480)

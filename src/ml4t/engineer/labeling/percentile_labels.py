@@ -4,7 +4,7 @@ This module implements adaptive binary labeling using rolling historical percent
 suitable for creating training labels that adapt to volatility regimes.
 
 Key Concepts:
-- Uses rolling window of historical returns to compute percentiles
+- Uses rolling windows of realized historical returns to compute percentiles
 - Thresholds adapt to market volatility (high vol → wider thresholds)
 - Natural class balance control via percentile selection
 - Session-aware: Respects session boundaries (e.g., CME futures gaps)
@@ -35,19 +35,19 @@ Example:
     ...     lookback_window="5d",  # 5-day rolling window
     ... )
 
-Reference:
-    Based on methodology from Wyden Long-Short Trading System.
-    See: .claude/reference/LABELING_AND_SCORING_METHODOLOGY.md
 """
 
 from __future__ import annotations
 
+import math
+from decimal import Decimal
+from numbers import Real
 from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 
 from ml4t.engineer.labeling.utils import (
-    get_future_price_at_time,
+    _get_future_price_lookup,
     is_duration_string,
     parse_duration,
     resolve_labeling_columns,
@@ -55,6 +55,119 @@ from ml4t.engineer.labeling.utils import (
 
 if TYPE_CHECKING:
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
+
+
+def _canonical_percentile(percentile: float) -> str:
+    """Validate and encode a percentile as a safe, lossless column identifier."""
+    if (
+        isinstance(percentile, bool)
+        or not isinstance(percentile, Real)
+        or not math.isfinite(float(percentile))
+        or not 0 <= percentile <= 100
+    ):
+        raise ValueError("percentile must be a finite number between 0 and 100")
+    normalized = format(Decimal(str(percentile)).normalize(), "f")
+    return normalized.replace(".", "p")
+
+
+def _canonical_horizon(horizon: int | str) -> tuple[str, bool]:
+    """Validate a label horizon and return its canonical column identity."""
+    if isinstance(horizon, bool):
+        raise ValueError("horizon must be a positive integer or duration string")
+    if isinstance(horizon, int):
+        if horizon <= 0:
+            raise ValueError("horizon must be positive")
+        return str(horizon), False
+    if isinstance(horizon, str) and is_duration_string(horizon):
+        return horizon.strip().lower(), True
+    raise ValueError("horizon must be a positive integer or duration string")
+
+
+def _validate_lookback_window(lookback_window: int | str) -> bool:
+    """Validate the rolling lookback and return whether it is time-based."""
+    if isinstance(lookback_window, bool):
+        raise ValueError("lookback_window must be a positive integer or duration string")
+    if isinstance(lookback_window, int):
+        if lookback_window <= 0:
+            raise ValueError("lookback_window must be positive")
+        return False
+    if isinstance(lookback_window, str) and is_duration_string(lookback_window):
+        return True
+    raise ValueError("lookback_window must be a positive integer or duration string")
+
+
+def _temporary_column(columns: list[str], base: str) -> str:
+    """Return a temporary column name that cannot replace caller data."""
+    name = base
+    suffix = 1
+    while name in columns:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
+def _rolling_realized_quantile(
+    result: pl.DataFrame,
+    forward_return_col: str,
+    availability_col: str,
+    decision_index_col: str,
+    group_cols: list[str],
+    lookback_window: int | str,
+    quantile: float,
+    min_samples: int,
+) -> pl.Series:
+    """Compute thresholds from outcomes available at each decision index."""
+    rolling_index_col = _temporary_column(result.columns, "__ml4t_rolling_index")
+    outcome_col = _temporary_column(
+        [*result.columns, rolling_index_col],
+        "__ml4t_realized_outcome",
+    )
+
+    decision_rows = result.select(
+        [
+            *(pl.col(column) for column in group_cols),
+            pl.col(decision_index_col).alias(rolling_index_col),
+            pl.lit(None, dtype=pl.Float64).alias(outcome_col),
+        ]
+    )
+    realized_outcomes = result.select(
+        [
+            *(pl.col(column) for column in group_cols),
+            pl.col(availability_col).alias(rolling_index_col),
+            pl.col(forward_return_col).cast(pl.Float64).alias(outcome_col),
+        ]
+    ).filter(pl.col(rolling_index_col).is_not_null() & pl.col(outcome_col).is_not_null())
+
+    sort_cols = [*group_cols, rolling_index_col]
+    combined = pl.concat([decision_rows, realized_outcomes], how="vertical").sort(sort_cols)
+    period = f"{lookback_window}i" if isinstance(lookback_window, int) else lookback_window
+    rolling = combined.rolling(
+        index_column=rolling_index_col,
+        period=period,
+        group_by=group_cols or None,
+    ).agg(
+        pl.col(outcome_col).quantile(quantile).alias("_rolling_threshold"),
+        pl.col(outcome_col).count().alias("_realized_count"),
+    )
+
+    join_keys = [*group_cols, rolling_index_col]
+    rolling = (
+        rolling.unique(subset=join_keys, keep="last", maintain_order=True)
+        .with_columns(
+            pl.when(pl.col("_realized_count") >= min_samples)
+            .then(pl.col("_rolling_threshold"))
+            .otherwise(None)
+            .alias("_rolling_threshold")
+        )
+        .select([*join_keys, "_rolling_threshold"])
+    )
+    decisions = result.select(
+        [
+            *(pl.col(column) for column in group_cols),
+            pl.col(decision_index_col).alias(rolling_index_col),
+        ]
+    )
+    return decisions.join(rolling, on=join_keys, how="left")["_rolling_threshold"]
 
 
 def rolling_percentile_binary_labels(
@@ -80,7 +193,7 @@ def rolling_percentile_binary_labels(
 
     Algorithm:
     1. Compute forward returns over horizon (session-aware if session_col provided)
-    2. Compute rolling percentile from lookback window
+    2. Compute the rolling percentile from outcomes whose horizons have ended
     3. For long: label = 1 if forward_return >= threshold, else 0
        For short: label = 1 if forward_return <= threshold, else 0
 
@@ -134,6 +247,9 @@ def rolling_percentile_binary_labels(
         - threshold_p{percentile}_h{horizon}: Rolling percentile threshold
         - label_{direction}_p{percentile}_h{horizon}: Binary label (0 or 1)
 
+        Decimal points in percentile column identifiers use ``p``. For example,
+        percentile ``95.5`` produces ``threshold_p95p5_h{horizon}``.
+
     Examples
     --------
     >>> # Bar-based: Top 5% of 30-bar returns
@@ -166,11 +282,11 @@ def rolling_percentile_binary_labels(
 
     Notes
     -----
-    - First lookback_window bars will have null labels (insufficient history)
+    - Thresholds remain null until min_samples outcomes have reached their horizon
     - Last horizon bars will have null forward returns (insufficient future data)
     - Class balance approximately matches percentile (p95 → ~5% positives)
     - Adaptive: Thresholds widen in high volatility, tighten in low volatility
-    - No lookahead bias: Only uses past data for percentile computation
+    - Thresholds exclude every outcome that has not reached its horizon
 
     **Time-based horizons**: When horizon is a duration string, uses join_asof
     to get future prices. This is useful for irregular data like trade bars.
@@ -182,11 +298,16 @@ def rolling_percentile_binary_labels(
     This is required because Polars .over() and .shift() preserve row order.
     The result is returned sorted chronologically.
     """
-    # Determine if time-based
-    is_time_based_horizon = isinstance(horizon, str) and is_duration_string(horizon)
-    is_time_based_lookback = isinstance(lookback_window, str) and is_duration_string(
-        lookback_window
-    )
+    percentile_label = _canonical_percentile(percentile)
+    horizon_label, is_time_based_horizon = _canonical_horizon(horizon)
+    bar_horizon = None if is_time_based_horizon else int(horizon)
+    is_time_based_lookback = _validate_lookback_window(lookback_window)
+    if direction not in {"long", "short"}:
+        raise ValueError(f"Invalid direction: {direction}. Must be 'long' or 'short'.")
+    if min_samples is not None and (
+        isinstance(min_samples, bool) or not isinstance(min_samples, int) or min_samples <= 0
+    ):
+        raise ValueError("min_samples must be a positive integer")
 
     resolved_price_col, resolved_ts_col, resolved_group_cols = resolve_labeling_columns(
         data=data,
@@ -202,32 +323,40 @@ def rolling_percentile_binary_labels(
     if sort_cols:
         data = data.sort(sort_cols)
 
-    result = data.clone()
-
-    # Create label suffix for column naming
-    if is_time_based_horizon:
-        horizon_label = horizon.lower().replace(" ", "")  # type: ignore[union-attr]
-    else:
-        horizon_label = str(horizon)
+    row_index_col = _temporary_column(data.columns, "__ml4t_row_index")
+    result = data.with_row_index(row_index_col).with_columns(pl.col(row_index_col).cast(pl.Int64))
+    availability_row_col = _temporary_column(result.columns, "__ml4t_availability_row")
+    availability_time_col = _temporary_column(
+        [*result.columns, availability_row_col],
+        "__ml4t_availability_time",
+    )
 
     # Step 1: Compute forward returns
     if is_time_based_horizon:
         # Time-based forward returns using join_asof
         td = parse_duration(horizon)  # type: ignore[arg-type]
-        future_prices, valid_mask = get_future_price_at_time(
-            data=data,
+        lookup = _get_future_price_lookup(
+            data=result,
             time_horizon=td,
             price_col=resolved_price_col,
             timestamp_col=resolved_ts_col,
             tolerance=tolerance,
             group_cols=resolved_group_cols if resolved_group_cols else None,
         )
+        future_prices = lookup["_future_price"]
+        valid_mask = future_prices.is_not_null()
         current_prices = data[resolved_price_col]
         forward_returns = (future_prices - current_prices) / current_prices
+        availability_rows = lookup["_future_row_index"].cast(pl.Int64)
+        availability_times = lookup["_lookup_ts"]
 
         # Mask invalid joins if tolerance specified
         if tolerance is not None:
             forward_returns = pl.when(valid_mask).then(forward_returns).otherwise(pl.lit(None))
+            availability_rows = pl.when(valid_mask).then(availability_rows).otherwise(pl.lit(None))
+            availability_times = (
+                pl.when(valid_mask).then(availability_times).otherwise(pl.lit(None))
+            )
     elif session_col is not None:
         if session_col not in data.columns:
             raise ValueError(f"Session column '{session_col}' not found in data")
@@ -238,30 +367,60 @@ def rolling_percentile_binary_labels(
 
         # Session-aware forward returns (don't cross session boundaries)
         forward_returns = result.with_columns(
-            (pl.col(resolved_price_col).shift(-horizon) / pl.col(resolved_price_col) - 1)
+            (pl.col(resolved_price_col).shift(-bar_horizon) / pl.col(resolved_price_col) - 1)
             .over(session_groups)
             .alias("forward_return")
         )["forward_return"]
+        availability_rows = result.with_columns(
+            pl.col(row_index_col)
+            .shift(-bar_horizon)
+            .over(session_groups)
+            .cast(pl.Int64)
+            .alias(availability_row_col)
+        )[availability_row_col]
+        availability_times = (
+            result.with_columns(
+                pl.col(resolved_ts_col)
+                .shift(-bar_horizon)
+                .over(session_groups)
+                .alias(availability_time_col)
+            )[availability_time_col]
+            if resolved_ts_col
+            else None
+        )
     else:
         # Simple bar-based forward returns
-        forward_expr = pl.col(resolved_price_col).shift(-horizon) / pl.col(resolved_price_col) - 1
+        forward_expr = (
+            pl.col(resolved_price_col).shift(-bar_horizon) / pl.col(resolved_price_col) - 1
+        )
         if resolved_group_cols:
             forward_expr = forward_expr.over(resolved_group_cols)
         forward_returns = result.with_columns(forward_expr.alias("forward_return"))[
             "forward_return"
         ]
+        availability_row_expr = pl.col(row_index_col).shift(-bar_horizon).cast(pl.Int64)
+        if resolved_group_cols:
+            availability_row_expr = availability_row_expr.over(resolved_group_cols)
+        availability_rows = result.with_columns(availability_row_expr.alias(availability_row_col))[
+            availability_row_col
+        ]
+        if resolved_ts_col:
+            availability_time_expr = pl.col(resolved_ts_col).shift(-bar_horizon)
+            if resolved_group_cols:
+                availability_time_expr = availability_time_expr.over(resolved_group_cols)
+            availability_times = result.with_columns(
+                availability_time_expr.alias(availability_time_col)
+            )[availability_time_col]
+        else:
+            availability_times = None
 
     forward_return_col = f"forward_return_{horizon_label}"
-    result = result.with_columns(forward_returns.alias(forward_return_col))
-
-    # Step 2: Compute rolling percentile threshold
-    # Critical: shift forward returns by 1 so thresholds only use historical
-    # realized outcomes, never the current row's own future return.
-    historical_return_col = f"_historical_forward_return_{horizon_label}"
-    historical_forward_expr = pl.col(forward_return_col).shift(1)
-    if resolved_group_cols:
-        historical_forward_expr = historical_forward_expr.over(resolved_group_cols)
-    result = result.with_columns(historical_forward_expr.alias(historical_return_col))
+    result = result.with_columns(
+        forward_returns.alias(forward_return_col),
+        availability_rows.alias(availability_row_col),
+    )
+    if availability_times is not None:
+        result = result.with_columns(availability_times.alias(availability_time_col))
 
     quantile = percentile / 100.0
 
@@ -273,46 +432,20 @@ def rolling_percentile_binary_labels(
             # For time-based lookback, use a reasonable default
             min_samples = 100
 
-    # Compute rolling threshold
-    # Polars rolling_quantile supports duration strings for window_size when
-    # using rolling() context with index_column
-    if is_time_based_lookback and resolved_ts_col:
-        # Use Polars native time-based rolling via rolling() context
-        rolling_result = result.rolling(
-            index_column=resolved_ts_col,
-            period=lookback_window,  # type: ignore[arg-type]
-            group_by=resolved_group_cols if resolved_group_cols else None,
-        ).agg(pl.col(historical_return_col).quantile(quantile).alias("_rolling_threshold"))
+    decision_index_col = resolved_ts_col if is_time_based_lookback else row_index_col
+    availability_col = availability_time_col if is_time_based_lookback else availability_row_col
+    rolling_threshold = _rolling_realized_quantile(
+        result=result,
+        forward_return_col=forward_return_col,
+        availability_col=availability_col,
+        decision_index_col=decision_index_col,
+        group_cols=resolved_group_cols,
+        lookback_window=lookback_window,
+        quantile=quantile,
+        min_samples=min_samples,
+    )
 
-        join_keys = (
-            [*resolved_group_cols, resolved_ts_col] if resolved_group_cols else [resolved_ts_col]
-        )
-        # Join back to get the threshold column
-        rolling_threshold = result.join(
-            rolling_result,
-            on=join_keys,
-            how="left",
-        )["_rolling_threshold"]
-    else:
-        # Bar-based rolling (original implementation)
-        if not isinstance(lookback_window, int):
-            raise ValueError(
-                f"lookback_window must be an integer for bar-based rolling, "
-                f"got '{lookback_window}'. For time-based, ensure timestamp_col is set."
-            )
-        rolling_threshold_expr = pl.col(historical_return_col).rolling_quantile(
-            window_size=lookback_window,
-            quantile=quantile,
-            min_samples=min_samples,
-            center=False,
-        )
-        if resolved_group_cols:
-            rolling_threshold_expr = rolling_threshold_expr.over(resolved_group_cols)
-        rolling_threshold = result.with_columns(rolling_threshold_expr.alias("_rolling_threshold"))[
-            "_rolling_threshold"
-        ]
-
-    threshold_col_name = f"threshold_p{int(percentile)}_h{horizon_label}"
+    threshold_col_name = f"threshold_p{percentile_label}_h{horizon_label}"
     result = result.with_columns(rolling_threshold.alias(threshold_col_name))
 
     # Step 3: Create binary labels based on direction
@@ -325,14 +458,13 @@ def rolling_percentile_binary_labels(
     elif direction == "short":
         # Short: 1 if forward_return <= threshold (bottom percentile)
         label = (forward_ret_col <= threshold_col).cast(pl.Int8)
-    else:
-        msg = f"Invalid direction: {direction}. Must be 'long' or 'short'."
-        raise ValueError(msg)
-
-    label_col_name = f"label_{direction}_p{int(percentile)}_h{horizon_label}"
+    label_col_name = f"label_{direction}_p{percentile_label}_h{horizon_label}"
     result = result.with_columns(label.alias(label_col_name))
 
-    return result.drop(historical_return_col)
+    temporary_cols = [row_index_col, availability_row_col]
+    if availability_times is not None:
+        temporary_cols.append(availability_time_col)
+    return result.drop(temporary_cols)
 
 
 def rolling_percentile_multi_labels(
@@ -401,6 +533,18 @@ def rolling_percentile_multi_labels(
     >>> # Creates 6 label columns: 3 horizons × 2 percentiles
     >>> print([c for c in labels.columns if c.startswith("label_")])
     """
+    if not horizons:
+        raise ValueError("horizons must not be empty")
+    if not percentiles:
+        raise ValueError("percentiles must not be empty")
+
+    horizon_labels = [_canonical_horizon(horizon)[0] for horizon in horizons]
+    if len(set(horizon_labels)) != len(horizon_labels):
+        raise ValueError("duplicate horizon configurations are not allowed")
+    percentile_labels = [_canonical_percentile(percentile) for percentile in percentiles]
+    if len(set(percentile_labels)) != len(percentile_labels):
+        raise ValueError("duplicate percentile configurations are not allowed")
+
     result = data.clone()
 
     for horizon in horizons:

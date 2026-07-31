@@ -607,6 +607,60 @@ class TestTrendScanningLabels:
         # Should still produce output
         assert "label" in result.columns
 
+    @pytest.mark.parametrize(
+        ("prices", "expected_label"),
+        [
+            ([1.0, 2.0, 3.0, 4.0, 5.0], 1),
+            ([5.0, 4.0, 3.0, 2.0, 1.0], -1),
+        ],
+    )
+    def test_exact_nonconstant_trends(self, prices, expected_label):
+        """Perfect fits receive a finite maximal statistic in their direction."""
+        result = trend_scanning_labels(
+            pl.DataFrame({"close": prices}),
+            min_window=3,
+            max_window=4,
+        )
+
+        assert result["label"][:3].to_list() == [expected_label] * 3
+        assert result["optimal_window"][:3].to_list() == [3] * 3
+        assert np.isfinite(result["t_value"][:3].to_numpy()).all()
+        assert np.abs(result["t_value"][0]) == np.finfo(np.float64).max
+
+    def test_constant_trend_remains_unknown(self):
+        """A zero-slope perfect fit has no directional target."""
+        result = trend_scanning_labels(
+            pl.DataFrame({"close": [7.0] * 5}),
+            min_window=3,
+            max_window=4,
+        )
+
+        assert result["label"].to_list() == [None] * 5
+        assert result["t_value"].to_list() == [None] * 5
+        assert result["optimal_window"].to_list() == [None] * 5
+
+    def test_nearly_exact_trend_has_finite_statistic(self):
+        """A small residual uses the regression statistic rather than the perfect-fit cap."""
+        result = trend_scanning_labels(
+            pl.DataFrame({"close": [1.0, 2.0, 3.0, 4.0001, 5.0]}),
+            min_window=4,
+            max_window=5,
+        )
+
+        assert result["label"][0] == 1
+        assert 0 < result["t_value"][0] < np.finfo(np.float64).max
+
+    def test_exact_minimum_window_at_series_boundary(self):
+        """The final row with a complete minimum window is scanned."""
+        result = trend_scanning_labels(
+            pl.DataFrame({"close": [1.0, 2.0, 3.0]}),
+            min_window=2,
+            max_window=3,
+        )
+
+        assert result["label"].to_list() == [1, 1, None]
+        assert result["optimal_window"].to_list() == [2, 2, None]
+
 
 class TestEventBasedLabeling:
     """Test event-based labeling scenarios."""
