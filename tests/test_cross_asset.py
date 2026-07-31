@@ -146,6 +146,41 @@ class TestCrossAssetFeatures:
         finite = [v for v in beta.to_list() if v is not None and not np.isnan(v)]
         assert finite == []
 
+    @pytest.mark.parametrize(
+        ("asset", "market"),
+        [
+            ([1.0, None, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]),
+            ([1.0, 2.0, None, 4.0, 5.0], [2.0, 1.0, 4.0, 3.0, 8.0]),
+            ([1.0, 2.0, 3.0, 4.0], [1.0, None, 3.0, 4.0]),
+            ([1.0, np.nan, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]),
+        ],
+    )
+    def test_beta_to_market_uses_pairwise_complete_sample(self, asset, market):
+        """Covariance and market variance use the same observations."""
+        df = pl.DataFrame({"asset": asset, "market": market})
+        actual = df.select(
+            beta_to_market(
+                "asset",
+                "market",
+                window=len(asset),
+                min_periods=2,
+            ).alias("beta")
+        )["beta"][-1]
+
+        pairs = [
+            (a, m)
+            for a, m in zip(asset, market, strict=True)
+            if a is not None and m is not None and np.isfinite(a) and np.isfinite(m)
+        ]
+        paired_asset = np.array([a for a, _m in pairs])
+        paired_market = np.array([m for _a, m in pairs])
+        expected = np.cov(paired_asset, paired_market, ddof=1)[0, 1] / np.var(
+            paired_market,
+            ddof=1,
+        )
+
+        assert actual == pytest.approx(expected)
+
     def test_rolling_correlation_self_correlation_is_one(self, sample_data):
         """Correlation of a series with itself must be exactly 1."""
         result = sample_data.select(

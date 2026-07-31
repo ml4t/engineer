@@ -34,6 +34,7 @@ higher moment calculations for financial risk management.
 """
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from scipy import stats
 
@@ -271,41 +272,55 @@ def maximum_drawdown(
     running_max = close.rolling_max(window, min_samples=window // 2)
     drawdown = (close - running_max) / running_max
 
-    # Calculate rolling maximum drawdown
-    max_drawdown = drawdown.rolling_min(window, min_samples=window // 2)
+    def window_drawdowns(s: pl.Series) -> npt.NDArray[np.float64]:
+        values = s.to_numpy()
+        clean_values = values[np.isfinite(values)]
+        if len(clean_values) == 0:
+            return np.array([], dtype=np.float64)
+        peaks = np.maximum.accumulate(clean_values)
+        return (clean_values - peaks) / peaks
 
-    # Calculate drawdown duration using a custom function
-    def calculate_dd_duration(s: pl.Series) -> float:
-        """Calculate maximum drawdown duration in a window."""
-        close = s.to_numpy()
-        mask = ~np.isnan(close)
-        clean_values = close[mask]
-
-        if len(clean_values) < 2:
+    def calculate_max_drawdown(s: pl.Series) -> float:
+        local_drawdowns = window_drawdowns(s)
+        if len(local_drawdowns) == 0:
             return float(np.nan)
+        return float(np.min(local_drawdowns))
 
-        # Simple duration calculation
+    def calculate_dd_duration(s: pl.Series) -> float:
+        local_drawdowns = window_drawdowns(s)
+        if len(local_drawdowns) == 0:
+            return float(np.nan)
         max_duration = 0
         current_duration = 0
-
-        for val in clean_values:
-            if val < 0:
+        for value in local_drawdowns:
+            if value < 0:
                 current_duration += 1
                 max_duration = max(max_duration, current_duration)
             else:
                 current_duration = 0
-
         return float(max_duration)
 
-    # Apply duration calculation
-    max_duration = drawdown.rolling_map(
+    def calculate_time_underwater(s: pl.Series) -> float:
+        local_drawdowns = window_drawdowns(s)
+        if len(local_drawdowns) == 0:
+            return float(np.nan)
+        return float(np.mean(local_drawdowns < 0))
+
+    max_drawdown = close.rolling_map(
+        calculate_max_drawdown,
+        window_size=window,
+        min_samples=window // 2,
+    )
+    max_duration = close.rolling_map(
         calculate_dd_duration,
         window_size=window,
         min_samples=window // 2,
     )
-
-    # Time underwater (percentage of time in drawdown)
-    time_underwater = (drawdown < 0).cast(pl.Float64).rolling_mean(window, min_samples=window // 2)
+    time_underwater = close.rolling_map(
+        calculate_time_underwater,
+        window_size=window,
+        min_samples=window // 2,
+    )
 
     return {
         "max_drawdown": max_drawdown,
@@ -475,20 +490,30 @@ def higher_moments(
 
     returns = pl.col(returns) if isinstance(returns, str) else returns
 
-    # Standardized returns for moment calculation
-    mean = returns.rolling_mean(window, min_samples=window // 2)
-    std = returns.rolling_std(window, min_samples=window // 2)
-    standardized = (returns - mean) / (std + 1e-10)
+    def standardized_moment(s: pl.Series, power: int, excess: float = 0.0) -> float:
+        values = s.to_numpy()
+        clean_values = values[np.isfinite(values)]
+        if len(clean_values) < 2:
+            return float(np.nan)
+        std = np.std(clean_values, ddof=1)
+        if std == 0 or not np.isfinite(std):
+            return float(np.nan)
+        standardized = (clean_values - np.mean(clean_values)) / std
+        return float(np.mean(standardized**power) - excess)
 
     return {
         "skewness": returns.rolling_skew(window),
         "kurtosis": returns.rolling_kurtosis(window, fisher=True),  # Excess kurtosis
-        "hyperskewness": (standardized**5).rolling_mean(
-            window,
-            min_samples=window // 2,
+        "hyperskewness": returns.rolling_map(
+            lambda s: standardized_moment(s, 5),
+            window_size=window,
+            min_samples=window,
         ),
-        "hyperkurtosis": (standardized**6).rolling_mean(window, min_samples=window // 2)
-        - 15,  # Excess
+        "hyperkurtosis": returns.rolling_map(
+            lambda s: standardized_moment(s, 6, 15.0),
+            window_size=window,
+            min_samples=window,
+        ),
     }
 
 

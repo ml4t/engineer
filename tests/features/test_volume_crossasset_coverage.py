@@ -603,6 +603,65 @@ class TestTransferEntropyNumba:
         # Should be finite
         assert np.isfinite(result)
 
+    def test_transfer_entropy_matches_empirical_definition(self):
+        """Conditional probabilities use the joint past-state denominator."""
+        from ml4t.engineer.features.cross_asset import transfer_entropy_nb
+
+        rng = np.random.default_rng(7)
+        x = rng.normal(size=400)
+        y = np.empty(400)
+        y[0] = 0.0
+        y[1:] = x[:-1] + rng.normal(scale=0.05, size=399)
+        lag = 1
+        bins = 6
+
+        actual = transfer_entropy_nb(x, y, lag=lag, bins=bins)
+
+        x_edges = np.linspace(x.min(), x.max(), bins + 1)
+        y_edges = np.linspace(y.min(), y.max(), bins + 1)
+        x_past = np.searchsorted(x_edges[1:-1], x[:-lag])
+        y_past = np.searchsorted(y_edges[1:-1], y[:-lag])
+        y_future = np.searchsorted(y_edges[1:-1], y[lag:])
+        n = len(x_past)
+        expected = 0.0
+        for i in range(bins):
+            for j in range(bins):
+                count_ij = np.sum((x_past == i) & (y_past == j))
+                count_j = np.sum(y_past == j)
+                for k in range(bins):
+                    count_ijk = np.sum((x_past == i) & (y_past == j) & (y_future == k))
+                    count_jk = np.sum((y_past == j) & (y_future == k))
+                    if count_ijk and count_ij and count_jk and count_j:
+                        expected += (count_ijk / n) * np.log2(
+                            (count_ijk / count_ij) / (count_jk / count_j)
+                        )
+
+        assert actual == pytest.approx(expected)
+        assert actual >= 0.0
+        assert actual > transfer_entropy_nb(y, x, lag=lag, bins=bins)
+
+    @pytest.mark.parametrize(
+        ("x", "y", "lag", "bins", "message"),
+        [
+            (np.arange(20.0), np.arange(19.0), 1, 5, "same length"),
+            (np.arange(20.0), np.arange(20.0), 0, 5, "lag must be at least 1"),
+            (np.arange(20.0), np.arange(20.0), 1, 1, "bins must be at least 2"),
+            (
+                np.r_[np.arange(19.0), np.nan],
+                np.arange(20.0),
+                1,
+                5,
+                "only finite",
+            ),
+        ],
+    )
+    def test_transfer_entropy_validates_inputs(self, x, y, lag, bins, message):
+        """Invalid arrays and discretization settings fail explicitly."""
+        from ml4t.engineer.features.cross_asset import transfer_entropy_nb
+
+        with pytest.raises(ValueError, match=message):
+            transfer_entropy_nb(x, y, lag=lag, bins=bins)
+
     def test_transfer_entropy_nb_insufficient_data(self):
         """Test transfer_entropy_nb with insufficient data."""
         from ml4t.engineer.features.cross_asset import transfer_entropy_nb
