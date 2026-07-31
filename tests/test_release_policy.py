@@ -78,7 +78,7 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
     ci_jobs = _load_workflow("ci.yml")["jobs"]
     build_steps = ci_jobs["build"]["steps"]
     build_commands = {step["name"]: step["run"] for step in build_steps if "run" in step}
-    assert ci_jobs["build"]["needs"] == ["lint", "typecheck", "test"]
+    assert ci_jobs["build"]["needs"] == ["lint", "typecheck", "security", "test"]
     assert "twine check dist/*" in build_commands["Validate package metadata"]
     assert "uv pip install" in build_commands["Validate wheel installation"]
     assert 'python -c "import ml4t.engineer"' in build_commands["Validate wheel installation"]
@@ -91,6 +91,20 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
     publish_steps = release_jobs["publish"]["steps"]
     download = next(step for step in publish_steps if step["name"] == "Download build artifacts")
     assert download["with"] == {"name": "dist", "path": "dist/"}
+
+
+def test_ci_audits_core_and_complete_locked_environments() -> None:
+    steps = _load_workflow("ci.yml")["jobs"]["security"]["steps"]
+    commands = {step["name"]: step["run"] for step in steps if "run" in step}
+
+    export = commands["Export locked environments"]
+    assert "--no-dev --no-emit-project" in export
+    assert "--all-extras --all-groups --no-emit-project" in export
+
+    audit = commands["Audit locked environments"]
+    assert audit.count("pip-audit --requirement") == 2
+    assert "core.txt" in audit
+    assert "complete.txt" in audit
 
 
 def test_all_external_actions_are_pinned_to_full_commit_shas() -> None:

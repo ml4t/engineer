@@ -201,6 +201,7 @@ dev = [
     "ty",
     "pre-commit>=3.3.0",
     "twine>=6.0.0",
+    "pip-audit>=2.10.1",
     "pandas-market-calendars>=4.0.0",
 ]
 
