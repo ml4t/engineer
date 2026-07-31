@@ -7,6 +7,8 @@ These tests verify that the preprocessing transformers:
 4. Preserve column order and handle edge cases
 """
 
+import json
+
 import numpy as np
 import polars as pl
 import pytest
@@ -14,6 +16,7 @@ import pytest
 from ml4t.engineer.preprocessing import (
     MinMaxScaler,
     NotFittedError,
+    PreprocessingPipeline,
     Preprocessor,
     RobustScaler,
     StandardScaler,
@@ -348,6 +351,67 @@ class TestSerialization:
 
         assert result1.equals(result2)
 
+    @pytest.mark.parametrize(
+        "scaler",
+        [
+            StandardScaler(
+                columns=["feature_a"],
+                with_mean=False,
+                with_std=True,
+                ddof=0,
+            ),
+            MinMaxScaler(columns=["feature_a"], feature_range=(-1.0, 1.0)),
+            RobustScaler(
+                columns=["feature_a"],
+                with_centering=False,
+                with_scaling=True,
+                quantile_range=(10.0, 90.0),
+            ),
+        ],
+    )
+    def test_every_scaler_option_round_trips_through_json(
+        self,
+        scaler: StandardScaler | MinMaxScaler | RobustScaler,
+        train_df: pl.DataFrame,
+    ) -> None:
+        """Every constructor option survives a JSON-compatible payload."""
+        scaler.fit(train_df)
+        payload = json.loads(json.dumps(scaler.to_dict()))
+
+        loaded = type(scaler).from_dict(payload)
+
+        assert loaded.transform(train_df).equals(scaler.transform(train_df))
+        assert loaded.to_dict()["config"] == scaler.to_dict()["config"]
+
+    def test_custom_minmax_range_round_trips_exactly(self) -> None:
+        """Production loading preserves a custom feature range."""
+        frame = pl.DataFrame({"x": [0.0, 5.0, 10.0]})
+        scaler = MinMaxScaler(feature_range=(-1.0, 1.0))
+        expected = scaler.fit_transform(frame)
+
+        loaded = MinMaxScaler.from_dict(json.loads(json.dumps(scaler.to_dict())))
+
+        assert loaded.feature_range == (-1.0, 1.0)
+        assert loaded.transform(frame).equals(expected)
+
+    def test_legacy_unversioned_payload_is_rejected(self, train_df: pl.DataFrame) -> None:
+        """Incomplete beta payloads cannot silently load with default options."""
+        scaler = MinMaxScaler(feature_range=(-1.0, 1.0))
+        scaler.fit(train_df)
+        payload = scaler.to_dict()
+        del payload["schema_version"]
+
+        with pytest.raises(ValueError, match="missing fields.*schema_version"):
+            MinMaxScaler.from_dict(payload)
+
+    def test_serialized_class_mismatch_is_rejected(self, train_df: pl.DataFrame) -> None:
+        """A scaler payload cannot be loaded through a different class."""
+        scaler = StandardScaler()
+        scaler.fit(train_df)
+
+        with pytest.raises(ValueError, match="expected 'MinMaxScaler'"):
+            MinMaxScaler.from_dict(scaler.to_dict())
+
     def test_to_dict_before_fit_raises(self) -> None:
         """Verify to_dict() before fit raises NotFittedError."""
         scaler = StandardScaler()
@@ -379,6 +443,109 @@ class TestPreprocessorAlias:
         assert result.equals(expected)
 
 
+class TestPreprocessingPipelineValidation:
+    """Tests for recommendation validation before fitting."""
+
+    def test_unknown_transform_is_rejected_with_feature_and_values(self) -> None:
+        """A misspelling cannot silently disable a requested transform."""
+        recommendations = {"x": {"transform": "standarize", "confidence": 0.9}}
+
+        with pytest.raises(
+            ValueError,
+            match="Unknown transform 'standarize' for feature 'x'.*standardize",
+        ):
+            PreprocessingPipeline.from_recommendations(recommendations)
+
+    @pytest.mark.parametrize(
+        "recommendations",
+        [
+            [],
+            {"x": []},
+            {"": {"transform": "standardize", "confidence": 0.9}},
+        ],
+    )
+    def test_invalid_recommendation_structures_are_rejected(
+        self,
+        recommendations: object,
+    ) -> None:
+        """The outer mapping, feature names, and recommendation records are validated."""
+        with pytest.raises(ValueError, match="(?i)recommendation"):
+            PreprocessingPipeline.from_recommendations(recommendations)
+
+    @pytest.mark.parametrize("confidence", [-0.1, 1.1, float("nan"), "high", True])
+    def test_invalid_confidence_is_rejected(self, confidence: object) -> None:
+        """Confidence must be a finite probability."""
+        recommendations = {"x": {"transform": "standardize", "confidence": confidence}}
+
+        with pytest.raises(ValueError, match="confidence for feature 'x'"):
+            PreprocessingPipeline.from_recommendations(recommendations)
+
+    @pytest.mark.parametrize(
+        ("recommendation", "missing"),
+        [
+            ({"confidence": 0.9}, "transform"),
+            ({"transform": "standardize"}, "confidence"),
+        ],
+    )
+    def test_missing_recommendation_fields_are_rejected(
+        self,
+        recommendation: dict[str, object],
+        missing: str,
+    ) -> None:
+        """Required recommendation fields cannot default silently."""
+        with pytest.raises(ValueError, match=rf"missing fields.*{missing}"):
+            PreprocessingPipeline.from_recommendations({"x": recommendation})
+
+    @pytest.mark.parametrize(
+        "limits",
+        [
+            (-0.1, 0.9),
+            (0.1, 1.1),
+            (0.9, 0.1),
+            (0.5, 0.5),
+            (float("nan"), 0.9),
+            (0.1, float("inf")),
+            (0.1,),
+            "invalid",
+        ],
+    )
+    def test_invalid_winsorize_limits_are_rejected(self, limits: object) -> None:
+        """Winsorization limits must be ordered finite probabilities."""
+        recommendations = {"x": {"transform": "winsorize", "confidence": 0.9}}
+
+        with pytest.raises(ValueError, match="winsorize_limits"):
+            PreprocessingPipeline.from_recommendations(
+                recommendations,
+                winsorize_limits=limits,
+            )
+
+    @pytest.mark.parametrize("minimum", [-0.1, 1.1, float("inf"), "high", True])
+    def test_invalid_minimum_confidence_is_rejected(self, minimum: object) -> None:
+        """The pipeline threshold must be a finite probability."""
+        with pytest.raises(ValueError, match="min_confidence"):
+            PreprocessingPipeline(min_confidence=minimum)
+
+    def test_recommendations_are_isolated_from_caller_mutation(self) -> None:
+        """Caller mutation cannot invalidate an already validated pipeline."""
+        recommendations = {"x": {"transform": "standardize", "confidence": 0.9}}
+        pipeline = PreprocessingPipeline.from_recommendations(recommendations)
+
+        recommendations["x"]["transform"] = "standarize"
+
+        assert pipeline.get_transform_summary() == {"x": "standardize"}
+
+    def test_difference_uses_train_boundary_on_new_data(self) -> None:
+        """The first test difference uses the last fitted training value."""
+        recommendations = {"x": {"transform": "diff", "confidence": 1.0}}
+        pipeline = PreprocessingPipeline.from_recommendations(recommendations)
+
+        train = pipeline.fit_transform(pl.DataFrame({"x": [1.0, 4.0, 9.0]}))
+        test = pipeline.transform(pl.DataFrame({"x": [16.0, 25.0]}))
+
+        assert train["x"].to_list() == [None, 3.0, 5.0]
+        assert test["x"].to_list() == [7.0, 9.0]
+
+
 # ============================================================================
 # Edge Cases
 # ============================================================================
@@ -407,6 +574,36 @@ class TestEdgeCases:
         # Non-null values should be scaled
         # Null values should remain null
         assert result["x"].null_count() == 2
+
+    @pytest.mark.parametrize("scaler_type", [StandardScaler, MinMaxScaler, RobustScaler])
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_fitting_values_are_rejected(
+        self,
+        scaler_type: type[StandardScaler | MinMaxScaler | RobustScaler],
+        invalid: float,
+    ) -> None:
+        """NaN and infinity cannot enter fitted scaler statistics."""
+        scaler = scaler_type()
+
+        with pytest.raises(ValueError, match="NaN or infinity.*x"):
+            scaler.fit(pl.DataFrame({"x": [1.0, invalid, 3.0]}))
+
+        assert not scaler.is_fitted
+
+    @pytest.mark.parametrize("scaler_type", [StandardScaler, MinMaxScaler, RobustScaler])
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_transform_values_are_rejected(
+        self,
+        scaler_type: type[StandardScaler | MinMaxScaler | RobustScaler],
+        invalid: float,
+    ) -> None:
+        """NaN and infinity cannot enter transformed model features."""
+        scaler = scaler_type().fit(pl.DataFrame({"x": [1.0, 2.0, 3.0]}))
+
+        with pytest.raises(ValueError, match="NaN or infinity.*x"):
+            scaler.transform(pl.DataFrame({"x": [4.0, invalid]}))
+
+        assert scaler.is_fitted
 
     def test_fitted_columns_property(self, train_df: pl.DataFrame) -> None:
         """Verify fitted_columns returns correct columns."""
