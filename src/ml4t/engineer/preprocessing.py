@@ -31,6 +31,7 @@ from __future__ import annotations
 import copy
 import math
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from enum import StrEnum
 from numbers import Real
 from typing import Any
@@ -74,6 +75,20 @@ def _validate_probability(value: object, *, name: str) -> float:
     if not math.isfinite(result) or not 0.0 <= result <= 1.0:
         raise ValueError(f"{name} must be a finite number between 0 and 1")
     return result
+
+
+def _numeric_statistic(
+    value: object,
+    *,
+    context: str,
+    default: float | None = None,
+) -> float:
+    """Convert a numeric Polars aggregation result to float."""
+    if value is None and default is not None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, Real | Decimal):
+        raise ValueError(f"{context} requires at least one numeric value")
+    return float(value)
 
 
 class BaseScaler(ABC):
@@ -371,11 +386,8 @@ class StandardScaler(BaseScaler):
                 mean_raw = series.mean()
                 std_raw = series.std(ddof=self.ddof) if len(series) > 1 else None
 
-                # Convert to float, handling None/NaN
-                # Note: mean/std on numeric columns return numeric types, but Polars
-                # type signature includes non-numeric possibilities for mixed dtype Series
-                mean_val = float(mean_raw) if mean_raw is not None else 0.0  # type: ignore[arg-type]
-                std_val = float(std_raw) if std_raw is not None else 1.0  # type: ignore[arg-type]
+                mean_val = _numeric_statistic(mean_raw, context=f"mean for '{col}'", default=0.0)
+                std_val = _numeric_statistic(std_raw, context=f"std for '{col}'", default=1.0)
 
                 # Apply with_mean/with_std settings
                 if not self.with_mean:
@@ -468,8 +480,8 @@ class MinMaxScaler(BaseScaler):
                 min_val = 0.0
                 max_val = 0.0
             else:
-                min_val = float(series.min())  # type: ignore[arg-type]
-                max_val = float(series.max())  # type: ignore[arg-type]
+                min_val = _numeric_statistic(series.min(), context=f"minimum for '{col}'")
+                max_val = _numeric_statistic(series.max(), context=f"maximum for '{col}'")
 
             # Handle constant column (min == max) or empty
             range_val = max_val - min_val
@@ -571,10 +583,18 @@ class RobustScaler(BaseScaler):
                 median_val = 0.0
                 iqr_val = 1.0
             else:
-                median_val = float(series.median()) if self.with_centering else 0.0  # type: ignore[arg-type]
+                median_val = (
+                    _numeric_statistic(series.median(), context=f"median for '{col}'")
+                    if self.with_centering
+                    else 0.0
+                )
                 if self.with_scaling:
-                    q1 = float(series.quantile(q_low))  # type: ignore[arg-type]
-                    q3 = float(series.quantile(q_high))  # type: ignore[arg-type]
+                    q1 = _numeric_statistic(
+                        series.quantile(q_low), context=f"lower quantile for '{col}'"
+                    )
+                    q3 = _numeric_statistic(
+                        series.quantile(q_high), context=f"upper quantile for '{col}'"
+                    )
                     iqr_val = q3 - q1
                     if iqr_val == 0.0:
                         iqr_val = 1.0
@@ -787,18 +807,18 @@ class PreprocessingPipeline:
         """Compute statistics needed for transform."""
         series = X[feature].drop_nulls()
 
-        # Note: Polars aggregation types include non-numeric possibilities but
-        # we know these are numeric columns, so type: ignore is appropriate
         if transform == TransformType.STANDARDIZE:
-            mean_val = float(series.mean()) if series.mean() is not None else 0.0  # type: ignore[arg-type]
-            std_val = float(series.std()) if series.std() is not None else 1.0  # type: ignore[arg-type]
+            mean_val = _numeric_statistic(
+                series.mean(), context=f"mean for '{feature}'", default=0.0
+            )
+            std_val = _numeric_statistic(series.std(), context=f"std for '{feature}'", default=1.0)
             if std_val == 0.0:
                 std_val = 1.0
             return {"mean": mean_val, "std": std_val}
 
         elif transform == TransformType.NORMALIZE:
-            min_val = float(series.min())  # type: ignore[arg-type]
-            max_val = float(series.max())  # type: ignore[arg-type]
+            min_val = _numeric_statistic(series.min(), context=f"minimum for '{feature}'")
+            max_val = _numeric_statistic(series.max(), context=f"maximum for '{feature}'")
             range_val = max_val - min_val
             if range_val == 0.0:
                 range_val = 1.0
@@ -806,13 +826,17 @@ class PreprocessingPipeline:
 
         elif transform == TransformType.WINSORIZE:
             q_low, q_high = self._winsorize_limits
-            lower = float(series.quantile(q_low))  # type: ignore[arg-type]
-            upper = float(series.quantile(q_high))  # type: ignore[arg-type]
+            lower = _numeric_statistic(
+                series.quantile(q_low), context=f"lower quantile for '{feature}'"
+            )
+            upper = _numeric_statistic(
+                series.quantile(q_high), context=f"upper quantile for '{feature}'"
+            )
             return {"lower": lower, "upper": upper}
 
         elif transform == TransformType.LOG:
             # For log, we need to handle non-positive values
-            min_val = float(series.min())  # type: ignore[arg-type]
+            min_val = _numeric_statistic(series.min(), context=f"minimum for '{feature}'")
             # Offset to ensure positive values
             offset = max(0.0, -min_val + 1e-10)
             return {"offset": offset}

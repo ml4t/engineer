@@ -110,12 +110,7 @@ def willr(
             )
         return willr_polars(high, low, close, period)
 
-    # Handle numpy/Series inputs
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
-
-    return willr_numba(high, low, close, period)
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
+    return willr_numba(high_array, low_array, close_array, period)

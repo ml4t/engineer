@@ -146,19 +146,17 @@ def obv(
         # Column names provided for Polars
         return obv_polars(close, volume)
 
-    # Convert to numpy if needed
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
-    if isinstance(volume, pl.Series):
-        volume = volume.to_numpy()
+    close_array = np.asarray(close, dtype=np.float64)
+    volume_array = np.asarray(volume, dtype=np.float64)
 
     # Ensure both arrays have the same length
-    if len(close) != len(volume):
+    if len(close_array) != len(volume_array):
         raise ValueError(
-            f"close and volume must have the same length. Got {len(close)} and {len(volume)}",
+            f"close and volume must have the same length. "
+            f"Got {len(close_array)} and {len(volume_array)}",
         )
 
-    return obv_numba(close, volume)
+    return obv_numba(close_array, volume_array)
 
 
 # Export all functions

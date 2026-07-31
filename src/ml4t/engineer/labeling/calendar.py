@@ -445,6 +445,7 @@ def calendar_aware_labels(
         cal = calendar
 
     session_col = _temporary_column_name(data.columns, "__ml4t_session_id")
+    assert resolved_ts_col is not None
 
     if isinstance(cal, SimpleTradingCalendar):
         sort_cols = [*resolved_group_cols, resolved_ts_col]

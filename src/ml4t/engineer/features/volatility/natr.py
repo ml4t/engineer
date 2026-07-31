@@ -163,19 +163,15 @@ def natr(
     if isinstance(high, str) and isinstance(low, str) and isinstance(close, str):
         return natr_polars(high, low, close, period)
 
-    # Convert to numpy arrays
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
 
     # Validate inputs
-    if len(high) != len(low) or len(high) != len(close):
+    if len(high_array) != len(low_array) or len(high_array) != len(close_array):
         raise ValueError("high, low, and close must have the same length")
 
-    return natr_numba(high, low, close, period)
+    return natr_numba(high_array, low_array, close_array, period)
 
 
 # Export the main function

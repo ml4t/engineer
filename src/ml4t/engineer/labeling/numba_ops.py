@@ -376,11 +376,11 @@ def _apply_triple_barrier_nb(
     sides: npt.NDArray[np.int32],
     trailing_stops: npt.NDArray[np.float64],
 ) -> tuple[
+    npt.NDArray[np.int32],
+    npt.NDArray[np.int64],
     npt.NDArray[np.float64],
     npt.NDArray[np.float64],
-    npt.NDArray[np.float64],
-    npt.NDArray[np.float64],
-    npt.NDArray[np.float64],
+    npt.NDArray[np.int64],
 ]:
     """Apply triple-barrier labeling using Numba for performance - refactored version.
 

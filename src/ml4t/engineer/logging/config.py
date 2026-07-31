@@ -5,14 +5,23 @@ Provides configuration options and presets for different logging scenarios.
 
 import logging
 import os
-from typing import Any
+from typing import Any, TypedDict, cast
+
+
+class _LoggingConfigValues(TypedDict, total=False):
+    level: int | str
+    performance_warnings: bool
+    data_quality_checks: bool
+    warn_threshold_ms: float
+    format_string: str | None
+    include_timestamp: bool
 
 
 class LoggingConfig:
     """Configuration class for ml4t.engineer logging."""
 
     # Default configurations
-    PRESETS = {
+    PRESETS: dict[str, _LoggingConfigValues] = {
         "development": {
             "level": logging.DEBUG,
             "performance_warnings": True,
@@ -91,7 +100,7 @@ class LoggingConfig:
                 f"Unknown preset '{preset}'. Available: {list(cls.PRESETS.keys())}",
             )
 
-        return cls(**cls.PRESETS[preset])  # type: ignore[arg-type]
+        return cls(**cls.PRESETS[preset])
 
     @classmethod
     def from_environment(cls) -> "LoggingConfig":
@@ -189,7 +198,7 @@ def configure_logging(
         config = LoggingConfig.from_preset(config)
     elif isinstance(config, dict):
         # Dictionary
-        config = LoggingConfig(**config)  # type: ignore[arg-type]
+        config = LoggingConfig(**cast("_LoggingConfigValues", config))
     elif not isinstance(config, LoggingConfig):
         raise TypeError("config must be LoggingConfig, str, dict, or None")
 

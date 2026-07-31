@@ -256,17 +256,11 @@ def mfi(
         # Column names provided for Polars
         return mfi_polars(high, low, close, volume, period)
 
-    # Convert to numpy if needed
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
-    if isinstance(volume, pl.Series):
-        volume = volume.to_numpy()
-
-    return mfi_numba(high, low, close, volume, period)
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
+    volume_array = np.asarray(volume, dtype=np.float64)
+    return mfi_numba(high_array, low_array, close_array, volume_array, period)
 
 
 # Export all functions

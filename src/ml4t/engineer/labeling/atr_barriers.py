@@ -302,6 +302,7 @@ def atr_triple_barrier_labels(
         contract=contract,
         require_timestamp=True,
     )
+    assert resolved_ts_col is not None
 
     validate_price_no_nans(data, resolved_price_col)
 

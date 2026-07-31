@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
+from decimal import Decimal
 from numbers import Real
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -61,6 +62,13 @@ if TYPE_CHECKING:
 
     import pandas as pd
     from numpy.typing import NDArray
+
+
+def _numeric_scalar(value: object, *, context: str) -> float:
+    """Convert a numeric Polars aggregation result to float."""
+    if isinstance(value, bool) or not isinstance(value, Real | Decimal):
+        raise ValueError(f"{context} requires at least one finite numeric value")
+    return float(value)
 
 
 class SplitterProtocol(Protocol):
@@ -637,9 +645,8 @@ class MLDatasetBuilder:
         result: dict[str, dict[float, float]] = {}
         for col in self._feature_columns:
             series = train_features[col].drop_nulls()
-            # Note: quantile on numeric columns returns numeric types (never None after drop_nulls)
             result[col] = {
-                q: float(series.quantile(q))  # type: ignore[arg-type]
+                q: _numeric_scalar(series.quantile(q), context=f"feature '{col}' quantile")
                 for q in quantiles
             }
 
@@ -679,10 +686,8 @@ class MLDatasetBuilder:
         train_labels = self.labels.gather(train_indices).drop_nulls()
 
         quantiles = [i / n_quantiles for i in range(1, n_quantiles)]
-        # Note: quantile on numeric columns returns numeric types (never None after drop_nulls)
         return [
-            float(train_labels.quantile(q))  # type: ignore[arg-type]
-            for q in quantiles
+            _numeric_scalar(train_labels.quantile(q), context="label quantile") for q in quantiles
         ]
 
     def __len__(self) -> int:

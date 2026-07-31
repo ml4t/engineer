@@ -290,19 +290,16 @@ def sar(
         # Column names provided for Polars
         return sar_polars(high, low, acceleration, maximum)
 
-    # Convert to numpy if needed
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
 
     # Ensure both arrays have the same length
-    if len(high) != len(low):
+    if len(high_array) != len(low_array):
         raise ValueError(
-            f"high and low must have the same length. Got {len(high)} and {len(low)}",
+            f"high and low must have the same length. Got {len(high_array)} and {len(low_array)}",
         )
 
-    return sar_numba(high, low, acceleration, maximum)
+    return sar_numba(high_array, low_array, acceleration, maximum)
 
 
 # Export all functions

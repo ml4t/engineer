@@ -346,19 +346,15 @@ def plus_di(
     if timeperiod <= 0:
         raise ValueError("timeperiod must be > 0")
 
-    # Convert to numpy arrays
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
 
     # Validate inputs
-    if len(high) != len(low) or len(high) != len(close):
+    if len(high_array) != len(low_array) or len(high_array) != len(close_array):
         raise ValueError("high, low, and close must have the same length")
 
-    return plus_di_numba(high, low, close, timeperiod)
+    return plus_di_numba(high_array, low_array, close_array, timeperiod)
 
 
 @feature(
@@ -410,19 +406,15 @@ def minus_di(
     if timeperiod <= 0:
         raise ValueError("timeperiod must be > 0")
 
-    # Convert to numpy arrays
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
 
     # Validate inputs
-    if len(high) != len(low) or len(high) != len(close):
+    if len(high_array) != len(low_array) or len(high_array) != len(close_array):
         raise ValueError("high, low, and close must have the same length")
 
-    return minus_di_numba(high, low, close, timeperiod)
+    return minus_di_numba(high_array, low_array, close_array, timeperiod)
 
 
 @feature(
@@ -471,19 +463,15 @@ def dx(
     if timeperiod <= 0:
         raise ValueError("timeperiod must be > 0")
 
-    # Convert to numpy arrays
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
 
     # Validate inputs
-    if len(high) != len(low) or len(high) != len(close):
+    if len(high_array) != len(low_array) or len(high_array) != len(close_array):
         raise ValueError("high, low, and close must have the same length")
 
-    return dx_numba(high, low, close, timeperiod)
+    return dx_numba(high_array, low_array, close_array, timeperiod)
 
 
 # Export the functions
