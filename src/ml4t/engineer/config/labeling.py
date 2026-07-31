@@ -24,6 +24,7 @@ Examples
 
 from __future__ import annotations
 
+import math
 from datetime import timedelta
 from typing import Any, Literal
 
@@ -96,6 +97,8 @@ class LabelingConfig(BaseConfig):
         Maximum lookforward period
     t_value_threshold : float
         T-statistic threshold for trend significance
+    step : int
+        Window increment for trend scanning
 
     Examples
     --------
@@ -210,6 +213,7 @@ class LabelingConfig(BaseConfig):
     )
     threshold: float | None = Field(
         None,
+        ge=0.0,
         description="Binary classification threshold",
     )
 
@@ -229,6 +233,11 @@ class LabelingConfig(BaseConfig):
         gt=0.0,
         description="T-statistic threshold for trend significance",
     )
+    step: int = Field(
+        1,
+        ge=1,
+        description="Window increment for trend scanning",
+    )
 
     # Percentile labeling parameters
     percentile_window: int = Field(
@@ -242,10 +251,12 @@ class LabelingConfig(BaseConfig):
         description="Number of bins for multi-class labels",
     )
 
-    @field_validator("side")
+    @field_validator("side", mode="before")
     @classmethod
-    def validate_side(cls, v: int | str | None) -> int | str | None:
+    def validate_side(cls, v: Any) -> Any:
         """Validate side is valid."""
+        if isinstance(v, bool):
+            raise ValueError("side must be -1, 0, 1, or a column name")
         if isinstance(v, int) and v not in (-1, 0, 1):
             raise ValueError("side must be -1, 0, 1, or a column name")
         return v
@@ -254,10 +265,50 @@ class LabelingConfig(BaseConfig):
     @classmethod
     def deserialize_holding_period(cls, value: Any) -> Any:
         """Restore safely serialized timedeltas before union validation."""
-        return _decode_portable_timedelta(
+        value = _decode_portable_timedelta(
             value,
             field_name="max_holding_period",
         )
+        if isinstance(value, bool):
+            raise ValueError("max_holding_period must be a positive interval")
+        if isinstance(value, int) and value <= 0:
+            raise ValueError("max_holding_period must be positive")
+        if isinstance(value, timedelta) and value <= timedelta(0):
+            raise ValueError("max_holding_period must be positive")
+        return value
+
+    @field_validator(
+        "upper_barrier",
+        "lower_barrier",
+        "threshold",
+        "t_value_threshold",
+        mode="before",
+    )
+    @classmethod
+    def reject_boolean_numeric_setting(cls, value: Any) -> Any:
+        """Reject booleans before Pydantic coerces them to numbers."""
+        if isinstance(value, bool):
+            raise ValueError("numeric labeling settings must not be booleans")
+        return value
+
+    @field_validator(
+        "upper_barrier",
+        "lower_barrier",
+        "threshold",
+        "t_value_threshold",
+        mode="after",
+    )
+    @classmethod
+    def validate_finite_numeric_setting(
+        cls, value: float | str | None, info: Any
+    ) -> float | str | None:
+        """Reject non-finite numerical settings and nonpositive barriers."""
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                raise ValueError("numeric labeling settings must be finite")
+            if info.field_name in {"upper_barrier", "lower_barrier"} and value <= 0:
+                raise ValueError(f"{info.field_name} must be positive")
+        return value
 
     @field_serializer("max_holding_period", when_used="json")
     def serialize_holding_period(self, value: int | str | timedelta) -> Any:
@@ -433,6 +484,7 @@ class LabelingConfig(BaseConfig):
         min_horizon: int = 5,
         max_horizon: int = 20,
         t_value_threshold: float = 2.0,
+        step: int = 1,
         **kwargs: Any,
     ) -> LabelingConfig:
         """Create trend scanning labeling config.
@@ -447,6 +499,8 @@ class LabelingConfig(BaseConfig):
             Maximum lookforward period
         t_value_threshold : float
             T-statistic threshold for trend significance
+        step : int
+            Window increment
 
         Returns
         -------
@@ -462,6 +516,7 @@ class LabelingConfig(BaseConfig):
             min_horizon=min_horizon,
             max_horizon=max_horizon,
             t_value_threshold=t_value_threshold,
+            step=step,
             **kwargs,
         )
 

@@ -62,6 +62,8 @@ Examples
 
 from __future__ import annotations
 
+import math
+from numbers import Real
 from typing import TYPE_CHECKING, Literal
 
 import polars as pl
@@ -74,6 +76,15 @@ from ml4t.engineer.labeling.utils import resolve_labeling_columns, validate_pric
 
 if TYPE_CHECKING:
     from ml4t.engineer.config import DataContractConfig
+
+
+def _unique_internal_column(columns: set[str], base: str) -> str:
+    """Return an internal column name that does not overwrite user data."""
+    candidate = base
+    while candidate in columns:
+        candidate = f"{candidate}_"
+    columns.add(candidate)
+    return candidate
 
 
 def atr_triple_barrier_labels(
@@ -260,6 +271,20 @@ def atr_triple_barrier_labels(
     atr_period = atr_period if atr_period is not None else 14
     side = side if side is not None else 1
 
+    for name, value in (
+        ("atr_tp_multiple", atr_tp_multiple),
+        ("atr_sl_multiple", atr_sl_multiple),
+    ):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, Real)
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise ValueError(f"{name} must be a finite positive number")
+    if isinstance(atr_period, bool) or not isinstance(atr_period, int) or atr_period < 1:
+        raise ValueError("atr_period must be a positive integer")
+
     # Validate OHLC columns
     required_cols = ["high", "low", "close"]
     missing = [col for col in required_cols if col not in data.columns]
@@ -280,19 +305,53 @@ def atr_triple_barrier_labels(
 
     validate_price_no_nans(data, resolved_price_col)
 
-    # Compute ATR
-    data_with_atr = data.with_columns(
-        atr_polars("high", "low", "close", period=atr_period).alias("atr"),
+    sort_cols = resolved_group_cols + [resolved_ts_col]
+    sorted_data = data.sort(sort_cols)
+
+    # Compute ATR independently for each asset.
+    atr_expr = atr_polars("high", "low", "close", period=atr_period)
+    if resolved_group_cols:
+        atr_expr = atr_expr.over(resolved_group_cols)
+    data_with_atr = sorted_data.with_columns(atr_expr.alias("atr"))
+
+    internal_columns = set(data_with_atr.columns)
+    upper_fraction_col = _unique_internal_column(
+        internal_columns, "__ml4t_atr_upper_barrier_fraction"
+    )
+    lower_fraction_col = _unique_internal_column(
+        internal_columns, "__ml4t_atr_lower_barrier_fraction"
     )
 
-    # Compute ATR-based barrier distances (always positive)
-    # These will be added/subtracted based on side in triple_barrier_labels
+    # Preserve price-unit distances for analysis and normalize the values passed to
+    # triple_barrier_labels, which accepts fractional returns.
     data_with_barriers = data_with_atr.with_columns(
         [
             (pl.col("atr") * atr_tp_multiple).alias("upper_barrier_distance"),
             (pl.col("atr") * atr_sl_multiple).alias("lower_barrier_distance"),
+            ((pl.col("atr") * atr_tp_multiple) / pl.col(resolved_price_col)).alias(
+                upper_fraction_col
+            ),
+            ((pl.col("atr") * atr_sl_multiple) / pl.col(resolved_price_col)).alias(
+                lower_fraction_col
+            ),
         ],
     )
+
+    valid_atr = pl.col("atr").is_finite() & (pl.col("atr") > 0)
+    had_event_time = "event_time" in data_with_barriers.columns
+    original_event_time_col: str | None = None
+    if had_event_time:
+        original_event_time_col = _unique_internal_column(
+            internal_columns, "__ml4t_atr_original_event_time"
+        )
+        data_with_barriers = data_with_barriers.with_columns(
+            pl.col("event_time").alias(original_event_time_col),
+            pl.when(valid_atr).then(pl.col("event_time")).otherwise(None).alias("event_time"),
+        )
+    else:
+        data_with_barriers = data_with_barriers.with_columns(
+            pl.when(valid_atr).then(pl.col(resolved_ts_col)).otherwise(None).alias("event_time")
+        )
 
     # Create barrier configuration with dynamic barriers
     # When max_holding_bars is None, we use len(data) as the horizon which makes
@@ -313,8 +372,8 @@ def atr_triple_barrier_labels(
         holding_period = max_holding_bars
 
     barrier_config = LabelingConfig.triple_barrier(
-        upper_barrier="upper_barrier_distance",
-        lower_barrier="lower_barrier_distance",
+        upper_barrier=upper_fraction_col,
+        lower_barrier=lower_fraction_col,
         max_holding_period=holding_period,
         side=side,
         trailing_stop=trailing_stop,
@@ -326,11 +385,17 @@ def atr_triple_barrier_labels(
         data_with_barriers,
         config=barrier_config,
         price_col=resolved_price_col,
+        high_col="high",
+        low_col="low",
         timestamp_col=resolved_ts_col,
         group_col=resolved_group_cols,
     )
 
-    return labeled
+    if original_event_time_col is not None:
+        labeled = labeled.drop("event_time").rename({original_event_time_col: "event_time"})
+    else:
+        labeled = labeled.drop("event_time")
+    return labeled.drop(upper_fraction_col, lower_fraction_col)
 
 
 __all__ = ["atr_triple_barrier_labels"]

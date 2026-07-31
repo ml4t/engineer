@@ -257,6 +257,199 @@ class TestSequentialBootstrap:
 class TestTripleBarrierDynamicColumns:
     """Test triple_barrier_labels with dynamic column configurations."""
 
+    @pytest.mark.parametrize("field", ["upper_barrier", "lower_barrier"])
+    def test_rejects_boolean_barrier_distance(self, field):
+        """Boolean barrier distances must not be coerced to percentages."""
+        with pytest.raises(ValueError, match="must not be booleans"):
+            LabelingConfig.triple_barrier(**{field: True})
+
+    @pytest.mark.parametrize("holding_period", [0, -1, timedelta(0), timedelta(seconds=-1)])
+    def test_rejects_nonpositive_scalar_holding_period(self, holding_period):
+        """Scalar holding periods must be positive."""
+        with pytest.raises(ValueError, match="max_holding_period must be positive"):
+            LabelingConfig.triple_barrier(max_holding_period=holding_period)
+
+    def test_rejects_nonpositive_dynamic_holding_period(self, sample_data):
+        """Dynamic holding periods must be positive integral bar counts."""
+        data = sample_data.with_columns(pl.lit(0).alias("holding_period"))
+        config = LabelingConfig.triple_barrier(max_holding_period="holding_period")
+
+        with pytest.raises(DataValidationError, match="holding period"):
+            triple_barrier_labels(data, config, price_col="close")
+
+    def test_rejects_invalid_dynamic_side(self, sample_data):
+        """Dynamic sides must contain only the supported position values."""
+        data = sample_data.with_columns(pl.lit(2).alias("position_side"))
+        config = LabelingConfig.triple_barrier(side="position_side")
+
+        with pytest.raises(DataValidationError, match="side"):
+            triple_barrier_labels(data, config, price_col="close")
+
+    @pytest.mark.parametrize(
+        ("column", "values", "message"),
+        [
+            ("high", [100.0, float("nan")], "finite"),
+            ("low", [100.0, 107.0], "greater than or equal"),
+            ("close", [100.0, 108.0], "within"),
+        ],
+    )
+    def test_rejects_invalid_ohlc_contract(self, column, values, message):
+        """OHLC inputs must form finite positive price ranges."""
+        columns = {
+            "high": [100.0, 106.0],
+            "low": [100.0, 94.0],
+            "close": [100.0, 100.0],
+        }
+        columns[column] = values
+        data = pl.DataFrame(columns)
+        config = LabelingConfig.triple_barrier(max_holding_period=1)
+
+        with pytest.raises(DataValidationError, match=message):
+            triple_barrier_labels(
+                data,
+                config,
+                price_col="close",
+                high_col="high",
+                low_col="low",
+            )
+
+    def test_ohlc_barrier_outputs_use_the_executed_barrier_price(self):
+        """Barrier identity, price, and return must describe one exit."""
+        data = pl.DataFrame(
+            {
+                "open": [100.0, 100.0],
+                "high": [100.0, 106.0],
+                "low": [100.0, 89.0],
+                "close": [100.0, 90.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.50,
+            max_holding_period=1,
+        )
+
+        result = triple_barrier_labels(
+            data,
+            config,
+            price_col="close",
+            open_col="open",
+            high_col="high",
+            low_col="low",
+        )
+
+        assert result["label"][0] == 1
+        assert result["barrier_hit"][0] == "upper"
+        assert result["label_price"][0] == pytest.approx(105.0)
+        assert result["label_return"][0] == pytest.approx(0.05)
+
+    def test_ohlc_dual_touch_uses_conservative_stop_first_policy(self):
+        """A bar touching both barriers must use the documented stop-first exit."""
+        data = pl.DataFrame(
+            {
+                "open": [100.0, 100.0],
+                "high": [100.0, 106.0],
+                "low": [100.0, 94.0],
+                "close": [100.0, 100.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+        )
+
+        result = triple_barrier_labels(
+            data,
+            config,
+            price_col="close",
+            open_col="open",
+            high_col="high",
+            low_col="low",
+        )
+
+        assert result["label"][0] == -1
+        assert result["barrier_hit"][0] == "lower"
+        assert result["label_price"][0] == pytest.approx(95.0)
+        assert result["label_return"][0] == pytest.approx(-0.05)
+
+    def test_ohlc_gap_executes_at_open(self):
+        """A gap beyond a barrier must execute at the supplied open price."""
+        data = pl.DataFrame(
+            {
+                "open": [100.0, 110.0],
+                "high": [100.0, 112.0],
+                "low": [100.0, 109.0],
+                "close": [100.0, 111.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.05,
+            max_holding_period=1,
+        )
+
+        result = triple_barrier_labels(
+            data,
+            config,
+            price_col="close",
+            open_col="open",
+            high_col="high",
+            low_col="low",
+        )
+
+        assert result["label"][0] == 1
+        assert result["label_price"][0] == pytest.approx(110.0)
+        assert result["label_return"][0] == pytest.approx(0.10)
+
+    def test_short_ohlc_profit_uses_target_price_and_positive_return(self):
+        """Short profit labels must use the touched target and a positive return."""
+        data = pl.DataFrame(
+            {
+                "high": [100.0, 101.0],
+                "low": [100.0, 94.0],
+                "close": [100.0, 101.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.50,
+            max_holding_period=1,
+            side=-1,
+        )
+
+        result = triple_barrier_labels(
+            data,
+            config,
+            price_col="close",
+            high_col="high",
+            low_col="low",
+        )
+
+        assert result["label"][0] == 1
+        assert result["label_price"][0] == pytest.approx(95.0)
+        assert result["label_return"][0] == pytest.approx(0.05)
+
+    def test_existing_positional_ohlc_arguments_keep_their_meaning(self):
+        """Adding open_col must not shift the existing positional OHLC arguments."""
+        data = pl.DataFrame(
+            {
+                "high": [100.0, 106.0],
+                "low": [100.0, 99.0],
+                "close": [100.0, 100.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.05,
+            lower_barrier=0.50,
+            max_holding_period=1,
+        )
+
+        result = triple_barrier_labels(data, config, "close", "high", "low")
+
+        assert result["label"][0] == 1
+        assert result["label_price"][0] == pytest.approx(105.0)
+
     @pytest.fixture
     def sample_data(self):
         """Create sample data with dynamic columns."""
@@ -579,10 +772,7 @@ class TestTrendScanningLabels:
             trend_scanning_labels(uptrend_data, min_window=1)
 
     def test_invalid_max_window(self, uptrend_data):
-        """Test that max_window <= min_window raises error."""
-        with pytest.raises(ValueError, match="greater than"):
-            trend_scanning_labels(uptrend_data, min_window=10, max_window=10)
-
+        """Test that max_window below min_window raises error."""
         with pytest.raises(ValueError, match="greater than"):
             trend_scanning_labels(uptrend_data, min_window=10, max_window=5)
 
@@ -724,7 +914,7 @@ class TestNumericalEdgeCases:
     """Test numerical edge cases."""
 
     def test_zero_price_return_calculation(self):
-        """Test that zero entry price is handled."""
+        """Test that zero entry prices are rejected."""
         timestamps = [datetime(2024, 1, 1) + timedelta(minutes=i) for i in range(5)]
         prices = [0.0, 1.0, 2.0, 1.5, 1.25]
         df = pl.DataFrame({"timestamp": timestamps, "close": prices})
@@ -734,8 +924,8 @@ class TestNumericalEdgeCases:
             max_holding_period=3,
         )
 
-        result = triple_barrier_labels(df, config, price_col="close")
-        assert "label" in result.columns
+        with pytest.raises(DataValidationError, match="positive"):
+            triple_barrier_labels(df, config, price_col="close")
 
     def test_very_small_barriers(self):
         """Test with very small barrier values."""

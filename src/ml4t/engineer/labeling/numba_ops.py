@@ -184,15 +184,50 @@ def _check_barrier_touch(
         or (side == 0 and (low_price <= lower_price or low_price <= trailing_stop_price))
     )
 
-    # When both barriers are breached in the same bar (e.g., gap or high-volatility),
-    # upper barrier (profit target) takes priority. This is consistent with De Prado's
-    # AFML reference implementation. For conservative (stop-loss-first) resolution,
-    # use higher-frequency data to reduce intrabar ambiguity.
-    if upper_hit:
-        return 1
+    # OHLC data does not reveal which intrabar extreme occurred first.
+    # Resolve dual touches conservatively as a stop loss.
     if lower_hit:
         return -1
+    if upper_hit:
+        return 1
     return 0
+
+
+@jit(nopython=True, cache=True)  # type: ignore[misc]
+def _resolve_barrier_exit(
+    open_price: float,
+    high_price: float,
+    low_price: float,
+    upper_price: float,
+    lower_price: float,
+    trailing_stop_price: float,
+    side: int,
+) -> tuple[int, float]:
+    """Resolve a barrier touch and its executable exit price."""
+    if side == -1:
+        stop_price = min(lower_price, trailing_stop_price)
+        if np.isfinite(open_price):
+            if open_price <= upper_price:
+                return 1, open_price
+            if open_price >= stop_price:
+                return -1, open_price
+        upper_hit = low_price <= upper_price
+        lower_hit = high_price >= stop_price
+    else:
+        stop_price = max(lower_price, trailing_stop_price)
+        if np.isfinite(open_price):
+            if open_price >= upper_price:
+                return 1, open_price
+            if open_price <= stop_price:
+                return -1, open_price
+        upper_hit = high_price >= upper_price
+        lower_hit = low_price <= stop_price
+
+    if lower_hit:
+        return -1, stop_price
+    if upper_hit:
+        return 1, upper_price
+    return 0, np.nan
 
 
 @jit(nopython=True, cache=True)  # type: ignore[misc]
@@ -226,6 +261,7 @@ def _calculate_label_return(event_price: float, label_price: float, side: int) -
 @jit(nopython=True, cache=True)  # type: ignore[misc]
 def _process_single_event(
     closes: npt.NDArray[np.float64],
+    opens: npt.NDArray[np.float64],
     highs: npt.NDArray[np.float64],
     lows: npt.NDArray[np.float64],
     event_idx: int,
@@ -242,6 +278,8 @@ def _process_single_event(
     ----------
     closes : npt.NDArray
         Array of close prices (used for entry and return calculation)
+    opens : npt.NDArray
+        Array of open prices, or NaN when gap execution is disabled
     highs : npt.NDArray
         Array of high prices (used for barrier checking)
     lows : npt.NDArray
@@ -287,22 +325,12 @@ def _process_single_event(
     end_idx = min(event_idx + max_period + 1, n_prices)
 
     for j in range(event_idx + 1, end_idx):
+        open_price = opens[j]
         high_price = highs[j]
         low_price = lows[j]
-        close_price = closes[j]
 
-        # Update trailing stop using high for LONG (trails up), low for SHORT (trails down)
-        # Use high for LONG to maximize trailing benefit, close is also acceptable
-        trailing_update_price = high_price if side == 1 else low_price
-        trailing_stop_price = _update_trailing_stop(
-            trailing_update_price,
-            trailing_stop_price,
-            trailing_stop,
-            side,
-        )
-
-        # Check barriers using high/low for more realistic detection
-        barrier_touched = _check_barrier_touch(
+        barrier_touched, exit_price = _resolve_barrier_exit(
+            open_price,
             high_price,
             low_price,
             upper_price,
@@ -312,10 +340,19 @@ def _process_single_event(
         )
 
         if barrier_touched != 0:
-            # Barrier was touched - use close for return calculation
-            label_return = _calculate_label_return(event_price, close_price, side)
+            label_return = _calculate_label_return(event_price, exit_price, side)
             bar_duration = j - event_idx
-            return barrier_touched, j, close_price, label_return, bar_duration
+            return barrier_touched, j, exit_price, label_return, bar_duration
+
+        # A stop derived from this bar becomes active on the next bar because OHLC
+        # data does not reveal the order of the current bar's extremes.
+        trailing_update_price = high_price if side in (0, 1) else low_price
+        trailing_stop_price = _update_trailing_stop(
+            trailing_update_price,
+            trailing_stop_price,
+            trailing_stop,
+            side,
+        )
 
     # If no barrier hit, time barrier touched
     final_idx = end_idx - 1
@@ -329,6 +366,7 @@ def _process_single_event(
 @jit(nopython=True, cache=True)  # type: ignore[misc]
 def _apply_triple_barrier_nb(
     closes: npt.NDArray[np.float64],
+    opens: npt.NDArray[np.float64],
     highs: npt.NDArray[np.float64],
     lows: npt.NDArray[np.float64],
     event_indices: npt.NDArray[np.intp],
@@ -379,6 +417,7 @@ def _apply_triple_barrier_nb(
         # Process single event using helper function
         label, label_idx, label_price, label_return, bar_duration = _process_single_event(
             closes,
+            opens,
             highs,
             lows,
             event_idx,
@@ -425,6 +464,7 @@ __all__ = [
     "_initialize_trailing_stop",
     "_update_trailing_stop",
     "_check_barrier_touch",
+    "_resolve_barrier_exit",
     "_calculate_label_return",
     "_process_single_event",
     "_apply_triple_barrier_nb",
