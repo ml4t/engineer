@@ -18,7 +18,7 @@ labels = triple_barrier_labels(
     ),
 )
 builder = create_dataset_builder(
-    features=labels.select(["rsi_14", "macd", "atr_14"]),
+    features=labels.select(["rsi", "macd", "atr"]),
     labels=labels["label"],
     dates=labels["timestamp"],
     scaler="robust",

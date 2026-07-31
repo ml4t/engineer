@@ -9,11 +9,14 @@ matching reusable library workflows.
 ## Basic Feature Computation
 
 ```python
+from datetime import datetime, timedelta
+
 import polars as pl
 from ml4t.engineer import compute_features
 
 # Create sample OHLCV data
 df = pl.DataFrame({
+    "timestamp": [datetime(2024, 1, 1) + timedelta(days=i) for i in range(100)],
     "open": [100.0, 101.0, 102.0, 103.0, 104.0] * 20,
     "high": [102.0, 103.0, 104.0, 105.0, 106.0] * 20,
     "low": [99.0, 100.0, 101.0, 102.0, 103.0] * 20,
@@ -33,7 +36,10 @@ print(result.columns)
 result = compute_features(df, [
     {"name": "rsi", "params": {"period": 20}},
     {"name": "sma", "params": {"period": 50}},
-    {"name": "bollinger_bands", "params": {"period": 20, "std_dev": 2.5}},
+    {
+        "name": "bollinger_bands",
+        "params": {"period": 20, "nbdevup": 2.5, "nbdevdn": 2.5},
+    },
 ])
 ```
 
@@ -48,9 +54,8 @@ features:
       period: 14
   - name: macd
     params:
-      fast: 12
-      slow: 26
-      signal: 9
+      fast_period: 12
+      slow_period: 26
   - name: atr
     params:
       period: 14

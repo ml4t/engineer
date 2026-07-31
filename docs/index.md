@@ -61,7 +61,7 @@ from ml4t.engineer import compute_features
 df = pl.read_parquet("spy_daily.parquet")
 features = compute_features(df, ["rsi", "macd", "atr"])
 
-print(features.select("rsi_14", "macd", "atr_14").tail(3))
+print(features.select("rsi", "macd", "atr").tail(3))
 ```
 
 That single call appends validated indicator columns to the same DataFrame you will
@@ -94,7 +94,7 @@ You have features and labels. You need train/test splits with train-only scaling
 from ml4t.engineer import create_dataset_builder
 
 builder = create_dataset_builder(
-    features=labels.select(["rsi_14", "macd", "atr_14"]),
+    features=labels.select(["rsi", "macd", "atr"]),
     labels=labels["label"],
     dates=labels["timestamp"],
     scaler="robust",

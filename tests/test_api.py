@@ -8,20 +8,24 @@ Tests cover:
 """
 
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import polars as pl
 import pytest
 
 from ml4t.engineer.api import compute_features
+from ml4t.engineer.core.exceptions import DataSchemaError
 from ml4t.engineer.core.registry import get_registry
 
 
 @pytest.fixture
 def sample_ohlcv_data():
     """Create sample OHLCV data for testing."""
+    start = datetime(2024, 1, 1)
     return pl.DataFrame(
         {
+            "timestamp": [start + timedelta(minutes=i) for i in range(50)],
             "open": [100.0, 101.0, 102.0, 103.0, 104.0] * 10,
             "high": [102.0, 103.0, 104.0, 105.0, 106.0] * 10,
             "low": [99.0, 100.0, 101.0, 102.0, 103.0] * 10,
@@ -100,9 +104,12 @@ def test_compute_with_lazyframe(sample_ohlcv_data):
 def test_empty_feature_list(sample_ohlcv_data):
     """Test that empty feature list returns original data."""
     result = compute_features(sample_ohlcv_data, [])
+    no_time_data = sample_ohlcv_data.drop("timestamp")
+    no_time_result = compute_features(no_time_data, [])
 
     assert isinstance(result, pl.DataFrame)
     assert result.equals(sample_ohlcv_data)
+    assert no_time_result.equals(no_time_data)
 
 
 # Error handling tests
@@ -246,9 +253,9 @@ def test_parameter_override_from_config(sample_ohlcv_data):
 
 def test_partial_parameter_override(sample_ohlcv_data):
     """Test that partial parameter override works correctly."""
-    # Registry default might have multiple params, override just one
+    # Override one function parameter and retain the other function default.
     features = [
-        {"name": "macd", "params": {"fast": 8}},  # Override fast, keep slow/signal defaults
+        {"name": "macd", "params": {"fast_period": 8}},
     ]
 
     result = compute_features(sample_ohlcv_data, features)
@@ -259,15 +266,142 @@ def test_partial_parameter_override(sample_ohlcv_data):
 
 
 def test_duplicate_feature_names(sample_ohlcv_data):
-    """Test handling of duplicate feature names with different params."""
+    """Duplicate outputs fail instead of silently discarding a request."""
     features = [
         {"name": "sma", "params": {"period": 10}},
         {"name": "sma", "params": {"period": 20}},
     ]
 
-    # Should compute both (though second might override first)
-    result = compute_features(sample_ohlcv_data, features)
-    assert isinstance(result, pl.DataFrame)
+    with pytest.raises(ValueError, match="Duplicate feature output 'sma'"):
+        compute_features(sample_ohlcv_data, features)
+
+
+def test_duplicate_features_require_explicit_distinct_outputs(sample_ohlcv_data):
+    """Multiple configurations of one feature retain both requested outputs."""
+    result = compute_features(
+        sample_ohlcv_data,
+        [
+            {"name": "sma", "params": {"period": 10}, "output": "sma_10"},
+            {"name": "sma", "params": {"period": 20}, "output": "sma_20"},
+        ],
+    )
+
+    expected_10 = sample_ohlcv_data.select(pl.col("close").rolling_mean(10)).to_series()
+    expected_20 = sample_ohlcv_data.select(pl.col("close").rolling_mean(20)).to_series()
+    assert result["sma_10"].equals(expected_10)
+    assert result["sma_20"].equals(expected_20)
+
+
+def test_unknown_feature_parameter_fails_before_execution(sample_ohlcv_data):
+    """A misspelled parameter never falls back to the registered default."""
+    with pytest.raises(ValueError, match=r"Feature 'sma'.*unknown parameter.*perod"):
+        compute_features(
+            sample_ohlcv_data,
+            [
+                {"name": "ema", "params": {"period": 5}},
+                {"name": "sma", "params": {"perod": 2}},
+            ],
+        )
+
+
+def test_output_cannot_replace_input_column(sample_ohlcv_data):
+    """Feature output names cannot silently overwrite source data."""
+    with pytest.raises(ValueError, match="conflicts with an input column"):
+        compute_features(
+            sample_ohlcv_data,
+            [{"name": "sma", "params": {"period": 2}, "output": "close"}],
+        )
+
+
+def test_compute_requires_time_or_explicit_order_assumption(sample_ohlcv_data):
+    """Row-order semantics must be explicit when no time column exists."""
+    data = sample_ohlcv_data.drop("timestamp")
+
+    with pytest.raises(DataSchemaError, match="No time column found"):
+        compute_features(data, [{"name": "sma", "params": {"period": 2}}])
+
+    result = compute_features(
+        data,
+        [{"name": "sma", "params": {"period": 2}}],
+        assume_sorted=True,
+    )
+    assert "sma" in result.columns
+
+
+def test_compute_isolates_assets_and_sorts_each_history():
+    """Interleaved, unsorted panel rows match independent per-asset calculations."""
+    start = datetime(2024, 1, 1)
+    data = pl.DataFrame(
+        {
+            "timestamp": [
+                start + timedelta(days=1),
+                start + timedelta(days=1),
+                start,
+                start,
+            ],
+            "asset_id": ["A", "B", "A", "B"],
+            "open": [12.0, 110.0, 10.0, 100.0],
+            "high": [12.0, 110.0, 10.0, 100.0],
+            "low": [12.0, 110.0, 10.0, 100.0],
+            "close": [12.0, 110.0, 10.0, 100.0],
+            "volume": [1.0, 1.0, 1.0, 1.0],
+        }
+    )
+
+    result = compute_features(data, [{"name": "sma", "params": {"period": 2}}])
+
+    assert result.select("asset_id", "timestamp").rows() == [
+        ("A", start),
+        ("A", start + timedelta(days=1)),
+        ("B", start),
+        ("B", start + timedelta(days=1)),
+    ]
+    assert result["sma"].to_list() == [None, 11.0, None, 105.0]
+
+
+def test_compute_cannot_disable_detected_asset_grouping():
+    """A recognized panel cannot be routed through one shared history."""
+    start = datetime(2024, 1, 1)
+    data = pl.DataFrame(
+        {
+            "timestamp": [start, start],
+            "asset_id": ["A", "B"],
+            "open": [10.0, 100.0],
+            "high": [10.0, 100.0],
+            "low": [10.0, 100.0],
+            "close": [10.0, 100.0],
+            "volume": [1.0, 1.0],
+        }
+    )
+
+    with pytest.raises(DataSchemaError, match="Grouping cannot be disabled"):
+        compute_features(data, ["sma"], group_col=[])
+
+
+def test_lazy_panel_matches_eager_panel():
+    """Lazy and eager panel execution use the same grouping and ordering contract."""
+    start = datetime(2024, 1, 1)
+    data = pl.DataFrame(
+        {
+            "timestamp": [start + timedelta(days=i // 2) for i in range(8)],
+            "asset_id": ["A", "B"] * 4,
+            "open": [10.0, 100.0, 11.0, 102.0, 12.0, 104.0, 13.0, 106.0],
+            "high": [10.0, 100.0, 11.0, 102.0, 12.0, 104.0, 13.0, 106.0],
+            "low": [10.0, 100.0, 11.0, 102.0, 12.0, 104.0, 13.0, 106.0],
+            "close": [10.0, 100.0, 11.0, 102.0, 12.0, 104.0, 13.0, 106.0],
+            "volume": [1.0] * 8,
+        }
+    )
+    features = [
+        {"name": "sma", "params": {"period": 2}},
+        {"name": "roc", "params": {"period": 1}},
+    ]
+
+    eager = compute_features(data, features)
+    lazy = compute_features(data.lazy(), features)
+
+    assert isinstance(lazy, pl.LazyFrame)
+    assert lazy.collect().equals(eager)
 
 
 def test_features_with_empty_params(sample_ohlcv_data):

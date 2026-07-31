@@ -8,6 +8,9 @@ Purpose: Prevent the kind of fundamental breakage that occurred where features
          were registered but couldn't be called due to API-feature signature mismatches.
 """
 
+from datetime import datetime, timedelta
+
+import numpy as np
 import polars as pl
 import pytest
 
@@ -18,8 +21,10 @@ from ml4t.engineer.core.registry import get_registry
 @pytest.fixture
 def sample_ohlcv_data():
     """Create sample OHLCV data with sufficient rows for all features."""
+    start = datetime(2024, 1, 1)
     return pl.DataFrame(
         {
+            "timestamp": [start + timedelta(minutes=i) for i in range(50)],
             "open": list(range(99, 149)),
             "high": list(range(102, 152)),
             "low": list(range(99, 149)),
@@ -93,6 +98,51 @@ def test_all_features_compute_together(sample_ohlcv_data):
     assert len(new_cols) >= len(all_features), (
         f"Expected at least {len(all_features)} new columns, got {len(new_cols)}"
     )
+
+
+def test_all_features_isolate_panel_assets():
+    """Every registry feature matches independent per-asset execution."""
+    n_rows = 320
+    start = datetime(2024, 1, 1)
+    frames = []
+    for asset, scale in [("A", 1.0), ("B", 10.0)]:
+        index = np.arange(n_rows, dtype=np.float64)
+        close = scale * (100.0 + 0.02 * index + np.sin(index / 7.0))
+        frames.append(
+            pl.DataFrame(
+                {
+                    "timestamp": [start + timedelta(minutes=row) for row in range(n_rows)],
+                    "asset_id": [asset] * n_rows,
+                    "open": close - 0.1 * scale,
+                    "high": close + 0.5 * scale,
+                    "low": close - 0.5 * scale,
+                    "close": close,
+                    "volume": 1000.0 + np.mod(index, 50.0),
+                    "returns": np.r_[np.nan, np.diff(close) / close[:-1]],
+                    "bid_price": close - 0.05 * scale,
+                    "ask_price": close + 0.05 * scale,
+                    "bid_size": 500.0 + np.mod(index, 20.0),
+                    "ask_size": 450.0 + np.mod(index, 20.0),
+                }
+            )
+        )
+
+    panel = pl.concat(frames).sort(
+        "timestamp",
+        "asset_id",
+        descending=[False, True],
+    )
+    failures = []
+
+    for feature_name in get_registry().list_all():
+        panel_result = compute_features(panel, [feature_name])
+        independent_result = pl.concat(
+            [compute_features(frame, [feature_name]) for frame in frames]
+        )
+        if not panel_result.equals(independent_result):
+            failures.append(feature_name)
+
+    assert not failures, f"Panel isolation failed for: {failures}"
 
 
 def test_compute_features_with_parameters(sample_ohlcv_data):
@@ -198,6 +248,7 @@ if __name__ == "__main__":
 
     df = pl.DataFrame(
         {
+            "timestamp": [datetime(2024, 1, 1) + timedelta(minutes=i) for i in range(50)],
             "open": list(range(99, 149)),
             "high": list(range(102, 152)),
             "low": list(range(99, 149)),

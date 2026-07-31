@@ -3,7 +3,7 @@
 This module provides the main public API for computing features from configurations.
 
 Exports:
-    compute_features(data, features, column_map=None) -> DataFrame
+    compute_features(data, features, *, group_col=None, timestamp_col=None) -> DataFrame
         Main API for computing technical indicators on OHLCV data.
 
     Constants:
@@ -17,7 +17,7 @@ Internal:
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import polars as pl
 
@@ -78,14 +78,27 @@ KEYWORD_ONLY_PARAMS: frozenset[str] = frozenset(
     }
 )
 
+_GROUP_COLUMN_CANDIDATES = ("asset_id", "symbol", "ticker", "product", "asset")
+_TIME_COLUMN_CANDIDATES = ("timestamp", "event_time", "date", "datetime")
+
+
+class _FeatureSpec(TypedDict):
+    name: str
+    params: dict[str, Any]
+    output: str
+
 
 def compute_features(
     data: pl.DataFrame | pl.LazyFrame,
-    features: list[str] | list[dict[str, Any]] | Path | str,
+    features: list[str | dict[str, Any]] | Path | str,
+    *,
+    group_col: str | list[str] | None = None,
+    timestamp_col: str | None = None,
+    assume_sorted: bool = False,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Compute features from a configuration.
 
-    This is the main public API for QFeatures. It accepts feature specifications
+    This is the main public API for ml4t-engineer. It accepts feature specifications
     in multiple formats and computes them in dependency order.
 
     Parameters
@@ -104,7 +117,7 @@ def compute_features(
            ```python
            [
                {"name": "rsi", "params": {"period": 14}},
-               {"name": "macd", "params": {"fast": 12, "slow": 26}},
+               {"name": "macd", "params": {"fast_period": 12, "slow_period": 26}},
            ]
            ```
 
@@ -114,6 +127,16 @@ def compute_features(
            # or string path
            "config/features.yaml"
            ```
+    group_col : str | list[str] | None, default None
+        Asset grouping column or columns. Common asset columns are detected when
+        omitted. Rolling and lagged features are computed independently per group.
+    timestamp_col : str | None, default None
+        Temporal ordering column. Common datetime columns are detected when omitted.
+        Input is sorted by group and timestamp before feature computation.
+    assume_sorted : bool, default False
+        Permit row-order execution when no timestamp column exists. This is an
+        explicit assertion by the caller that rows are already in the required
+        temporal order.
 
     Returns
     -------
@@ -131,11 +154,13 @@ def compute_features(
 
     Examples
     --------
+    >>> from datetime import datetime, timedelta
     >>> import polars as pl
     >>> from ml4t.engineer.api import compute_features
     >>>
     >>> # Load OHLCV data
     >>> df = pl.DataFrame({
+    ...     "timestamp": [datetime(2024, 1, 1) + timedelta(days=i) for i in range(3)],
     ...     "open": [100.0, 101.0, 102.0],
     ...     "high": [102.0, 103.0, 104.0],
     ...     "low": [99.0, 100.0, 101.0],
@@ -152,37 +177,67 @@ def compute_features(
     ...     {"name": "sma", "params": {"period": 50}},
     ... ])
     >>>
+    >>> # Multiple configurations require explicit output names
+    >>> result = compute_features(df, [
+    ...     {"name": "sma", "params": {"period": 20}, "output": "sma_20"},
+    ...     {"name": "sma", "params": {"period": 50}, "output": "sma_50"},
+    ... ])
+    >>>
     >>> # Compute from YAML config
     >>> result = compute_features(df, "features.yaml")
 
     Notes
     -----
-    - Features are computed in dependency order using topological sort
-    - Circular dependencies are detected and raise ValueError
-    - Parameters in config override default parameters from registry
+    - Features are computed in dependency order using topological sort.
+    - Circular dependencies are detected and raise ValueError.
+    - Parameters in config override default parameters from the function signature.
+    - Recognized asset columns isolate rolling and lagged calculations.
+    - Input is sorted by group and timestamp. Without a timestamp, callers must set
+      ``assume_sorted=True`` explicitly.
     """
     from ml4t.engineer.core.schemas import validate_ohlcv_schema
 
-    # Validate input schema (flexible: no asset_id required, flexible time column)
+    # Validate input schema before parsing or execution.
     validate_ohlcv_schema(data, require_asset_id=False, allow_flexible_time=True)
+    schema = data.collect_schema() if isinstance(data, pl.LazyFrame) else data.schema
 
     # Parse input to standardized format
     feature_specs = _parse_feature_input(features)
+    _validate_feature_specs(feature_specs, set(schema.names()))
+    if not feature_specs:
+        return data
+
+    group_cols, resolved_timestamp_col = _resolve_ordering_columns(
+        data=data,
+        group_col=group_col,
+        timestamp_col=timestamp_col,
+        assume_sorted=assume_sorted,
+    )
 
     # Resolve dependencies and get execution order
     execution_order = _resolve_dependencies(feature_specs)
 
+    sort_cols = [*group_cols]
+    if resolved_timestamp_col is not None:
+        sort_cols.append(resolved_timestamp_col)
+
     # Execute features in order
-    result = data
-    for feature_name, params in execution_order:
-        result = _execute_feature(result, feature_name, params)
+    result = data.sort(sort_cols) if sort_cols else data
+    for spec in execution_order:
+        result = _execute_feature(
+            result,
+            feature_name=spec["name"],
+            params=spec["params"],
+            output_name=spec["output"],
+            group_cols=group_cols,
+        )
 
     return result
 
 
 def _parse_feature_input(
-    features: list[str] | list[dict[str, Any]] | Path | str,
-) -> list[dict[str, Any]]:
+    features: list[str | dict[str, Any]] | Path | str,
+) -> list[_FeatureSpec]:
     """Parse feature input to standardized dict format.
 
     Parameters
@@ -192,8 +247,8 @@ def _parse_feature_input(
 
     Returns
     -------
-    list[dict[str, Any]]
-        Standardized format: [{"name": str, "params": dict}, ...]
+    list[_FeatureSpec]
+        Validated normalized feature requests.
 
     Raises
     ------
@@ -228,30 +283,20 @@ def _parse_feature_input(
 
     # Handle list of strings (feature names only)
     if isinstance(features, list) and all(isinstance(f, str) for f in features):
-        return [{"name": name, "params": {}} for name in features]
+        return [{"name": name, "params": {}, "output": name} for name in features]
 
     # Handle list of dicts
     if isinstance(features, list) and all(isinstance(f, dict) for f in features):
-        # Standardize format
-        result = []
-        for spec_item in features:
-            # Type narrowing: we know this is a dict from the isinstance check above
-            spec = spec_item if isinstance(spec_item, dict) else {}
-            if "name" not in spec:
-                raise ValueError(f"Feature spec missing 'name' field: {spec}")
-            result.append({"name": spec["name"], "params": spec.get("params", {})})
-        return result
+        return [_normalize_feature_spec(spec) for spec in features]
 
     # Handle mixed list of strings and dicts
     if isinstance(features, list) and all(isinstance(f, str | dict) for f in features):
-        result = []
+        result: list[_FeatureSpec] = []
         for item in features:
             if isinstance(item, str):
-                result.append({"name": item, "params": {}})
+                result.append({"name": item, "params": {}, "output": item})
             elif isinstance(item, dict):
-                if "name" not in item:
-                    raise ValueError(f"Feature spec missing 'name' field: {item}")
-                result.append({"name": item["name"], "params": item.get("params", {})})
+                result.append(_normalize_feature_spec(item))
         return result
 
     raise ValueError(
@@ -259,7 +304,149 @@ def _parse_feature_input(
     )
 
 
-def _resolve_dependencies(feature_specs: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+def _normalize_feature_spec(spec: dict[str, Any]) -> _FeatureSpec:
+    """Validate and normalize one mapping feature request."""
+    allowed_keys = {"name", "params", "output"}
+    unknown_keys = set(spec) - allowed_keys
+    if unknown_keys:
+        raise ValueError(
+            f"Unknown feature spec fields: {sorted(unknown_keys)}. "
+            f"Accepted fields: {sorted(allowed_keys)}"
+        )
+    if "name" not in spec:
+        raise ValueError(f"Feature spec missing 'name' field: {spec}")
+
+    name = spec["name"]
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"Feature spec 'name' must be a non-empty string, got: {name!r}")
+
+    params = spec.get("params", {})
+    if not isinstance(params, dict):
+        raise ValueError(f"Feature '{name}' params must be a mapping, got: {type(params).__name__}")
+
+    output = spec.get("output", name)
+    if not isinstance(output, str) or not output:
+        raise ValueError(f"Feature '{name}' output must be a non-empty string, got: {output!r}")
+
+    return {"name": name, "params": params, "output": output}
+
+
+def _validate_feature_specs(feature_specs: list[_FeatureSpec], input_columns: set[str]) -> None:
+    """Validate every request before any feature executes."""
+    import inspect
+
+    registry = get_registry()
+    seen_outputs: set[str] = set()
+
+    for spec in feature_specs:
+        name = spec["name"]
+        output = spec["output"]
+        metadata = registry.get(name)
+        if metadata is None:
+            raise ValueError(
+                f"Feature '{name}' not found in registry. "
+                f"Available features: {', '.join(registry.list_all())}"
+            )
+
+        if output in seen_outputs:
+            raise ValueError(
+                f"Duplicate feature output '{output}'. "
+                "Set a distinct 'output' for each feature configuration."
+            )
+        if output in input_columns:
+            raise ValueError(
+                f"Feature output '{output}' conflicts with an input column. "
+                "Choose a distinct 'output' name."
+            )
+        seen_outputs.add(output)
+
+        signature = inspect.signature(metadata.func)
+        configurable = {
+            param_name for param_name in signature.parameters if param_name not in COLUMN_ARG_MAP
+        }
+        unknown_params = set(spec["params"]) - configurable
+        if unknown_params:
+            accepted = sorted(configurable)
+            qualifier = "parameter" if len(unknown_params) == 1 else "parameters"
+            raise ValueError(
+                f"Feature '{name}' has unknown {qualifier} {sorted(unknown_params)}. "
+                f"Accepted parameters: {accepted}"
+            )
+
+
+def _resolve_ordering_columns(
+    data: pl.DataFrame | pl.LazyFrame,
+    group_col: str | list[str] | None,
+    timestamp_col: str | None,
+    assume_sorted: bool,
+) -> tuple[list[str], str | None]:
+    """Resolve and validate grouping and temporal ordering columns."""
+    from ml4t.engineer.core.exceptions import DataSchemaError
+
+    schema = data.collect_schema() if isinstance(data, pl.LazyFrame) else data.schema
+    columns = set(schema.names())
+
+    if group_col is None:
+        group_cols = [name for name in _GROUP_COLUMN_CANDIDATES if name in columns][:1]
+    elif isinstance(group_col, str):
+        group_cols = [group_col]
+    else:
+        group_cols = list(group_col)
+        detected_group_cols = [name for name in _GROUP_COLUMN_CANDIDATES if name in columns]
+        if not group_cols and detected_group_cols:
+            raise DataSchemaError(
+                "Grouping cannot be disabled while a recognized asset column is present. "
+                f"Detected: {detected_group_cols}"
+            )
+
+    missing_group_cols = set(group_cols) - columns
+    if missing_group_cols:
+        raise DataSchemaError(
+            f"Grouping columns not found: {sorted(missing_group_cols)}. "
+            f"Available columns: {sorted(columns)}"
+        )
+
+    if timestamp_col is None:
+        resolved_timestamp_col = next(
+            (name for name in _TIME_COLUMN_CANDIDATES if name in columns),
+            None,
+        )
+    else:
+        resolved_timestamp_col = timestamp_col
+        if timestamp_col not in columns:
+            raise DataSchemaError(
+                f"Timestamp column '{timestamp_col}' not found. "
+                f"Available columns: {sorted(columns)}"
+            )
+
+    if resolved_timestamp_col is None and not assume_sorted:
+        raise DataSchemaError(
+            "No time column found. Provide timestamp_col, use one of "
+            f"{list(_TIME_COLUMN_CANDIDATES)}, or set assume_sorted=True to assert "
+            "that row order is already temporal."
+        )
+
+    if resolved_timestamp_col is not None:
+        dtype = schema[resolved_timestamp_col]
+        if dtype.base_type() not in {pl.Date, pl.Datetime}:
+            raise DataSchemaError(
+                f"Timestamp column '{resolved_timestamp_col}' must be Date or Datetime, got {dtype}"
+            )
+
+    if isinstance(data, pl.DataFrame):
+        checked_columns = [*group_cols]
+        if resolved_timestamp_col is not None:
+            checked_columns.append(resolved_timestamp_col)
+        null_columns = [name for name in checked_columns if data[name].null_count() > 0]
+        if null_columns:
+            raise DataSchemaError(
+                f"Grouping and ordering columns cannot contain nulls: {null_columns}"
+            )
+
+    return group_cols, resolved_timestamp_col
+
+
+def _resolve_dependencies(feature_specs: list[_FeatureSpec]) -> list[_FeatureSpec]:
     """Resolve feature dependencies using topological sort (Kahn's algorithm).
 
     Parameters
@@ -269,8 +456,8 @@ def _resolve_dependencies(feature_specs: list[dict[str, Any]]) -> list[tuple[str
 
     Returns
     -------
-    list[tuple[str, dict]]
-        Features in execution order: [(name, params), ...]
+    list[_FeatureSpec]
+        Feature requests in dependency order.
 
     Raises
     ------
@@ -278,45 +465,34 @@ def _resolve_dependencies(feature_specs: list[dict[str, Any]]) -> list[tuple[str
         If feature not in registry or circular dependency detected
     """
     registry = get_registry()
+    requested_names = {spec["name"] for spec in feature_specs}
+    completed_names: set[str] = set()
+    remaining = list(feature_specs)
+    result: list[_FeatureSpec] = []
 
-    # Build dependency graph
-    feature_map = {spec["name"]: spec["params"] for spec in feature_specs}
-    in_degree = dict.fromkeys(feature_map, 0)
-    dependencies = {}
+    while remaining:
+        ready = []
+        for spec in remaining:
+            metadata = registry.get(spec["name"])
+            if metadata is None:
+                raise ValueError(f"Feature '{spec['name']}' not found in registry")
+            requested_dependencies = set(metadata.dependencies) & requested_names
+            if requested_dependencies <= completed_names:
+                ready.append(spec)
 
-    for name in feature_map:
-        metadata = registry.get(name)
-        if metadata is None:
+        if not ready:
+            unresolved = [spec["name"] for spec in remaining]
             raise ValueError(
-                f"Feature '{name}' not found in registry. "
-                f"Available features: {', '.join(registry.list_all())}"
+                f"Circular dependency detected. Unresolved features: {', '.join(unresolved)}"
             )
 
-        dependencies[name] = metadata.dependencies
-        for dep in metadata.dependencies:
-            if dep in feature_map:
-                in_degree[name] += 1
+        for spec in ready:
+            result.append(spec)
+            completed_names.add(spec["name"])
+            remaining.remove(spec)
 
-    # Kahn's algorithm for topological sort
-    queue = [name for name in feature_map if in_degree[name] == 0]
-    result = []
-
-    while queue:
-        # Sort queue for deterministic ordering
-        queue.sort()
-        current = queue.pop(0)
-        result.append((current, feature_map[current]))
-
-        # Update in-degrees
-        for name in feature_map:
-            if current in dependencies[name]:
-                in_degree[name] -= 1
-                if in_degree[name] == 0:
-                    queue.append(name)
-
-    # Check for circular dependencies
-    if len(result) != len(feature_map):
-        unresolved = [name for name in feature_map if name not in dict(result)]
+    if len(result) != len(feature_specs):
+        unresolved = [spec["name"] for spec in feature_specs if spec not in result]
         raise ValueError(
             f"Circular dependency detected. Unresolved features: {', '.join(unresolved)}"
         )
@@ -328,6 +504,8 @@ def _execute_feature(
     data: pl.DataFrame | pl.LazyFrame,
     feature_name: str,
     params: dict[str, Any],
+    output_name: str,
+    group_cols: list[str],
 ) -> pl.DataFrame | pl.LazyFrame:
     """Execute a single feature computation using signature-aware dispatch.
 
@@ -343,6 +521,10 @@ def _execute_feature(
         Feature name from registry
     params : dict[str, Any]
         Parameters to override defaults
+    output_name : str
+        Base output name selected by the feature request
+    group_cols : list[str]
+        Columns that isolate rolling and lagged computations
 
     Returns
     -------
@@ -377,6 +559,8 @@ def _execute_feature(
     for param_name, param_obj in func_params.items():
         # Skip parameters that should always be kwargs
         if param_name in KEYWORD_ONLY_PARAMS:
+            if param_name in final_params:
+                keyword_params[param_name] = final_params[param_name]
             continue
 
         # Check if this parameter name matches a known column argument
@@ -417,15 +601,17 @@ def _execute_feature(
     # Handle different return types
     if isinstance(result, pl.Expr):
         # Single expression - add it directly
-        return data.with_columns(result.alias(feature_name))
+        expr = result.over(group_cols) if group_cols else result
+        return _append_feature_expressions(data, [(output_name, expr)])
     elif isinstance(result, dict):
         # Multiple expressions - add all with prefixed names
-        exprs = []
+        exprs: list[tuple[str, pl.Expr]] = []
         for key, expr in result.items():
             if isinstance(expr, pl.Expr):
-                exprs.append(expr.alias(f"{feature_name}_{key}"))
+                grouped_expr = expr.over(group_cols) if group_cols else expr
+                exprs.append((f"{output_name}_{key}", grouped_expr))
         if exprs:
-            return data.with_columns(exprs)
+            return _append_feature_expressions(data, exprs)
         else:
             raise ValueError(f"Feature '{feature_name}' returned dict without Expr values")
     elif isinstance(result, tuple | list):
@@ -433,9 +619,10 @@ def _execute_feature(
         exprs = []
         for i, expr in enumerate(result):
             if isinstance(expr, pl.Expr):
-                exprs.append(expr.alias(f"{feature_name}_{i}"))
+                grouped_expr = expr.over(group_cols) if group_cols else expr
+                exprs.append((f"{output_name}_{i}", grouped_expr))
         if exprs:
-            return data.with_columns(exprs)
+            return _append_feature_expressions(data, exprs)
         else:
             raise ValueError(f"Feature '{feature_name}' returned tuple/list without Expr values")
     else:
@@ -443,3 +630,22 @@ def _execute_feature(
             f"Feature '{feature_name}' returned unexpected type: {type(result)}\n"
             f"Expected pl.Expr, dict, or tuple, got {type(result).__name__}"
         )
+
+
+def _append_feature_expressions(
+    data: pl.DataFrame | pl.LazyFrame,
+    named_expressions: list[tuple[str, pl.Expr]],
+) -> pl.DataFrame | pl.LazyFrame:
+    """Add feature expressions without replacing existing columns."""
+    schema = data.collect_schema() if isinstance(data, pl.LazyFrame) else data.schema
+    existing_columns = set(schema.names())
+    output_names = [name for name, _expr in named_expressions]
+    conflicts = existing_columns & set(output_names)
+    if conflicts:
+        raise ValueError(
+            f"Feature outputs conflict with existing columns: {sorted(conflicts)}. "
+            "Choose distinct 'output' names."
+        )
+    if len(output_names) != len(set(output_names)):
+        raise ValueError(f"Feature produced duplicate output columns: {output_names}")
+    return data.with_columns([expr.alias(name) for name, expr in named_expressions])

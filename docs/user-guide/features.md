@@ -43,7 +43,10 @@ result = compute_features(df, ["rsi", "macd", "atr"])
 result = compute_features(df, [
     {"name": "rsi", "params": {"period": 20}},
     {"name": "sma", "params": {"period": 50}},
-    {"name": "bollinger_bands", "params": {"period": 20, "std_dev": 2.5}},
+    {
+        "name": "bollinger_bands",
+        "params": {"period": 20, "nbdevup": 2.5, "nbdevdn": 2.5},
+    },
 ])
 
 # 3. YAML config file (production pipelines)
@@ -51,6 +54,23 @@ result = compute_features(df, "features.yaml")
 ```
 
 Features are computed in dependency order (topological sort). Circular dependencies raise `ValueError`. The return type matches the input: `DataFrame` in, `DataFrame` out; `LazyFrame` in, `LazyFrame` out.
+
+Input is sorted by asset and timestamp before computation. Common asset columns such as
+`asset_id`, `symbol`, and `ticker` are detected automatically, and every rolling or
+lagged feature is evaluated independently for each asset. If no timestamp column
+exists, pass `assume_sorted=True` to make the row-order assumption explicit.
+
+Use `output` when requesting more than one configuration of the same feature:
+
+```python
+result = compute_features(df, [
+    {"name": "sma", "params": {"period": 20}, "output": "sma_20"},
+    {"name": "sma", "params": {"period": 50}, "output": "sma_50"},
+])
+```
+
+Unknown parameters, repeated output names, and output names that replace input columns
+raise `ValueError` before feature execution.
 
 > **Book**: Ch7 `10_ml4t_library_ecosystem.py` demonstrates all three input formats on SPY data, including a comparison between library and manual RSI implementations.
 
@@ -63,7 +83,7 @@ Price momentum and oscillator indicators. Most produce bounded (normalized) outp
 | Name | Description | TA-Lib | Normalized | Default Period |
 |------|-------------|--------|------------|----------------|
 | `rsi` | Relative Strength Index | Yes | 0-100 | 14 |
-| `macd` | Moving Average Convergence/Divergence | Yes | No | 12/26/9 |
+| `macd` | Moving Average Convergence/Divergence | Yes | No | 12/26 |
 | `stochastic` | Stochastic Oscillator (%K, %D) | No | 0-100 | 14/3/3 |
 | `stochf` | Fast Stochastic | Yes | 0-100 | 5/3 |
 | `stochrsi` | Stochastic RSI | Yes | 0-100 | 14 |
@@ -329,14 +349,14 @@ features:
 
   - name: macd
     params:
-      fast: 12
-      slow: 26
-      signal: 9
+      fast_period: 12
+      slow_period: 26
 
   - name: bollinger_bands
     params:
       period: 20
-      std_dev: 2.0
+      nbdevup: 2.0
+      nbdevdn: 2.0
 
   - name: yang_zhang_volatility
 ```
@@ -351,6 +371,8 @@ Most features expect a DataFrame with standardized column names (lowercase):
 
 | Column | Type | Required By |
 |--------|------|-------------|
+| `timestamp` | datetime | Temporal ordering, unless `assume_sorted=True` |
+| `asset_id` | string | Optional panel grouping, auto-detected when present |
 | `open` | float | OHLCV, OHLC features |
 | `high` | float | OHLCV, OHLC, HLC, HL features |
 | `low` | float | OHLCV, OHLC, HLC, HL features |
