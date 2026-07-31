@@ -345,26 +345,26 @@ class TickRunBarSampler(BarSampler):
 
     def _empty_run_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "run_length": [],
-                "expected_run": [],
-                "theta": [],
-                "expected_theta": [],
-                "expected_t": [],
-                "p_buy": [],
-                "cumulative_buys": [],
-                "cumulative_sells": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "run_length",
+                "expected_run",
+                "theta",
+                "expected_theta",
+                "expected_t",
+                "p_buy",
+                "cumulative_buys",
+                "cumulative_sells",
+            ]
         )
 
 
@@ -533,26 +533,26 @@ class VolumeRunBarSampler(BarSampler):
 
     def _empty_run_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "run_volume": [],
-                "expected_run": [],
-                "theta": [],
-                "expected_theta": [],
-                "expected_t": [],
-                "p_buy": [],
-                "cumulative_buys": [],
-                "cumulative_sells": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "run_volume",
+                "expected_run",
+                "theta",
+                "expected_theta",
+                "expected_t",
+                "p_buy",
+                "cumulative_buys",
+                "cumulative_sells",
+            ]
         )
 
 
@@ -734,28 +734,28 @@ class DollarRunBarSampler(BarSampler):
 
     def _empty_run_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "dollar_volume": [],
-                "vwap": [],
-                "run_dollars": [],
-                "expected_run": [],
-                "theta": [],
-                "expected_theta": [],
-                "expected_t": [],
-                "p_buy": [],
-                "cumulative_buys": [],
-                "cumulative_sells": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "dollar_volume",
+                "vwap",
+                "run_dollars",
+                "expected_run",
+                "theta",
+                "expected_theta",
+                "expected_t",
+                "p_buy",
+                "cumulative_buys",
+                "cumulative_sells",
+            ]
         )
 
 
@@ -980,23 +980,23 @@ class FixedTickRunBarSampler(BarSampler):
 
     def _empty_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "run_length": [],
-                "theta": [],
-                "cumulative_buys": [],
-                "cumulative_sells": [],
-                "threshold": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "run_length",
+                "theta",
+                "cumulative_buys",
+                "cumulative_sells",
+                "threshold",
+            ]
         )
 
 

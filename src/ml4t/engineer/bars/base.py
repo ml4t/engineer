@@ -49,6 +49,9 @@ class BarSampler(ABC):
         DataValidationError
             If required columns are missing
         """
+        if not isinstance(data, pl.DataFrame):
+            raise DataValidationError("data must be a Polars DataFrame")
+
         required_cols = {"timestamp", "price", "volume"}
         missing_cols = required_cols - set(data.columns)
 
@@ -59,12 +62,54 @@ class BarSampler(ABC):
         if len(data) == 0:
             return
 
+        null_columns = sorted(column for column in required_cols if data[column].null_count())
+        if null_columns:
+            raise DataValidationError(f"Required columns contain null values: {null_columns}")
+
         # Check data types
         if not data["price"].dtype.is_numeric():
             raise DataValidationError("Price column must be numeric")
 
         if not data["volume"].dtype.is_numeric():
             raise DataValidationError("Volume column must be numeric")
+
+        if not isinstance(data["timestamp"].dtype, pl.Datetime):
+            raise DataValidationError("Timestamp column must use a Polars Datetime dtype")
+
+        if data["price"].is_nan().any() or data["price"].is_infinite().any():
+            raise DataValidationError("Price values must be finite")
+        if (data["price"] <= 0).any():
+            raise DataValidationError("Price values must be positive")
+
+        if data["volume"].is_nan().any() or data["volume"].is_infinite().any():
+            raise DataValidationError("Volume values must be finite")
+        if (data["volume"] < 0).any():
+            raise DataValidationError("Volume values must be nonnegative")
+
+        if not data["timestamp"].is_sorted():
+            raise DataValidationError("Timestamp values must be sorted in nondecreasing order")
+
+        if "side" in data.columns:
+            if data["side"].null_count():
+                raise DataValidationError("Side values must not be null")
+            if not data["side"].dtype.is_numeric():
+                raise DataValidationError("Side column must be numeric")
+            if not data["side"].is_in([-1, 1]).all():
+                raise DataValidationError("Side values must be either -1 or 1")
+
+    @staticmethod
+    def _empty_result(columns: list[str]) -> pl.DataFrame:
+        """Create a typed empty bar result."""
+        count_columns = {"buy_count", "run_length", "sell_count", "tick_count"}
+        schema = {}
+        for column in columns:
+            if column == "timestamp":
+                schema[column] = pl.Datetime("us")
+            elif column in count_columns:
+                schema[column] = pl.UInt32
+            else:
+                schema[column] = pl.Float64
+        return pl.DataFrame(schema=schema)
 
     def _create_ohlcv_bar(
         self,
