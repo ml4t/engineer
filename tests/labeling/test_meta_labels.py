@@ -304,11 +304,10 @@ class TestApplyMetaModel:
         sized = result["sized_signal"][2]
         assert abs(sized) < 0.1
 
-    def test_zero_signal_remains_zero(self, full_pipeline_data):
+    @pytest.mark.parametrize("method", ["linear", "sigmoid", "discrete"])
+    def test_zero_signal_remains_zero(self, full_pipeline_data, method):
         """Test that zero signal remains zero regardless of probability."""
-        result = apply_meta_model(
-            full_pipeline_data, "signal", "meta_prob", bet_size_method="sigmoid"
-        )
+        result = apply_meta_model(full_pipeline_data, "signal", "meta_prob", bet_size_method=method)
         # Row 5: signal=0, prob=0.7 -> 0 (no trade regardless of confidence)
         sized = result["sized_signal"][5]
         assert sized == 0.0
