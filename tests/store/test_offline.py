@@ -11,6 +11,7 @@ Tests cover:
 
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -19,8 +20,7 @@ import pytest
 # Check for DuckDB availability
 pytest.importorskip("duckdb")
 
-from ml4t.engineer.store import OfflineFeatureStore
-from ml4t.engineer.store.offline import FeatureStoreError
+from ml4t.engineer.store import FeatureStoreError, OfflineFeatureStore
 
 # ============================================================================
 # Fixtures
@@ -223,6 +223,27 @@ class TestSaveFeatures:
         with pytest.raises(TypeError, match="must be a Polars DataFrame"):
             store_memory.save_features({"not": "a dataframe"}, "test")
 
+    def test_save_table_name_with_sql_statement_is_rejected(self, store_memory, sample_features):
+        """Table-name parameters cannot contain SQL statements."""
+        store_memory.save_features(sample_features, "victim")
+
+        with pytest.raises(ValueError, match="forbidden SQL syntax"):
+            store_memory.save_features(
+                sample_features,
+                'new"; DROP TABLE victim; --',
+            )
+
+        assert store_memory.table_exists("victim")
+
+    def test_save_and_load_quoted_table_name(self, store_memory, sample_features):
+        """Names requiring SQL quotes remain supported."""
+        table_name = 'feature table "daily"'
+        store_memory.save_features(sample_features, table_name)
+
+        loaded = store_memory.load_features(table_name)
+
+        assert loaded.equals(sample_features)
+
 
 # ============================================================================
 # load_features() Tests
@@ -303,6 +324,44 @@ class TestLoadFeatures:
         with pytest.raises(ValueError, match="must be a positive integer"):
             store_memory.load_features("test", limit=-1)
 
+    def test_load_column_name_cannot_execute_sql(self, store_memory):
+        """Column-name parameters cannot execute additional statements."""
+        store_memory.save_features(pl.DataFrame({"x": [1, 2]}), "safe")
+        store_memory.save_features(pl.DataFrame({"y": [3, 4]}), "victim")
+
+        with pytest.raises(ValueError, match="forbidden SQL syntax"):
+            store_memory.load_features(
+                "safe",
+                columns=["x FROM safe; DROP TABLE victim; SELECT x"],
+            )
+
+        assert sorted(store_memory.list_tables()) == ["safe", "victim"]
+
+    def test_load_rejects_unknown_columns_before_query(self, store_memory, sample_features):
+        """Unknown columns fail with the available schema."""
+        store_memory.save_features(sample_features, "test")
+
+        with pytest.raises(ValueError, match="Unknown columns.*missing"):
+            store_memory.load_features("test", columns=["missing"])
+
+    def test_load_specific_quoted_columns(self, store_memory):
+        """Column names requiring quotes can be selected safely."""
+        features = pl.DataFrame(
+            {
+                "feature value": [1.0],
+                'quote"value': [2.0],
+            }
+        )
+        store_memory.save_features(features, "feature table")
+
+        loaded = store_memory.load_features(
+            "feature table",
+            columns=['quote"value', "feature value"],
+        )
+
+        assert loaded.columns == ['quote"value', "feature value"]
+        assert loaded.row(0) == (2.0, 1.0)
+
 
 # ============================================================================
 # point_in_time_join() Tests
@@ -322,6 +381,33 @@ class TestPointInTimeJoin:
         # Should have both label and feature columns
         assert "target" in result.columns
         assert "rsi_14" in result.columns
+
+    def test_join_with_quoted_table_timestamp_and_key_names(self, store_memory):
+        """Identifiers requiring quotes remain safe through the join API."""
+        features = pl.DataFrame(
+            {
+                "event time": [datetime(2024, 1, 1, 9), datetime(2024, 1, 1, 10)],
+                "asset-id": ["AAPL", "AAPL"],
+                "feature value": [1.0, 2.0],
+            }
+        )
+        labels = pl.DataFrame(
+            {
+                "event time": [datetime(2024, 1, 1, 9, 30)],
+                "asset-id": ["AAPL"],
+                "target": [1],
+            }
+        )
+        store_memory.save_features(features, "feature table")
+
+        result = store_memory.point_in_time_join(
+            labels,
+            "feature table",
+            timestamp_col="event time",
+            join_keys=["asset-id"],
+        )
+
+        assert result["feature value"].to_list() == [1.0]
 
     def test_join_with_keys(self, store_memory):
         """Test join with additional keys (per-symbol)."""

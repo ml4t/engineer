@@ -4,6 +4,6 @@ Provides offline feature store capabilities using DuckDB with Arrow
 integration for zero-copy performance.
 """
 
-from .offline import OfflineFeatureStore
+from .offline import FeatureStoreError, OfflineFeatureStore
 
-__all__ = ["OfflineFeatureStore"]
+__all__ = ["FeatureStoreError", "OfflineFeatureStore"]

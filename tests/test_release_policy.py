@@ -60,6 +60,7 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
         "Run ty check",
         "Build package",
     } <= commands.keys()
+    assert "--extra ta --extra store" in commands["Install dependencies"]
     assert setup["with"] == {
         "python-version": "${{ matrix.python-version }}",
         "allow-prereleases": "true",

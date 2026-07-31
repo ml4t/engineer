@@ -52,6 +52,26 @@ class FeatureStoreError(Exception):
     """Raised when feature store operations fail."""
 
 
+_FORBIDDEN_IDENTIFIER_TOKENS = ("\x00", ";", "--", "/*", "*/")
+
+
+def _quote_identifier(identifier: str, *, parameter: str) -> str:
+    """Validate and quote a DuckDB identifier."""
+    if not isinstance(identifier, str):
+        raise TypeError(f"{parameter} must be a string")
+    if not identifier:
+        raise ValueError(f"{parameter} must be a non-empty string")
+
+    invalid_token = next(
+        (token for token in _FORBIDDEN_IDENTIFIER_TOKENS if token in identifier),
+        None,
+    )
+    if invalid_token is not None:
+        raise ValueError(f"{parameter} contains forbidden SQL syntax")
+
+    return f'"{identifier.replace('"', '""')}"'
+
+
 class OfflineFeatureStore:
     """DuckDB-based offline feature store with Arrow integration.
 
@@ -248,6 +268,18 @@ class OfflineFeatureStore:
         """
         return table_name in self.list_tables()
 
+    def _table_columns(self, table_name: str) -> list[str]:
+        rows = self.connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'main' AND table_name = ?
+            ORDER BY ordinal_position
+            """,
+            [table_name],
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def execute(self, query: str) -> "duckdb.DuckDBPyRelation":
         """Execute raw SQL query on the store.
 
@@ -295,8 +327,7 @@ class OfflineFeatureStore:
         if df.is_empty():
             raise ValueError("Cannot save empty DataFrame")
 
-        if not table_name or not isinstance(table_name, str):
-            raise ValueError("table_name must be a non-empty string")
+        quoted_table = _quote_identifier(table_name, parameter="table_name")
 
         if mode not in ("replace", "append", "fail"):
             raise ValueError(f"mode must be 'replace', 'append', or 'fail', got '{mode}'")
@@ -310,17 +341,17 @@ class OfflineFeatureStore:
 
         # Drop table if mode="replace"
         if mode == "replace" and exists:
-            self.connection.execute(f"DROP TABLE {table_name}")
+            self.connection.execute(f"DROP TABLE {quoted_table}")
 
         # Save using Arrow zero-copy
         # DuckDB can read directly from Arrow without copying
         try:
             if mode == "append" and exists:
                 # Insert into existing table
-                self.connection.execute(f"INSERT INTO {table_name} SELECT * FROM df")
+                self.connection.execute(f"INSERT INTO {quoted_table} SELECT * FROM df")
             else:
                 # Create new table from DataFrame
-                self.connection.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")
+                self.connection.execute(f"CREATE TABLE {quoted_table} AS SELECT * FROM df")
         except Exception as e:
             raise FeatureStoreError(f"Failed to save features to '{table_name}': {e}") from e
 
@@ -360,6 +391,8 @@ class OfflineFeatureStore:
             >>> # Load recent data with limit
             >>> df = store.load_features("rsi_features", limit=1000)
         """
+        quoted_table = _quote_identifier(table_name, parameter="table_name")
+
         # Validate table exists
         if not self.table_exists(table_name):
             raise FeatureStoreError(
@@ -375,9 +408,22 @@ class OfflineFeatureStore:
             if not all(isinstance(col, str) for col in columns):
                 raise TypeError("all columns must be strings")
 
+        quoted_columns = None
+        if columns is not None:
+            quoted_columns = [
+                _quote_identifier(column, parameter="column name") for column in columns
+            ]
+            available_columns = set(self._table_columns(table_name))
+            missing_columns = [column for column in columns if column not in available_columns]
+            if missing_columns:
+                raise ValueError(
+                    f"Unknown columns for table '{table_name}': {missing_columns}. "
+                    f"Available columns: {sorted(available_columns)}"
+                )
+
         # Build SQL query
-        select_clause = "*" if columns is None else ", ".join(columns)
-        query = f"SELECT {select_clause} FROM {table_name}"
+        select_clause = "*" if quoted_columns is None else ", ".join(quoted_columns)
+        query = f"SELECT {select_clause} FROM {quoted_table}"
 
         # Add WHERE clause if provided
         if filter_expr:

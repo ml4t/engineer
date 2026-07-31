@@ -114,7 +114,7 @@ jobs:
           allow-prereleases: true
 
       - name: Install dependencies
-        run: uv sync --python python --dev --extra ta
+        run: uv sync --python python --dev --extra ta --extra store
 
       - name: Import package
         run: uv run --python python python -c "import ml4t.engineer"
