@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="ewma_volatility",
     category="volatility",
     description="EWMA Volatility - exponentially weighted moving average of variance",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

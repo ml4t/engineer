@@ -360,8 +360,8 @@ class FeatureCatalog:
 
         Examples
         --------
-        >>> # Features usable with only 20 bars of history
-        >>> features.by_lookback(20)
+        >>> # Features usable by row 19, after 20 finite input rows
+        >>> features.by_lookback(19)
         """
         results: _list[str] = []
 
@@ -375,6 +375,31 @@ class FeatureCatalog:
                 continue
 
         return sorted(results)
+
+    def lookback(self, name: str, **parameters: Any) -> int:
+        """Return the first usable row for a feature configuration.
+
+        Parameters
+        ----------
+        name : str
+            Registered feature name.
+        **parameters : Any
+            Feature parameter overrides.
+
+        Returns
+        -------
+        int
+            Zero-based row index of the first structurally usable output.
+
+        Raises
+        ------
+        KeyError
+            If the feature is not registered.
+        """
+        metadata = self._registry.get(name)
+        if metadata is None:
+            raise KeyError(f"Feature '{name}' not found in registry")
+        return metadata.lookback(**parameters)
 
     def categories(self) -> _list[str]:
         """Get all unique feature categories.
@@ -391,6 +416,12 @@ class FeatureCatalog:
         """
         categories = {meta.category for meta in self._registry._features.values()}
         return sorted(categories)
+
+    def tags(self) -> _list[str]:
+        """Return all searchable feature tags."""
+        return sorted(
+            {tag for metadata in self._registry._features.values() for tag in metadata.tags}
+        )
 
     def input_types(self) -> _list[str]:
         """Get all unique input types across features.
@@ -519,8 +550,14 @@ class _FeatureCatalogProxy:
     def by_lookback(self, max_lookback: int) -> _list[str]:
         return _get_features().by_lookback(max_lookback)
 
+    def lookback(self, name: str, **parameters: Any) -> int:
+        return _get_features().lookback(name, **parameters)
+
     def categories(self) -> _list[str]:
         return _get_features().categories()
+
+    def tags(self) -> _list[str]:
+        return _get_features().tags()
 
     def input_types(self) -> _list[str]:
         return _get_features().input_types()

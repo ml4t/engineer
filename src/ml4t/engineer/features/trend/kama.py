@@ -117,7 +117,6 @@ def kama_polars(col: str, timeperiod: int = 30) -> pl.Expr:
     name="kama",
     category="trend",
     description="KAMA - Kaufman Adaptive Moving Average",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

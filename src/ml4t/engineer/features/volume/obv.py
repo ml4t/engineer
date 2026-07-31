@@ -96,7 +96,6 @@ def obv_polars(close_column: str, volume_column: str) -> pl.Expr:
     name="obv",
     category="volume",
     description="OBV - On-Balance Volume",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

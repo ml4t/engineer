@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="fourier_features",
     category="ml",
     description="Fourier Features - spectral features for ML",
-    lookback=252,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

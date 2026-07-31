@@ -41,12 +41,10 @@ from ml4t.engineer.core.validation import (
     name="choppiness_index",
     category="regime",
     description="Choppiness Index - identifies trending vs choppy/range-bound markets",
-    lookback="period",
     normalized=True,
     value_range=(0.0, 100.0),
     formula="CI = 100 * LOG10(SUM(ATR, n) / (MAX(HIGH, n) - MIN(LOW, n))) / LOG10(n)",
     input_type="OHLC",
-    parameters={"period": 14},
     tags=["regime", "trend-strength", "choppiness"],
 )
 def choppiness_index(
@@ -208,12 +206,10 @@ def variance_ratio(
     name="fractal_efficiency",
     category="regime",
     description="Fractal Efficiency Ratio - measures how efficiently price moves",
-    lookback="period",
     normalized=True,
     value_range=(0.0, 1.0),
     formula="FE = (|close[t] - close[t-n]|) / sum(|close[i] - close[i-1]|)",
     input_type="close",
-    parameters={"window": 20},
     tags=["regime", "efficiency", "trend-quality"],
 )
 def fractal_efficiency(close: pl.Expr | str, period: int = 10) -> pl.Expr:
@@ -338,12 +334,10 @@ def hurst_exponent_nb(
     name="hurst_exponent",
     category="regime",
     description="Hurst Exponent - measures long-term memory and trend persistence",
-    lookback="period",
     normalized=True,
     value_range=(0.0, 1.0),
     formula="H from R/S analysis: log(R/S) = log(c) + H * log(lag)",
     input_type="close",
-    parameters={"period": 100, "min_lag": 2, "max_lag": None},
     tags=["regime", "persistence", "memory", "r-s-analysis"],
 )
 def hurst_exponent(
@@ -424,12 +418,10 @@ def hurst_exponent(
     name="trend_intensity_index",
     category="regime",
     description="Trend Intensity Index - measures trend strength",
-    lookback="period",
     normalized=True,
     value_range=(-100.0, 100.0),
     formula="TII = 100 * (closes_above_MA / period), negative for downtrends",
     input_type="close",
-    parameters={"period": 60},
     tags=["regime", "trend-strength"],
 )
 def trend_intensity_index(close: pl.Expr | str, period: int = 30) -> pl.Expr:

@@ -117,13 +117,11 @@ def rsi_polars(column: str, period: int = 14) -> pl.Expr:
     name="rsi",
     category="momentum",
     description="Relative Strength Index - momentum oscillator measuring speed and change of price movements",
-    lookback="period",
     normalized=True,
     value_range=(0.0, 100.0),
     formula="RSI = 100 - (100 / (1 + RS)) where RS = Average Gain / Average Loss",
     ta_lib_compatible=True,
     input_type="close",
-    parameters={"period": 14},
     references=["Wilder, J. W. (1978). New Concepts in Technical Trading Systems"],
     tags=["oscillator", "momentum", "overbought", "oversold"],
 )

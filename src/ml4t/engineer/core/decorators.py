@@ -4,9 +4,12 @@ Simple decorator-based registration for features with zero overhead.
 Metadata is attached at import time, computation has no wrapper overhead.
 """
 
+import inspect
 from collections.abc import Callable
 from typing import Any, Literal, TypeVar
 
+from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP
+from ml4t.engineer.core.lookbacks import bind_feature_lookback
 from ml4t.engineer.core.registry import FeatureMetadata, get_registry
 
 # Type variable for function preservation
@@ -30,7 +33,7 @@ def feature(
         "regime",
     ],
     description: str,
-    lookback: int | str,
+    lookback: int | str | Callable[..., int] | None = None,
     normalized: bool = False,
     value_range: tuple[float, float] | None = None,
     formula: str = "",
@@ -56,9 +59,9 @@ def feature(
         Feature category (momentum, trend, volatility, etc.)
     description : str
         Brief description of what the feature computes
-    lookback : int or str
-        Lookback period. Use int for fixed (e.g., 14), or str for
-        parameter-dependent (e.g., "period", "fast_period")
+    lookback : int, str, callable, or None
+        Lookback calculation for third-party features. Built-in features use
+        the authoritative calculations in ``core.lookbacks``.
     normalized : bool, default False
         Whether feature is stationary (range-bound or returns-based)
         - True: Bounded oscillators (RSI 0-100), returns, ratios
@@ -90,18 +93,15 @@ def feature(
     Examples
     --------
     >>> @feature(
-    ...     name="rsi",
+    ...     name="price_change",
     ...     category="momentum",
-    ...     description="Relative Strength Index",
-    ...     lookback=14,
+    ...     description="One-period price change",
+    ...     lookback=1,
     ...     normalized=True,
-    ...     value_range=(0, 100),
-    ...     formula="RSI = 100 - (100 / (1 + RS))",
-    ...     ta_lib_compatible=True,
+    ...     formula="change = close - close.shift(1)",
     ... )
-    ... def rsi(values, period=14):
-    ...     # Implementation
-    ...     return result
+    ... def price_change(close):
+    ...     return close.diff()
 
     Notes
     -----
@@ -118,11 +118,10 @@ def feature(
     - Cumulative: OBV, A/D Line (accumulate over time)
     - Volatility in price units: ATR (scales with price)
 
-    **lookback Guidelines**:
-    - Fixed period: Use int (e.g., 14 for RSI)
-    - Parameter-dependent: Use parameter name (e.g., "period", "window")
-    - Multiple parameters: Use primary parameter or "max(fast, slow)"
-    - No lookback: Use 0
+    **lookback Guidelines for third-party features**:
+    - The value is the zero-based index of the first structurally usable output.
+    - Fixed period: Use int (e.g., 0 for an instantaneous feature).
+    - Parameter-dependent: Use a parameter name or callable.
 
     **value_range Guidelines**:
     - Strict bounds: (0, 100) for RSI, Stochastic
@@ -132,33 +131,29 @@ def feature(
     """
 
     def decorator(func: F) -> F:
-        # --- Validation: Enforce metadata completeness ---
-
-        # Validate lookback is meaningful
-        if isinstance(lookback, str):
-            # Parameter-dependent lookback must be non-empty
-            if not lookback.strip():
-                raise TypeError(
-                    f"Feature '{name}': 'lookback' cannot be empty string. "
-                    f"Use int for fixed period, parameter name for dynamic, or 1 for minimal lookback."
-                )
-        elif (
-            isinstance(lookback, int)
-            and lookback == 0
-            and parameters
-            and any(k in parameters for k in ["period", "window", "lookback", "windows"])
-        ):
-            # Integer lookback can be 0 only for instantaneous features (log returns, etc.)
-            # but should be 1+ for any rolling window features
-            # We allow 0 but warn if parameters suggest a window is used
-            import warnings
-
-            warnings.warn(
-                f"Feature '{name}': lookback=0 but has period/window parameter. "
-                f"Consider using lookback='period' or specifying the actual lookback.",
-                UserWarning,
-                stacklevel=3,
+        signature = inspect.signature(func)
+        declared_parameters = dict(parameters or {})
+        unknown_parameters = set(declared_parameters) - set(signature.parameters)
+        if unknown_parameters:
+            raise TypeError(
+                f"Feature '{name}' declares unknown parameters: {sorted(unknown_parameters)}"
             )
+
+        default_parameters: dict[str, Any] = {}
+        for parameter_name, parameter in signature.parameters.items():
+            if parameter_name in COLUMN_ARG_MAP:
+                continue
+            if parameter.default is not inspect.Parameter.empty:
+                default_parameters[parameter_name] = parameter.default
+
+        for parameter_name, value in declared_parameters.items():
+            parameter = signature.parameters[parameter_name]
+            if parameter.default is not inspect.Parameter.empty and parameter.default != value:
+                raise TypeError(
+                    f"Feature '{name}' metadata default for '{parameter_name}' is {value!r}, "
+                    f"but the function default is {parameter.default!r}"
+                )
+            default_parameters[parameter_name] = value
 
         # Validate stationary features should have value_range for ML users
         if normalized and value_range is None:
@@ -173,23 +168,16 @@ def feature(
 
         # --- End Validation ---
 
-        # Convert lookback to callable for consistent interface
-        if isinstance(lookback, int):
-            # Fixed lookback: always return the same value (capture by value)
-            def lookback_fn(val: int = lookback, **_kwargs: Any) -> int:
-                return val
-        elif isinstance(lookback, str):
-            # Parameter-dependent: extract from kwargs or use default from parameters
-            param_name = lookback
-            default_value = (parameters or {}).get(param_name, 1) if parameters else 1
-
-            def lookback_fn(
-                pname: str = param_name, default: int = default_value, **kwargs: Any
-            ) -> int:
-                return int(kwargs.get(pname, default))
-        else:
-            # Already callable, use as-is
-            lookback_fn = lookback
+        lookback_fn = bind_feature_lookback(name, default_parameters, lookback)
+        default_lookback = lookback_fn()
+        if (
+            isinstance(default_lookback, bool)
+            or not isinstance(default_lookback, int)
+            or default_lookback < 0
+        ):
+            raise TypeError(
+                f"Feature '{name}' produced invalid default lookback {default_lookback!r}"
+            )
 
         # Create metadata
         metadata = FeatureMetadata(
@@ -203,7 +191,7 @@ def feature(
             ta_lib_compatible=ta_lib_compatible,
             input_type=input_type,
             output_type=output_type,
-            parameters=parameters or {},
+            parameters=default_parameters,
             dependencies=dependencies or [],
             references=references or [],
             tags=tags or [],

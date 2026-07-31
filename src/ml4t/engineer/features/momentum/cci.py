@@ -72,7 +72,6 @@ def cci_polars(
     name="cci",
     category="momentum",
     description="CCI - identifies cyclical trends by measuring deviation",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

@@ -75,7 +75,6 @@ def tsf_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArray[np
     name="tsf",
     category="statistics",
     description="TSF - Time Series Forecast",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

@@ -218,7 +218,6 @@ def aroonosc_polars(high_column: str, low_column: str, timeperiod: int = 14) -> 
     name="aroon",
     category="momentum",
     description="Aroon - identifies trend changes and strength",
-    lookback=0,
     normalized=True,
     value_range=(0.0, 100.0),
     formula="",
@@ -294,13 +293,11 @@ def aroon(
     name="aroonosc",
     category="momentum",
     description="Aroon Oscillator - difference between Aroon Up and Aroon Down",
-    lookback="timeperiod",
     normalized=True,
     value_range=(-100.0, 100.0),
     formula="AroonOsc = AroonUp - AroonDown",
     ta_lib_compatible=True,
     input_type="HL",
-    parameters={"timeperiod": 14},
     tags=["oscillator", "trend"],
 )
 def aroonosc(

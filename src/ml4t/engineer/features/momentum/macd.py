@@ -258,7 +258,6 @@ def macd_polars(column: str, fast_period: int = 12, slow_period: int = 26) -> pl
     name="macd",
     category="momentum",
     description="MACD - trend-following momentum indicator",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

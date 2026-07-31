@@ -120,7 +120,6 @@ def ad_polars(high: str, low_col: str, close_col: str, volume_col: str) -> pl.Ex
     name="ad",
     category="volume",
     description="AD - Accumulation/Distribution",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

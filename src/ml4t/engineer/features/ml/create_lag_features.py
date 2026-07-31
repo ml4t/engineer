@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="create_lag_features",
     category="ml",
     description="Create Lag Features - lagged close for ML",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

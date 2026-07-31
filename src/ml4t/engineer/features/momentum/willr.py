@@ -66,7 +66,6 @@ def willr_polars(
     name="willr",
     category="momentum",
     description="Williams %R - momentum indicator",
-    lookback=0,
     value_range=(-100.0, 0.0),
     normalized=True,
     formula="",

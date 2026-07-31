@@ -144,7 +144,6 @@ def macdfix_numba(
     name="macdfix",
     category="momentum",
     description="MACD Fix - MACD with fixed 12/26 periods",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

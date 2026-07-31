@@ -72,7 +72,6 @@ def typprice_polars(high: str, low_col: str, close_col: str) -> pl.Expr:
     name="typprice",
     category="price_transform",
     description="TYPPRICE - Typical Price",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

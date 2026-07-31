@@ -87,7 +87,6 @@ def trima_polars(col: str, period: int = 30) -> pl.Expr:
     name="trima",
     category="trend",
     description="TRIMA - Triangular Moving Average",
-    lookback=30,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

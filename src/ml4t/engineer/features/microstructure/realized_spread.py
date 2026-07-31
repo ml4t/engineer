@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="realized_spread",
     category="microstructure",
     description="Realized Spread - measures post-trade price reversion",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

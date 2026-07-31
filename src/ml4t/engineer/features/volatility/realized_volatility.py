@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="realized_volatility",
     category="volatility",
     description="Realized Volatility - standard deviation of returns",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

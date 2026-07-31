@@ -168,7 +168,17 @@ feature_catalog.tags()
 | `dependencies` | `list[str]` | Other features this depends on |
 | `references` | `list[str]` | Academic references |
 | `tags` | `list[str]` | Searchable tags |
-| `lookback` | `Callable` | Function returning minimum lookback period |
+| `lookback` | `Callable` | Function returning the first usable zero-based row |
+
+Lookback values assume finite input columns. A value of `19` means that rows
+0 through 18 are warm-up and the feature first becomes usable on row 19, after
+20 input rows. The callable accepts feature parameters, so configured history
+requirements can be inspected before execution:
+
+```python
+feature_catalog.lookback("sma", period=50)
+# 49
+```
 
 ## See It In The Book
 

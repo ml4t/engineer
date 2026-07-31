@@ -78,7 +78,6 @@ def rogers_satchell_volatility(
     name="yang_zhang_volatility",
     category="volatility",
     description="Yang-Zhang Volatility - combines overnight and intraday volatility",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

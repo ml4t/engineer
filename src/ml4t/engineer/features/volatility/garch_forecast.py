@@ -70,7 +70,6 @@ def garch_volatility_forecast_nb(
     name="garch_forecast",
     category="volatility",
     description="GARCH Volatility Forecast - conditional volatility model",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

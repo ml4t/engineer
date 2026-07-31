@@ -165,7 +165,6 @@ def stochastic_polars(
     name="stochastic",
     category="momentum",
     description="Stochastic Oscillator - %K and %D",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

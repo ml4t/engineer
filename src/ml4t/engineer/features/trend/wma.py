@@ -81,7 +81,6 @@ def wma_polars(column: str, period: int) -> pl.Expr:
     name="wma",
     category="trend",
     description="WMA - Weighted Moving Average",
-    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,

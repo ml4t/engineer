@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="time_decay_weights",
     category="ml",
     description="Time Decay Weights - exponentially decaying weights",
-    lookback="lookback",
     normalized=False,
     formula="",
     ta_lib_compatible=False,

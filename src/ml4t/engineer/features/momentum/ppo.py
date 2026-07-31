@@ -112,7 +112,6 @@ def ppo_polars(
     name="ppo",
     category="momentum",
     description="PPO - Percentage Price Oscillator",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

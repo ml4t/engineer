@@ -102,7 +102,6 @@ def natr_polars(
     name="natr",
     category="volatility",
     description="NATR - Normalized ATR (percentage)",
-    lookback="period",
     value_range=(0.0, 100.0),
     normalized=True,
     formula="NATR = (ATR / close) * 100",

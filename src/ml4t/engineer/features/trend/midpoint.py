@@ -73,7 +73,6 @@ def midpoint_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="midpoint",
     category="trend",
     description="Midpoint - average of highest and lowest close",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

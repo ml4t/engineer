@@ -81,7 +81,6 @@ def avgdev_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="avgdev",
     category="statistics",
     description="AVGDEV - Average Deviation",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

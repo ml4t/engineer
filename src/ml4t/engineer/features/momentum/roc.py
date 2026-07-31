@@ -45,7 +45,6 @@ def roc_polars(column: str, period: int = 10) -> pl.Expr:
     name="roc",
     category="momentum",
     description="ROC - Rate of Change",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

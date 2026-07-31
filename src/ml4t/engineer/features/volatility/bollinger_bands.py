@@ -111,7 +111,6 @@ def bollinger_bands_polars(
     name="bollinger_bands",
     category="volatility",
     description="Bollinger Bands - volatility bands around MA",
-    lookback=20,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

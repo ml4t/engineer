@@ -79,7 +79,6 @@ def avgprice_polars(
     name="avgprice",
     category="price_transform",
     description="AVGPRICE - Average Price",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

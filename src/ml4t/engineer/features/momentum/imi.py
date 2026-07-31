@@ -55,7 +55,6 @@ def imi_numba(
     name="imi",
     category="momentum",
     description="IMI - Intraday Momentum Index",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

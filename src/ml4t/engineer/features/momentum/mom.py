@@ -74,7 +74,6 @@ def mom_polars(column: str, period: int = 10) -> pl.Expr:
     name="mom",
     category="momentum",
     description="Momentum - rate of price change",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

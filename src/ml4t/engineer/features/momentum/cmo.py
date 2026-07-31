@@ -113,7 +113,6 @@ def cmo_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="cmo",
     category="momentum",
     description="CMO - Chande Momentum Oscillator",
-    lookback=0,
     value_range=(-100.0, 100.0),
     normalized=True,
     formula="",

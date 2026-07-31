@@ -232,9 +232,26 @@ class TestFeatureCatalogConvenience:
         assert "atr" in result
         assert "macd" not in result  # lookback = 35
 
+    def test_configured_lookback(self, catalog):
+        assert catalog.lookback("sma", period=50) == 50
+
+    def test_lookback_unknown_feature(self, catalog):
+        with pytest.raises(KeyError, match="not found"):
+            catalog.lookback("unknown")
+
     def test_categories(self, catalog):
         result = catalog.categories()
         assert result == ["momentum", "trend", "volatility"]
+
+    def test_tags(self, catalog):
+        assert catalog.tags() == [
+            "average",
+            "momentum",
+            "oscillator",
+            "range",
+            "trend",
+            "volatility",
+        ]
 
     def test_input_types(self, catalog):
         result = catalog.input_types()

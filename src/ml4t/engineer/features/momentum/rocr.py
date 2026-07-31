@@ -35,7 +35,6 @@ def rocr_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArray[n
     name="rocr",
     category="momentum",
     description="ROCR - Rate of Change Ratio",
-    lookback=0,
     value_range=(0.0, float("inf")),
     normalized=False,
     formula="",

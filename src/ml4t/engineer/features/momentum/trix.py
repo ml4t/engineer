@@ -81,7 +81,6 @@ def trix_polars(col: str, timeperiod: int = 30) -> pl.Expr:
     name="trix",
     category="momentum",
     description="TRIX - 1-day ROC of triple smooth EMA",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="trade_intensity",
     category="microstructure",
     description="Trade Intensity - trade arrival rate",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

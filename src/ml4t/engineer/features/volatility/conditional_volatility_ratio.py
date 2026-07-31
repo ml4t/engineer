@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="conditional_volatility_ratio",
     category="volatility",
     description="Conditional Volatility Ratio - vol in up markets vs down markets",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,
@@ -62,6 +61,12 @@ def conditional_volatility_ratio(
     downside_vol = downside_returns.abs().rolling_std(period)
 
     # Ratio (handle division by zero)
-    ratio = pl.when(downside_vol > 0).then(upside_vol / downside_vol).otherwise(1.0)
+    ratio = (
+        pl.when(downside_vol.is_null())
+        .then(None)
+        .when(downside_vol > 0)
+        .then(upside_vol / downside_vol)
+        .otherwise(1.0)
+    )
 
     return ratio

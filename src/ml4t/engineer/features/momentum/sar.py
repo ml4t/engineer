@@ -225,7 +225,6 @@ def sar_polars(
     name="sar",
     category="momentum",
     description="SAR - Parabolic Stop and Reverse",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

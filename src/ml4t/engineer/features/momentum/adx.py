@@ -327,7 +327,6 @@ def adx_polars(
     name="adx",
     category="momentum",
     description="ADX - measures trend strength regardless of direction",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

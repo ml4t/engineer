@@ -109,7 +109,6 @@ def apo_polars(
     name="apo",
     category="momentum",
     description="APO - Absolute Price Oscillator",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

@@ -66,7 +66,6 @@ def medprice_polars(high: str, low_col: str) -> pl.Expr:
     name="medprice",
     category="price_transform",
     description="MEDPRICE - Median Price",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

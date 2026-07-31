@@ -96,7 +96,6 @@ def linearreg_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="linearreg",
     category="statistics",
     description="LINEARREG - Linear Regression",
-    lookback=14,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

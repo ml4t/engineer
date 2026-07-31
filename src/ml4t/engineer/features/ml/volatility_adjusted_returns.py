@@ -11,14 +11,13 @@ from ml4t.engineer.core.validation import (
     name="volatility_adjusted_returns",
     category="ml",
     description="Volatility Adjusted Returns - risk-adjusted returns",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,
 )
 def volatility_adjusted_returns(
     returns: pl.Expr | str,
-    volatility: pl.Expr | str,
+    volatility: pl.Expr | str | None = None,
     vol_lookback: int = 20,
     annualize: bool = False,
 ) -> pl.Expr:
@@ -30,8 +29,8 @@ def volatility_adjusted_returns(
     ----------
     returns : pl.Expr | str
         Returns column
-    volatility : pl.Expr | str
-        Volatility column (or will be calculated if not provided)
+    volatility : pl.Expr | str or None, default None
+        Volatility column. When omitted, volatility is calculated from returns.
     vol_lookback : int, default 20
         Lookback period for volatility calculation
     annualize : bool, default False

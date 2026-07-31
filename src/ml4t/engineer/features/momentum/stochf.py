@@ -96,7 +96,6 @@ def stochf_numba(
     name="stochf",
     category="momentum",
     description="Stochastic Fast - fast version without smoothing",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

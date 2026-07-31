@@ -55,7 +55,6 @@ def adxr_numba(
     name="adxr",
     category="momentum",
     description="ADXR - Average Directional Movement Rating",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

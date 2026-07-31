@@ -171,7 +171,6 @@ def atr_polars(
     name="atr",
     category="volatility",
     description="ATR - Average True Range",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

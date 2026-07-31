@@ -38,7 +38,6 @@ def rocp_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArray[n
     name="rocp",
     category="momentum",
     description="ROCP - Rate of Change Percentage",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

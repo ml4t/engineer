@@ -109,7 +109,6 @@ def trange_polars(high: str, low_col: str, close_col: str) -> pl.Expr:
     name="trange",
     category="volatility",
     description="TRANGE - True Range",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

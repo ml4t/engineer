@@ -107,7 +107,6 @@ def dema_polars(column: str, period: int = 30) -> pl.Expr:
     name="dema",
     category="trend",
     description="DEMA - Double Exponential Moving Average",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

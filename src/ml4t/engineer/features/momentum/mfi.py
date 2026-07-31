@@ -187,7 +187,6 @@ def mfi_polars(
     name="mfi",
     category="momentum",
     description="MFI - volume-weighted RSI measuring buying/selling pressure",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

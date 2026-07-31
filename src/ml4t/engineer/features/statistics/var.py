@@ -105,7 +105,6 @@ def var_polars(col: str, timeperiod: int = 5, nbdev: float = 1.0) -> pl.Expr:  #
     name="var",
     category="statistics",
     description="VAR - Variance",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

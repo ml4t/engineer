@@ -95,7 +95,6 @@ def sma_polars(column: str, period: int) -> pl.Expr:
     name="sma",
     category="trend",
     description="SMA - Simple Moving Average",
-    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,

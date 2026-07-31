@@ -28,6 +28,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
+from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP, KEYWORD_ONLY_PARAMS
 from ml4t.engineer.core.registry import get_registry
 
 # =============================================================================
@@ -36,27 +37,6 @@ from ml4t.engineer.core.registry import get_registry
 # These mappings translate function parameter names to DataFrame column names.
 # Moved to module level to avoid recreation on every feature execution.
 # =============================================================================
-
-# Map of function parameter names to DataFrame column names
-# After V3 standardization, most parameters match column names directly.
-# Only legacy aliases and special cases need explicit mapping.
-COLUMN_ARG_MAP: dict[str, str | list[str]] = {
-    # Standard OHLCV columns - direct mapping (parameter name = column name)
-    "open": "open",
-    "high": "high",
-    "low": "low",
-    "close": "close",
-    "volume": "volume",
-    "returns": "returns",
-    # Legacy parameter names (some older features use these)
-    "price": "close",  # Microstructure features often use "price" parameter
-    "value": "close",  # ML features may use "value" for generic input
-    # Meta-feature defaults (features that operate on other features)
-    "feature": "close",  # Single-feature input defaults to close
-    "features": ["close"],  # Multi-feature input defaults to close only
-    "volatility": "close",  # Volatility features compute from close
-    "regime": "close",  # Regime detection features use close
-}
 
 # Map input_type metadata to required DataFrame columns
 # This enables deriving column requirements from FeatureMetadata.input_type
@@ -69,14 +49,6 @@ INPUT_TYPE_COLUMNS: dict[str, list[str]] = {
     "returns": ["returns"],
     "volume": ["volume"],
 }
-
-# Parameters that should always be passed as kwargs, never as positional
-# These typically have defaults and shouldn't be treated as column inputs
-KEYWORD_ONLY_PARAMS: frozenset[str] = frozenset(
-    {
-        "implementation",  # Always has default, selects algorithm variant
-    }
-)
 
 _GROUP_COLUMN_CANDIDATES = ("asset_id", "symbol", "ticker", "product", "asset")
 _TIME_COLUMN_CANDIDATES = ("timestamp", "event_time", "date", "datetime")

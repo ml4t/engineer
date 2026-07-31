@@ -96,7 +96,6 @@ def linearreg_angle_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="linearreg_angle",
     category="statistics",
     description="LINEARREG_ANGLE - angle of linear regression line",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

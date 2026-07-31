@@ -49,7 +49,6 @@ def sum_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArray[np
     name="summation",
     category="math",
     description="SUMMATION - Sum of close over period",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

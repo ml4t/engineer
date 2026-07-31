@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="amihud_illiquidity",
     category="microstructure",
     description="Amihud Illiquidity - measures price impact per dollar of trading volume",
-    lookback="period",
     normalized=False,
     formula="ILLIQ = mean(|R_t| / DVOL_t)",
     ta_lib_compatible=False,

@@ -118,7 +118,6 @@ def stddev_polars(
     name="stddev",
     category="statistics",
     description="STDDEV - Standard Deviation",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

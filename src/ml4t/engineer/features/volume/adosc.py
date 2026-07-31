@@ -125,11 +125,9 @@ def adosc_polars(
     name="adosc",
     category="volume",
     description="ADOSC - Chaikin A/D Oscillator",
-    lookback="slowperiod",
     normalized=False,  # Oscillator of unbounded A/D line is not stationary
     formula="",
     ta_lib_compatible=True,
-    parameters={"fastperiod": 3, "slowperiod": 10},
 )
 def adosc(
     high: npt.NDArray[np.float64] | pl.Series | str,

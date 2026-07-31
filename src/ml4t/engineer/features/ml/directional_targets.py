@@ -12,7 +12,6 @@ from ml4t.engineer.logging import logged_feature
     name="directional_targets",
     category="ml",
     description="Directional Targets - classification labels for ML",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

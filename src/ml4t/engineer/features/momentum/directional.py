@@ -301,13 +301,11 @@ def dx_polars(
     name="plus_di",
     category="momentum",
     description="Plus Directional Indicator - upward trend strength",
-    lookback="period",
     normalized=True,
     value_range=(0.0, 100.0),
     formula="+DI = 100 * EMA(+DM) / ATR",
     ta_lib_compatible=True,
     input_type="HLC",
-    parameters={"period": 14},
     tags=["directional", "trend"],
 )
 def plus_di(
@@ -361,13 +359,11 @@ def plus_di(
     name="minus_di",
     category="momentum",
     description="Minus Directional Indicator - downward trend strength",
-    lookback="period",
     normalized=True,
     value_range=(0.0, 100.0),
     formula="-DI = 100 * EMA(-DM) / ATR",
     ta_lib_compatible=True,
     input_type="HLC",
-    parameters={"period": 14},
     tags=["directional", "trend"],
 )
 def minus_di(
@@ -421,7 +417,6 @@ def minus_di(
     name="dx",
     category="momentum",
     description="Directional Movement Index - strength of directional movement",
-    lookback=0,
     normalized=True,
     value_range=(0.0, 100.0),
     formula="",

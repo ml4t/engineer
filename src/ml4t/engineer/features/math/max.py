@@ -74,7 +74,6 @@ def max_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArray[np
     name="maximum",
     category="math",
     description="MAXIMUM - Highest value over period",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

@@ -60,7 +60,6 @@ def plus_dm_numba(
     name="plus_dm",
     category="momentum",
     description="Plus Directional Movement",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

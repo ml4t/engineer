@@ -160,7 +160,6 @@ def midprice_polars(high: str, low_col: str, timeperiod: int = 14) -> pl.Expr:
     name="midprice",
     category="price_transform",
     description="MIDPRICE - Midpoint Price over period",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

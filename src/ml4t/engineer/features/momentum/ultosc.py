@@ -153,7 +153,6 @@ def ultosc_polars(
     name="ultosc",
     category="momentum",
     description="Ultimate Oscillator - weighted average of 3 stochastics",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

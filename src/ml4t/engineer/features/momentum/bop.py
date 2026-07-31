@@ -45,7 +45,6 @@ def bop_numba(
     name="bop",
     category="momentum",
     description="BOP - Balance of Power",
-    lookback=0,
     value_range=(-1.0, 1.0),
     normalized=True,
     formula="",

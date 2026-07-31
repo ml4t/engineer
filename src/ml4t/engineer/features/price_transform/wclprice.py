@@ -72,7 +72,6 @@ def wclprice_polars(high: str, low_col: str, close_col: str) -> pl.Expr:
     name="wclprice",
     category="price_transform",
     description="WCLPRICE - Weighted Close Price",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

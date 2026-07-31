@@ -78,7 +78,6 @@ def tema_polars(column: str, period: int = 30) -> pl.Expr:
     name="tema",
     category="trend",
     description="TEMA - Triple Exponential Moving Average",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

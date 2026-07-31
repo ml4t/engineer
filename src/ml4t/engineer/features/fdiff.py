@@ -151,7 +151,6 @@ def _apply_ffd_weights_nb(
     name="ffdiff",
     category="ml",
     description="Fractional differencing for stationarity with memory preservation (FFD)",
-    lookback="variable",
     # Note: Output is stationary but value_range is data-dependent (based on input volatility)
     # so we don't set normalized=True to avoid normalization warnings
     formula="w_k = prod_{i=0}^{k-1} (d-i) / k! ; result_t = sum_{k=0}^K w_k * x_{t-k}",

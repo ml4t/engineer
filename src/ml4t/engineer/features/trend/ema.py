@@ -114,7 +114,6 @@ def ema_polars(column: str, period: int) -> pl.Expr:
     name="ema",
     category="trend",
     description="EMA - Exponential Moving Average",
-    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,
