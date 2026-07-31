@@ -915,12 +915,30 @@ class PreprocessingPipeline:
         self
             Fitted pipeline.
         """
+        missing = set(self._recommendations) - set(X.columns)
+        if missing:
+            raise ValueError(f"Recommended features missing from fitting data: {sorted(missing)}")
+
         statistics: dict[str, dict[str, Any]] = {}
         fitted_features: list[str] = []
 
         for feature in X.columns:
             if feature in self._recommendations:
                 transform = self._get_transform_type(feature)
+                if transform != TransformType.NONE:
+                    if not X[feature].dtype.is_numeric():
+                        raise ValueError(
+                            f"Recommended feature '{feature}' must be numeric for {transform.value}"
+                        )
+                    values = X[feature].drop_nulls()
+                    if len(values) == 0:
+                        raise ValueError(
+                            f"Recommended feature '{feature}' requires at least one numeric value"
+                        )
+                    if values.is_nan().any() or values.is_infinite().any():
+                        raise ValueError(
+                            f"Recommended feature '{feature}' contains NaN or infinity"
+                        )
                 statistics[feature] = self._compute_statistics(X, feature, transform)
                 fitted_features.append(feature)
 
@@ -932,6 +950,10 @@ class PreprocessingPipeline:
     def _transform(self, X: pl.DataFrame, *, use_training_boundary: bool) -> pl.DataFrame:
         if not self._is_fitted:
             raise NotFittedError("Pipeline has not been fitted. Call fit() first.")
+
+        missing = set(self._fitted_features) - set(X.columns)
+        if missing:
+            raise ValueError(f"Transform data missing fitted features: {sorted(missing)}")
 
         exprs = []
         for feature in X.columns:
@@ -1019,13 +1041,70 @@ class PreprocessingPipeline:
         PreprocessingPipeline
             Reconstructed fitted pipeline.
         """
+        if not isinstance(data, dict):
+            raise ValueError("Serialized pipeline must be a dictionary")
+        required = {"recommendations", "statistics", "fitted_features"}
+        missing = required - set(data)
+        if missing:
+            raise ValueError(f"Serialized pipeline is missing fields: {sorted(missing)}")
+
+        statistics = data["statistics"]
+        if not isinstance(statistics, dict):
+            raise ValueError("Serialized pipeline statistics must be a dictionary")
+        fitted_features = data["fitted_features"]
+        if (
+            not isinstance(fitted_features, list)
+            or not all(isinstance(feature, str) and feature for feature in fitted_features)
+            or len(fitted_features) != len(set(fitted_features))
+        ):
+            raise ValueError(
+                "Serialized pipeline fitted_features must be a list of unique non-empty strings"
+            )
+
         pipeline = cls(
-            recommendations=data["recommendations"],
+            recommendations=copy.deepcopy(data["recommendations"]),
             min_confidence=data.get("min_confidence", 0.0),
             winsorize_limits=tuple(data.get("winsorize_limits", (0.01, 0.99))),
         )
-        pipeline._statistics = data["statistics"]
-        pipeline._fitted_features = data["fitted_features"]
+        if set(fitted_features) != set(pipeline._recommendations):
+            raise ValueError(
+                "Serialized pipeline fitted_features must match recommendation features"
+            )
+        if set(statistics) != set(fitted_features) or not all(
+            isinstance(value, dict) for value in statistics.values()
+        ):
+            raise ValueError(
+                "Serialized pipeline statistics must match fitted features and contain dictionaries"
+            )
+
+        required_statistics = {
+            TransformType.STANDARDIZE: {"mean", "std"},
+            TransformType.NORMALIZE: {"min", "max", "range"},
+            TransformType.WINSORIZE: {"lower", "upper"},
+            TransformType.LOG: {"offset"},
+            TransformType.DIFF: {"last_value"},
+        }
+        for feature in fitted_features:
+            transform = pipeline._get_transform_type(feature)
+            feature_statistics = statistics[feature]
+            expected = required_statistics.get(transform, set())
+            if not expected <= set(feature_statistics):
+                raise ValueError(
+                    f"Serialized pipeline statistics for '{feature}' are missing "
+                    f"fields: {sorted(expected - set(feature_statistics))}"
+                )
+            if any(
+                isinstance(value, bool)
+                or not isinstance(value, Real | Decimal)
+                or not math.isfinite(float(value))
+                for value in feature_statistics.values()
+            ):
+                raise ValueError(
+                    f"Serialized pipeline statistics for '{feature}' must be finite numbers"
+                )
+
+        pipeline._statistics = copy.deepcopy(statistics)
+        pipeline._fitted_features = fitted_features.copy()
         pipeline._is_fitted = True
         return pipeline
 
