@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ml4t.engineer.config.data_contract import DataContractConfig
 from ml4t.specs import FeedSpec
+
+from ml4t.engineer.config.data_contract import DataContractConfig
 
 
 def data_contract_from_market_data_spec(
