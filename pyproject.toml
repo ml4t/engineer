@@ -71,7 +71,7 @@ requires-python = ">=3.12"
 
 # Core dependencies
 dependencies = [
-    "ml4t-specs>=0.1.0b0",
+    "ml4t-specs>=0.1.0,<0.2.0",
 
     # Data processing (Polars-first)
     "polars>=0.20.0",
