@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import re
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +140,15 @@ def test_ci_audits_core_and_complete_locked_environments() -> None:
     assert audit.count("pip-audit --requirement") == 2
     assert "core.txt" in audit
     assert "complete.txt" in audit
+
+
+def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+
+    assert "ml4t-specs>=0.1.0,<0.2.0" in project["project"]["dependencies"]
+    specs = next(package for package in lock["package"] if package["name"] == "ml4t-specs")
+    assert specs["version"] == "0.1.0"
 
 
 def test_all_external_actions_are_pinned_to_full_commit_shas() -> None:
