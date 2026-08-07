@@ -210,6 +210,14 @@ jobs:
       - name: Validate package metadata
         run: uv run twine check dist/*
 
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: >-
+          uv run python -c
+          "import os; from ml4t.engineer import __version__;
+          tag=os.environ['GITHUB_REF_NAME'];
+          assert tag == f'v{__version__}', f'{tag} does not match v{__version__}'"
+
       - name: Validate wheel installation
         run: |
           uv venv --python ${{ env.PYTHON_VERSION }} .artifact-venv

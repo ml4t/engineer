@@ -97,6 +97,8 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
     build_commands = {step["name"]: step["run"] for step in build_steps if "run" in step}
     assert ci_jobs["build"]["needs"] == ["lint", "typecheck", "security", "test", "coverage"]
     assert "twine check dist/*" in build_commands["Validate package metadata"]
+    assert "GITHUB_REF_NAME" in build_commands["Validate release version"]
+    assert "tag == f'v{__version__}'" in build_commands["Validate release version"]
     assert "uv pip install" in build_commands["Validate wheel installation"]
     assert 'python -c "import ml4t.engineer"' in build_commands["Validate wheel installation"]
 
@@ -149,6 +151,13 @@ def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
     assert "ml4t-specs>=0.1.0,<0.2.0" in project["project"]["dependencies"]
     specs = next(package for package in lock["package"] if package["name"] == "ml4t-specs")
     assert specs["version"] == "0.1.0"
+
+
+def test_package_metadata_declares_stable_status() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+    assert "Development Status :: 5 - Production/Stable" in project["classifiers"]
+    assert "Development Status :: 4 - Beta" not in project["classifiers"]
 
 
 def test_all_external_actions_are_pinned_to_full_commit_shas() -> None:
