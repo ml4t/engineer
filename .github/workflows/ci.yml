@@ -120,9 +120,6 @@ jobs:
       - name: Import package
         run: uv run --python python python -c "import ml4t.engineer"
 
-      - name: Run tests
-        run: uv run --python python pytest tests/ -v --tb=short --no-cov
-
       - name: Run ty check
         run: >-
           uv run --python python
@@ -131,13 +128,29 @@ jobs:
       - name: Build package
         run: uv build --python python
 
+      - name: Export installed-wheel test environment
+        run: >-
+          uv export --locked --group dev --extra ta --extra store
+          --no-emit-project --no-hashes
+          --output-file "${{ runner.temp }}/test-requirements.txt"
+
       - name: Install built wheel
         run: |
           uv venv --python python .artifact-venv
+          uv pip install --python .artifact-venv --requirements "${{ runner.temp }}/test-requirements.txt"
           python -c "import glob, subprocess; subprocess.check_call(['uv', 'pip', 'install', '--python', '.artifact-venv', glob.glob('dist/*.whl')[0]])"
 
       - name: Import built wheel
         run: uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
+
+      - name: Run tests
+        shell: bash
+        run: |
+          for iteration in {1..10}; do
+            echo "Installed-wheel suite ${iteration}/10"
+            uv run --python .artifact-venv --no-project \
+              python -m pytest tests/ -q --tb=short --no-cov
+          done
 
       - name: Run documented workflows from built wheel
         run: >-

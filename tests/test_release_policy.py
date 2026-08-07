@@ -35,6 +35,8 @@ def _external_actions(value: Any) -> list[str]:
 def test_ci_qualifies_required_python_platform_matrix() -> None:
     workflow = _load_workflow("ci.yml")
     assert "workflow_call" in workflow["on"]
+    assert "workflow_dispatch" in workflow["on"]
+    assert "release/**" in workflow["on"]["push"]["branches"]
 
     matrix = workflow["jobs"]["test"]["strategy"]["matrix"]
     actual = set(itertools.product(matrix["os"], matrix["python-version"]))
@@ -59,6 +61,9 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
         "Run tests",
         "Run ty check",
         "Build package",
+        "Export installed-wheel test environment",
+        "Install built wheel",
+        "Import built wheel",
     } <= commands.keys()
     assert "--extra ta --extra store" in commands["Install dependencies"]
     assert setup["with"] == {
@@ -69,10 +74,20 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     assert "--python python" in commands["Build package"]
 
     test_command = commands["Run tests"]
-    assert "pytest" in test_command
+    assert "for iteration in {1..10}" in test_command
+    assert "--python .artifact-venv --no-project" in test_command
+    assert "python -m pytest tests/" in test_command
     assert "set +e" not in test_command
     assert "PYTEST_EXIT" not in test_command
     assert "exit 0" not in test_command
+
+    export_command = commands["Export installed-wheel test environment"]
+    assert "--group dev --extra ta --extra store" in export_command
+    assert "--no-emit-project" in export_command
+    assert "--requirements" in commands["Install built wheel"]
+
+    step_names = [step.get("name") for step in steps]
+    assert step_names.index("Install built wheel") < step_names.index("Run tests")
 
 
 def test_release_publishes_only_the_qualified_artifact() -> None:
@@ -88,6 +103,10 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
 
     assert release_jobs["qualification"]["uses"] == "./.github/workflows/ci.yml"
     assert release_jobs["publish"]["needs"] == "qualification"
+
+    release_step = release_jobs["github-release"]["steps"][0]
+    assert release_step["env"]["GH_REPO"] == "${{ github.repository }}"
+    assert "--verify-tag" in release_step["run"]
 
     publish_steps = release_jobs["publish"]["steps"]
     download = next(step for step in publish_steps if step["name"] == "Download build artifacts")
