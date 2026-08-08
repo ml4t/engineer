@@ -50,7 +50,9 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev --extra store
+        run: >-
+          uv sync --python ${{ env.PYTHON_VERSION }} --dev
+          --extra store --extra viz
 
       - name: Run ty check
         run: uv run --no-sync ty check

@@ -140,6 +140,13 @@ def test_ci_enforces_independent_line_and_branch_coverage_thresholds() -> None:
     )
 
 
+def test_standalone_typecheck_installs_optional_type_dependencies() -> None:
+    steps = _load_workflow("ci.yml")["jobs"]["typecheck"]["steps"]
+    install = next(step["run"] for step in steps if step.get("name") == "Install dependencies")
+
+    assert "--extra store --extra viz" in install
+
+
 def test_ci_audits_core_and_complete_locked_environments() -> None:
     steps = _load_workflow("ci.yml")["jobs"]["security"]["steps"]
     commands = {step["name"]: step["run"] for step in steps if "run" in step}
