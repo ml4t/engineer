@@ -80,6 +80,10 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     assert "--no-sync" in commands["Run ty check"]
     assert 'matrix.python-version }}" == "3.15"' in commands["Run ty check"]
     assert "--exclude 'src/ml4t/engineer/store/**'" in commands["Run ty check"]
+    assert (
+        "--exclude 'src/ml4t/engineer/relationships/plot_correlation.py'"
+        in commands["Run ty check"]
+    )
     assert "--python python" in commands["Build package"]
 
     test_command = commands["Run tests"]
