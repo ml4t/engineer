@@ -605,7 +605,11 @@ class MLDatasetBuilder:
         -----
         This does NOT apply scaling. Use for raw data access only.
         """
-        return self.features.to_pandas(), self.labels.to_pandas()
+        import pandas as pd
+
+        features = pd.DataFrame(self.features.to_dict(as_series=False))
+        labels = pd.Series(self.labels.to_list(), name=self.labels.name)
+        return features, labels
 
     def get_feature_percentiles(
         self,

@@ -13,6 +13,57 @@ import pandas as pd
 import polars as pl
 
 
+def _kendall_tau_b(x: pd.Series, y: pd.Series, min_periods: int) -> float:
+    """Compute pairwise Kendall tau-b without SciPy."""
+    x_values = x.to_numpy(dtype=float, na_value=np.nan)
+    y_values = y.to_numpy(dtype=float, na_value=np.nan)
+    valid = ~(np.isnan(x_values) | np.isnan(y_values))
+    x_values = x_values[valid]
+    y_values = y_values[valid]
+
+    if len(x_values) < min_periods:
+        return np.nan
+
+    concordant = 0
+    discordant = 0
+    ties_x = 0
+    ties_y = 0
+
+    for index in range(len(x_values) - 1):
+        x_tail = x_values[index + 1 :]
+        y_tail = y_values[index + 1 :]
+        x_sign = (x_tail > x_values[index]).astype(np.int8) - (x_tail < x_values[index]).astype(
+            np.int8
+        )
+        y_sign = (y_tail > y_values[index]).astype(np.int8) - (y_tail < y_values[index]).astype(
+            np.int8
+        )
+        products = x_sign * y_sign
+
+        concordant += int(np.count_nonzero(products > 0))
+        discordant += int(np.count_nonzero(products < 0))
+        ties_x += int(np.count_nonzero((x_sign == 0) & (y_sign != 0)))
+        ties_y += int(np.count_nonzero((y_sign == 0) & (x_sign != 0)))
+
+    ordered_pairs = concordant + discordant
+    denominator = np.sqrt(float(ordered_pairs + ties_x) * float(ordered_pairs + ties_y))
+    if denominator == 0:
+        return np.nan
+    return (concordant - discordant) / denominator
+
+
+def _kendall_correlation(data: pd.DataFrame, min_periods: int) -> pd.DataFrame:
+    """Compute a symmetric Kendall tau-b correlation matrix."""
+    columns = list(data.columns)
+    values = np.full((len(columns), len(columns)), np.nan, dtype=float)
+    for left_index, left_column in enumerate(columns):
+        for right_index in range(left_index, len(columns)):
+            correlation = _kendall_tau_b(data[left_column], data[columns[right_index]], min_periods)
+            values[left_index, right_index] = correlation
+            values[right_index, left_index] = correlation
+    return pd.DataFrame(values, index=columns, columns=columns)
+
+
 def compute_correlation_matrix(
     data: pd.DataFrame | pl.DataFrame,
     method: Literal["pearson", "spearman", "kendall"] = "pearson",
@@ -125,7 +176,11 @@ def compute_correlation_matrix(
         raise ValueError(f"Invalid method '{method}'. Must be one of: {', '.join(valid_methods)}")
 
     # Convert to pandas for computation (easier correlation handling)
-    df = data.to_pandas() if isinstance(data, pl.DataFrame) else data.copy()
+    df = (
+        pd.DataFrame(data.to_dict(as_series=False))
+        if isinstance(data, pl.DataFrame)
+        else data.copy()
+    )
 
     # Select features
     if features is None:
@@ -176,7 +231,7 @@ def compute_correlation_matrix(
 
     elif method == "kendall":
         # Kendall tau correlation
-        corr_matrix = feature_data.corr(method="kendall", min_periods=min_periods)
+        corr_matrix = _kendall_correlation(feature_data, min_periods)
 
     # Ensure all features are present in correlation matrix
     # (pandas drops all-NaN columns, but we want to preserve them)
@@ -188,6 +243,6 @@ def compute_correlation_matrix(
     corr_df = corr_df.rename(columns={"index": "feature"})
 
     # Convert to Polars
-    result = pl.from_pandas(corr_df)
+    result = pl.DataFrame(corr_df.to_dict(orient="list"))
 
     return result
