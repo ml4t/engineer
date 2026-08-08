@@ -128,7 +128,7 @@ jobs:
 
       - name: Run ty check
         run: >-
-          uv run --python python --no-sync
+          uv run --no-sync
           ty check --python-version ${{ matrix.python-version }}
 
       - name: Build package
