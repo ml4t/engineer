@@ -4,6 +4,8 @@ import numpy as np
 import polars as pl
 import pytest
 
+pytest.importorskip("matplotlib.pyplot")
+
 from ml4t.engineer.relationships.correlation import compute_correlation_matrix
 from ml4t.engineer.relationships.plot_correlation import plot_correlation_heatmap
 

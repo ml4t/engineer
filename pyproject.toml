@@ -95,8 +95,6 @@ dependencies = [
     "structlog>=23.0.0",
     "python-dateutil>=2.8.0",
 
-    # Visualization
-    "matplotlib>=3.7.0",
 ]
 
 [project.optional-dependencies]

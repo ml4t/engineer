@@ -120,7 +120,7 @@ jobs:
           if [[ "${{ matrix.python-version }}" == "3.15" ]]; then
             uv sync --python python --dev
           else
-            uv sync --python python --dev --extra ta --extra store
+            uv sync --python python --dev --extra ta --extra store --extra viz
           fi
 
       - name: Import package
@@ -146,7 +146,7 @@ jobs:
             uv export --locked --group dev --no-emit-project --no-hashes \
               --output-file "${{ runner.temp }}/test-requirements.txt"
           else
-            uv export --locked --group dev --extra ta --extra store \
+            uv export --locked --group dev --extra ta --extra store --extra viz \
               --no-emit-project --no-hashes \
               --output-file "${{ runner.temp }}/test-requirements.txt"
           fi
@@ -190,7 +190,9 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev --extra ta --extra store
+        run: >-
+          uv sync --python ${{ env.PYTHON_VERSION }} --dev
+          --extra ta --extra store --extra viz
 
       - name: Measure line and branch coverage
         env:
