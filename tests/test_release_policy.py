@@ -79,8 +79,8 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     assert "--python-version ${{ matrix.python-version }}" in commands["Run ty check"]
     assert "--no-sync" in commands["Run ty check"]
     assert 'matrix.python-version }}" == "3.15"' in commands["Run ty check"]
-    assert "--exclude '**/store/**'" in commands["Run ty check"]
-    assert "--exclude '**/plot_correlation.py'" in commands["Run ty check"]
+    assert "--exclude" not in commands["Run ty check"]
+    assert "--extra-search-path tests/type_stubs" in commands["Run ty check"]
     assert "--python python" in commands["Build package"]
 
     test_command = commands["Run tests"]

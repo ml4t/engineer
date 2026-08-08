@@ -1,0 +1,9 @@
+from typing import Any
+
+class DuckDBPyConnection:
+    def __getattr__(self, name: str) -> Any: ...
+
+class DuckDBPyRelation:
+    def __getattr__(self, name: str) -> Any: ...
+
+def connect(database: str, *, read_only: bool = False) -> DuckDBPyConnection: ...

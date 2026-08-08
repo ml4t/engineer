@@ -133,8 +133,7 @@ jobs:
         run: |
           if [[ "${{ matrix.python-version }}" == "3.15" ]]; then
             uv run --no-sync ty check --python-version 3.15 \
-              --exclude '**/store/**' \
-              --exclude '**/plot_correlation.py'
+              --extra-search-path tests/type_stubs
           else
             uv run --no-sync ty check --python-version ${{ matrix.python-version }}
           fi
