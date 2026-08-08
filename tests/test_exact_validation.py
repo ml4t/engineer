@@ -421,7 +421,7 @@ def validate_indicator_exact(
             f"Max abs error: {max_abs_error:.2e}, Max rel error: {max_rel_error:.2e}"
         )
     else:
-        error_msg = f"{indicator_name} on {data_description}: EXACT MATCH ✅"
+        error_msg = f"{indicator_name} on {data_description}: EXACT MATCH [PASS]"
 
     return is_valid, error_msg, metrics
 
@@ -796,7 +796,7 @@ class TestMathematicalProperties:
 def run_comprehensive_validation():
     """Run comprehensive validation and generate report."""
     if not HAS_TALIB:
-        print("❌ TA-Lib not available - cannot run validation")
+        print("TA-Lib not available - cannot run validation")
         return
 
     print("🔬 Running Comprehensive TA-Lib Validation")

@@ -438,7 +438,7 @@ class TestVolumeEdgeCases:
         close = 100 + np.cumsum(np.random.randn(n) * 0.5)
         high = close + 1
         low = close - 1
-        volume = np.random.randint(int(1e9), int(1e10), n).astype(float)
+        volume = np.random.randint(int(1e9), int(1e10), n, dtype=np.int64).astype(float)
 
         result = ad(high, low, close, volume)
         assert result is not None
