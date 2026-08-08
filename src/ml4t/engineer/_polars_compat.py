@@ -55,16 +55,17 @@ def ensure_polars_series_dispatch() -> None:
         return original_is_empty(function) or _has_py315_docstring_layout(function, empty_bytecode)
 
     setattr(utils, predicate_name, is_empty_method)
-    for module_name, class_name in _SERIES_CLASSES:
-        utils.expr_dispatch(getattr(import_module(module_name), class_name))
-
     try:
+        for module_name, class_name in _SERIES_CLASSES:
+            utils.expr_dispatch(getattr(import_module(module_name), class_name))
+
         probe = pl.Series("_ml4t_polars_probe", [expected])
         if probe.to_list() != [expected]:
             raise RuntimeError("Polars Series dispatch probe returned an invalid result")
     except Exception as error:
-        setattr(utils, predicate_name, original_is_empty)
         raise RuntimeError("Unable to repair Polars Series dispatch on Python 3.15") from error
+    finally:
+        setattr(utils, predicate_name, original_is_empty)
 
 
 ensure_polars_series_dispatch()
