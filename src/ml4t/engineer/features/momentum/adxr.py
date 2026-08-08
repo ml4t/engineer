@@ -10,8 +10,8 @@ ADXR[i] = (ADX[i] + ADX[i-n]) / 2
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 from .adx import adx_numba
@@ -55,7 +55,6 @@ def adxr_numba(
     name="adxr",
     category="momentum",
     description="ADXR - Average Directional Movement Rating",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",
@@ -137,7 +136,7 @@ def adxr(
         # Type narrowing: at this point all must be Expr
         assert isinstance(low, pl.Expr) and isinstance(close, pl.Expr)
 
-        def calc_adxr(s: pl.Series) -> float:
+        def calc_adxr(s: pl.Series) -> pl.Series:
             if isinstance(s[0], dict):
                 # When using struct, we get a list of dicts
                 h = np.array([x["high"] for x in s])
@@ -148,7 +147,7 @@ def adxr(
                 h = s.struct.field("high").to_numpy()
                 lo = s.struct.field("low").to_numpy()
                 c = s.struct.field("close").to_numpy()
-            return adxr_numba(h, lo, c, timeperiod)
+            return pl.Series(adxr_numba(h, lo, c, timeperiod))
 
         return pl.struct(
             [high.alias("high"), low.alias("low"), close.alias("close")],

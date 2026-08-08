@@ -8,8 +8,8 @@ market efficiency (directional movement vs volatility).
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -117,7 +117,6 @@ def kama_polars(col: str, timeperiod: int = 30) -> pl.Expr:
     name="kama",
     category="trend",
     description="KAMA - Kaufman Adaptive Moving Average",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

@@ -18,7 +18,6 @@ from ml4t.engineer.core.exceptions import InvalidParameterError
     name="donchian_channels",
     category="trend",
     description="Donchian Channel - highest high / lowest low over period",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

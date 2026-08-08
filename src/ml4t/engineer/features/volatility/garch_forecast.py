@@ -1,8 +1,8 @@
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import (
     validate_positive,
@@ -70,7 +70,6 @@ def garch_volatility_forecast_nb(
     name="garch_forecast",
     category="volatility",
     description="GARCH Volatility Forecast - conditional volatility model",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

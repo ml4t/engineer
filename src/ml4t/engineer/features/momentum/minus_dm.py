@@ -10,8 +10,8 @@ MINUS_DM = max(low[i-1] - low[i], 0) if low[i-1] - low[i] > high[i] - high[i-1],
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -60,7 +60,6 @@ def minus_dm_numba(
     name="minus_dm",
     category="momentum",
     description="Minus Directional Movement",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

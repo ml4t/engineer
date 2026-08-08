@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="volume_synchronicity",
     category="microstructure",
     description="Volume Synchronicity - correlation of volume across assets",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

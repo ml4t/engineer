@@ -66,7 +66,6 @@ def realized_volatility(
     name="volatility_of_volatility",
     category="volatility",
     description="Volatility of Volatility - second-order volatility measure",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

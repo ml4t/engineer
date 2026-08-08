@@ -8,8 +8,8 @@ traditional moving averages with less lag.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -169,7 +169,6 @@ def t3_polars(col: str, timeperiod: int = 5, vfactor: float = 0.7) -> pl.Expr:
     name="t3",
     category="trend",
     description="T3 - Triple Exponential Moving Average (Tillson)",
-    lookback="timeperiod",
     normalized=False,
     formula="Triple smoothed EMA with volume factor",
     ta_lib_compatible=True,

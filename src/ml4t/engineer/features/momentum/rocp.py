@@ -10,8 +10,8 @@ ROCP = (price[i] - price[i-n]) / price[i-n] * 100
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -38,7 +38,6 @@ def rocp_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArray[n
     name="rocp",
     category="momentum",
     description="ROCP - Rate of Change Percentage",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

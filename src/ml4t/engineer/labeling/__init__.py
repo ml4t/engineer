@@ -3,7 +3,7 @@
 Provides generalized labeling functionality including triple-barrier method.
 """
 
-from ml4t.engineer.core.registry import FeatureMetadata
+from ml4t.engineer.core.registry import FeatureMetadata, FeatureRegistry, get_registry
 from ml4t.engineer.labeling.atr_barriers import atr_triple_barrier_labels
 from ml4t.engineer.labeling.calendar import (
     PandasMarketCalendar,
@@ -93,7 +93,7 @@ ALL_LABELING_FEATURES = [
 ]
 
 
-def register_labeling_features(registry: object = None) -> int:
+def register_labeling_features(registry: FeatureRegistry | None = None) -> int:
     """
     Register labeling features.
 
@@ -110,14 +110,12 @@ def register_labeling_features(registry: object = None) -> int:
     from contextlib import suppress
 
     if registry is None:
-        from ml4t.engineer.core.registry import get_registry
-
         registry = get_registry()
 
     # Register all labeling features
     for feature in ALL_LABELING_FEATURES:
         with suppress(ValueError):
             # Already registered errors are expected and can be ignored
-            registry.register(feature)  # type: ignore[attr-defined]
+            registry.register(feature)
 
     return len(ALL_LABELING_FEATURES)

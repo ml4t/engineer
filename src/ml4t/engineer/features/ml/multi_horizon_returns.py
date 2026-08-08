@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="multi_horizon_returns",
     category="ml",
     description="Multi-Horizon Returns - returns at multiple horizons",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

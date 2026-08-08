@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="volatility_regime_probability",
     category="volatility",
     description="Volatility Regime Probability - probability of high/low vol regime",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

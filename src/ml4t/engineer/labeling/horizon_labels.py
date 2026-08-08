@@ -12,11 +12,14 @@ References
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 
+from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling.utils import (
     get_future_price_at_time,
     is_duration_string,
@@ -25,18 +28,41 @@ from ml4t.engineer.labeling.utils import (
     validate_price_no_nans,
 )
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
+
+
+def _linear_regression_slope_stderr(
+    x: npt.NDArray[np.int64],
+    y: npt.NDArray[np.float64],
+) -> tuple[float, float]:
+    if len(x) != len(y) or len(x) < 2 or not np.isfinite(y).all():
+        raise ValueError("linear regression requires equal finite arrays with at least two values")
+
+    centered_x = x - np.mean(x)
+    centered_y = y - np.mean(y)
+    sum_squared_x = float(np.dot(centered_x, centered_x))
+    if sum_squared_x == 0:
+        raise ValueError("linear regression requires varying x values")
+
+    slope = float(np.dot(centered_x, centered_y) / sum_squared_x)
+    if len(x) == 2:
+        return slope, 0.0
+
+    residuals = centered_y - slope * centered_x
+    residual_variance = float(np.dot(residuals, residuals) / (len(x) - 2))
+    return slope, float(np.sqrt(residual_variance / sum_squared_x))
 
 
 def fixed_time_horizon_labels(
     data: pl.DataFrame,
-    horizon: int | str = 1,
-    method: str = "returns",
+    horizon: int | str | None = None,
+    method: Literal["returns", "log_returns", "binary"] | None = None,
     price_col: str | None = None,
     group_col: str | list[str] | None = None,
     timestamp_col: str | None = None,
     tolerance: str | None = None,
+    threshold: float | None = None,
     *,
     config: LabelingConfig | None = None,
     contract: DataContractConfig | None = None,
@@ -74,9 +100,13 @@ def fixed_time_horizon_labels(
         Maximum time gap allowed for time-based horizons (e.g., '2m').
         Only used when horizon is a duration string. If the nearest future
         price is beyond this tolerance, the label will be null.
+    threshold : float | None, default None
+        Nonnegative no-change band for binary labels. Returns above the threshold
+        receive +1, returns below its negative receive -1, and returns inside the
+        band receive 0.
     config : LabelingConfig | None, default None
-        Optional column contract source. If provided, `price_col`, `timestamp_col`,
-        and `group_col` default to config values when omitted.
+        Fixed-horizon configuration. Its horizon, return method, threshold, and
+        column mapping control execution. Conflicting explicit values are rejected.
     contract : DataContractConfig | None, default None
         Optional shared dataframe contract. Used after config and before defaults.
 
@@ -138,8 +168,32 @@ def fixed_time_horizon_labels(
     triple_barrier_labels : Path-dependent labeling with profit/loss targets
     trend_scanning_labels : De Prado's trend scanning method
     """
+    if config is not None:
+        if config.method != "fixed_horizon":
+            raise DataValidationError(
+                "fixed_time_horizon_labels requires LabelingConfig.method='fixed_horizon'."
+            )
+        if horizon is not None and horizon != config.horizon:
+            raise DataValidationError("Explicit horizon conflicts with config.horizon.")
+        if method is not None and method != config.return_method:
+            raise DataValidationError("Explicit method conflicts with config.return_method.")
+        if threshold is not None and threshold != config.threshold:
+            raise DataValidationError("Explicit threshold conflicts with config.threshold.")
+        horizon = config.horizon
+        method = config.return_method
+        threshold = config.threshold
+
+    horizon = 1 if horizon is None else horizon
+    method = "returns" if method is None else method
     if method not in ["returns", "log_returns", "binary"]:
         raise ValueError(f"Unknown method: {method}. Use 'returns', 'log_returns', or 'binary'")
+    if threshold is not None and (
+        isinstance(threshold, bool) or not math.isfinite(threshold) or threshold < 0
+    ):
+        raise ValueError("threshold must be a finite nonnegative number")
+    if method != "binary" and threshold is not None:
+        raise ValueError("threshold is supported only when method='binary'")
+    binary_threshold = 0.0 if threshold is None else threshold
 
     # Determine if time-based or bar-based
     is_time_based = isinstance(horizon, str) and is_duration_string(horizon)
@@ -169,6 +223,7 @@ def fixed_time_horizon_labels(
             group_cols=resolved_group_cols,
             timestamp_col=resolved_ts_col,
             tolerance=tolerance,
+            threshold=binary_threshold,
         )
     else:
         # Bar-based: validate horizon is positive int
@@ -187,6 +242,7 @@ def fixed_time_horizon_labels(
             price_col=resolved_price_col,
             group_cols=resolved_group_cols,
             timestamp_col=resolved_ts_col,
+            threshold=binary_threshold,
         )
 
 
@@ -197,6 +253,7 @@ def _bar_based_horizon_labels(
     price_col: str,
     group_cols: list[str],
     timestamp_col: str | None,
+    threshold: float,
 ) -> pl.DataFrame:
     """Bar-based horizon labels using shift operations (original implementation)."""
     # Sort data chronologically within groups for correct shift operations
@@ -220,13 +277,13 @@ def _bar_based_horizon_labels(
         label = (future_prices / prices).log()
         label_name = f"label_log_return_{horizon}p"
     elif method == "binary":
-        # 1 if price goes up, -1 if down, 0 if no change, null if no future data
+        returns = (future_prices - prices) / prices
         label = (
             pl.when(future_prices.is_null())
             .then(pl.lit(None))
-            .when(future_prices > prices)
+            .when(returns > threshold)
             .then(1)
-            .when(future_prices < prices)
+            .when(returns < -threshold)
             .then(-1)
             .otherwise(0)
             .cast(pl.Int8)
@@ -245,6 +302,7 @@ def _time_based_horizon_labels(
     group_cols: list[str],
     timestamp_col: str | None,
     tolerance: str | None,
+    threshold: float,
 ) -> pl.DataFrame:
     """Time-based horizon labels using join_asof."""
     if timestamp_col is None:
@@ -283,13 +341,13 @@ def _time_based_horizon_labels(
         label = (future_prices / current_prices).log()
         label_name = f"label_log_return_{label_suffix}"
     elif method == "binary":
-        # 1 if price goes up, -1 if down, 0 if no change, null if no future data
+        returns = (future_prices - current_prices) / current_prices
         label = (
             pl.when(future_prices.is_null())
             .then(pl.lit(None))
-            .when(future_prices > current_prices)
+            .when(returns > threshold)
             .then(pl.lit(1))
-            .when(future_prices < current_prices)
+            .when(returns < -threshold)
             .then(pl.lit(-1))
             .otherwise(pl.lit(0))
             .cast(pl.Int8)
@@ -311,10 +369,9 @@ def _trend_scanning_single_group(
     step: int,
     price_col: str,
     timestamp_col: str | None,
+    t_value_threshold: float,
 ) -> pl.DataFrame:
     """Apply trend scanning to a single asset/group."""
-    from scipy import stats
-
     # Sort data chronologically for correct forward scanning
     if timestamp_col:
         data = data.sort(timestamp_col)
@@ -327,14 +384,15 @@ def _trend_scanning_single_group(
     labels = np.full(n, np.nan)
     t_values = np.full(n, np.nan)
     windows = np.full(n, np.nan)
+    perfect_fit_t = np.finfo(np.float64).max
 
     # Scan each observation
-    for i in range(n - min_window):
+    for i in range(n - min_window + 1):
         best_t = 0.0
         best_window = min_window
 
         # Scan windows of different lengths
-        for window in range(min_window, min(max_window, n - i), step):
+        for window in range(min_window, min(max_window, n - i) + 1, step):
             # Extract window
             window_prices = prices[i : i + window]
             x = np.arange(window)
@@ -342,10 +400,17 @@ def _trend_scanning_single_group(
 
             # Fit linear regression
             try:
-                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+                slope, std_err = _linear_regression_slope_stderr(x, y)
 
                 # Compute t-statistic
-                t_stat = slope / std_err if std_err > 0 else 0.0
+                if std_err > 0:
+                    t_stat = slope / std_err
+                elif slope > 0:
+                    t_stat = perfect_fit_t
+                elif slope < 0:
+                    t_stat = -perfect_fit_t
+                else:
+                    t_stat = 0.0
 
                 # Keep window with highest |t|
                 if abs(t_stat) > abs(best_t):
@@ -355,15 +420,18 @@ def _trend_scanning_single_group(
                 # Handle numerical issues
                 continue
 
-        # Assign label only when a directional trend was found.
-        if best_t > 0:
-            labels[i] = 1
-        elif best_t < 0:
-            labels[i] = -1
-        else:
+        if best_t == 0:
             continue
         t_values[i] = best_t
         windows[i] = best_window
+
+        # Assign a label only when the selected trend reaches the requested significance.
+        if abs(best_t) < t_value_threshold:
+            continue
+        if best_t > 0:
+            labels[i] = 1
+        else:
+            labels[i] = -1
 
     # Add results to dataframe
     label_series = pl.Series("label", labels).fill_nan(None).cast(pl.Int8)
@@ -375,13 +443,14 @@ def _trend_scanning_single_group(
 
 def trend_scanning_labels(
     data: pl.DataFrame,
-    min_window: int = 5,
-    max_window: int = 50,
-    step: int = 1,
+    min_window: int | None = None,
+    max_window: int | None = None,
+    step: int | None = None,
     price_col: str | None = None,
     timestamp_col: str | None = None,
     group_col: str | list[str] | None = None,
     *,
+    t_value_threshold: float | None = None,
     config: LabelingConfig | None = None,
     contract: DataContractConfig | None = None,
 ) -> pl.DataFrame:
@@ -391,9 +460,6 @@ def trend_scanning_labels(
     and selects the window with the highest absolute t-statistic. The label
     is assigned based on the trend direction when a non-zero t-statistic is
     found. Observations with no directional trend remain null.
-
-    This method is more robust than fixed-horizon labeling as it adapts to
-    the local trend structure in the data.
 
     Parameters
     ----------
@@ -414,9 +480,12 @@ def trend_scanning_labels(
         Column(s) to group by for per-asset labels. If None, auto-detects from
         common column names: 'symbol', 'product', 'ticker'.
         Pass an empty list explicitly to disable grouping.
+    t_value_threshold : float | None, default None
+        Minimum absolute t-value required for a directional label. The selected
+        t-value and window remain available when the label is null.
     config : LabelingConfig | None, default None
-        Optional column contract source. If provided, `price_col` and
-        `timestamp_col` default to config values when omitted.
+        Trend-scanning configuration. Its windows, step, significance threshold,
+        and column mapping control execution. Conflicting explicit values are rejected.
     contract : DataContractConfig | None, default None
         Optional shared dataframe contract. Used after config and before defaults.
 
@@ -427,6 +496,9 @@ def trend_scanning_labels(
         - label: +1, -1, or null based on trend direction
         - t_value: t-statistic of the selected trend, or null
         - optimal_window: window size with highest |t-value|, or null
+
+        Exact nonconstant linear fits use the largest finite float as the signed
+        t-value. Constant windows have null outputs.
 
     Examples
     --------
@@ -448,11 +520,6 @@ def trend_scanning_labels(
     4. Selects the window with highest absolute t-statistic
     5. Assigns label = sign(t-statistic), or null if no directional trend is found
 
-    This approach:
-    - Adapts to local trend structure
-    - More robust than fixed horizons
-    - Computationally expensive (O(n * m) where m = window range)
-
     **Important**: Data is automatically sorted by [group_col, timestamp] before
     scanning. This is required because the algorithm scans forward in row order.
 
@@ -466,12 +533,37 @@ def trend_scanning_labels(
     fixed_time_horizon_labels : Simple fixed-horizon labeling
     triple_barrier_labels : Path-dependent labeling with barriers
     """
+    if config is not None:
+        if config.method != "trend_scanning":
+            raise DataValidationError(
+                "trend_scanning_labels requires LabelingConfig.method='trend_scanning'."
+            )
+        conflicts = (
+            (min_window is not None and min_window != config.min_horizon),
+            (max_window is not None and max_window != config.max_horizon),
+            (step is not None and step != config.step),
+            (t_value_threshold is not None and t_value_threshold != config.t_value_threshold),
+        )
+        if any(conflicts):
+            raise DataValidationError("Explicit trend-scanning arguments conflict with config.")
+        min_window = config.min_horizon
+        max_window = config.max_horizon
+        step = config.step
+        t_value_threshold = config.t_value_threshold
+
+    min_window = 5 if min_window is None else min_window
+    max_window = 50 if max_window is None else max_window
+    step = 1 if step is None else step
+    t_value_threshold = 0.0 if t_value_threshold is None else t_value_threshold
+
     if min_window < 2:
         raise ValueError("min_window must be at least 2")
-    if max_window <= min_window:
-        raise ValueError("max_window must be greater than min_window")
+    if max_window < min_window:
+        raise ValueError("max_window must be greater than or equal to min_window")
     if step < 1:
         raise ValueError("step must be at least 1")
+    if not math.isfinite(t_value_threshold) or t_value_threshold < 0:
+        raise ValueError("t_value_threshold must be a finite nonnegative number")
     resolved_price_col, resolved_ts_col, group_cols = resolve_labeling_columns(
         data=data,
         price_col=price_col,
@@ -496,6 +588,7 @@ def trend_scanning_labels(
                 step=step,
                 price_col=resolved_price_col,
                 timestamp_col=resolved_ts_col,
+                t_value_threshold=t_value_threshold,
             )
             for group_df in grouped_frames
         ]
@@ -508,6 +601,7 @@ def trend_scanning_labels(
         step=step,
         price_col=resolved_price_col,
         timestamp_col=resolved_ts_col,
+        t_value_threshold=t_value_threshold,
     )
 
 

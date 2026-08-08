@@ -48,11 +48,14 @@ These are not registry entries but remain important:
 ```python
 from ml4t.engineer import compute_features
 
-result = compute_features(df, [
-    "rsi",
-    {"name": "sma", "params": {"period": 50}},
-    {"name": "bollinger_bands", "params": {"period": 20, "std_dev": 2.5}},
-])
+result = compute_features(
+    df,
+    [
+        "rsi",
+        {"name": "sma", "params": {"period": 50}},
+        {"name": "bollinger_bands", "params": {"period": 20, "std_dev": 2.5}},
+    ],
+)
 ```
 
 ## Trust Signals

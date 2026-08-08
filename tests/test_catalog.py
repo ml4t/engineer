@@ -3,7 +3,8 @@
 import pytest
 
 from ml4t.engineer.core.registry import FeatureMetadata, FeatureRegistry
-from ml4t.engineer.discovery.catalog import FeatureCatalog
+from ml4t.engineer.discovery import catalog as catalog_module
+from ml4t.engineer.discovery.catalog import FeatureCatalog, _FeatureCatalogProxy
 
 
 @pytest.fixture
@@ -118,6 +119,9 @@ class TestFeatureCatalogList:
         result = catalog.list(ta_lib_compatible=True)
         assert len(result) == 4
 
+    def test_list_not_ta_lib_compatible(self, catalog):
+        assert catalog.list(ta_lib_compatible=False) == []
+
     def test_list_by_input_type(self, catalog):
         result = catalog.list(input_type="close")
         assert set(result) == {"rsi", "sma", "macd"}
@@ -125,6 +129,10 @@ class TestFeatureCatalogList:
     def test_list_by_input_type_ohlcv(self, catalog):
         result = catalog.list(input_type="OHLCV")
         assert result == ["atr"]
+
+    def test_list_by_output_type(self, catalog):
+        assert catalog.list(output_type="indicator") == ["atr", "macd", "rsi", "sma"]
+        assert catalog.list(output_type="label") == []
 
     def test_list_with_tags(self, catalog):
         result = catalog.list(tags=["momentum"])
@@ -174,6 +182,17 @@ class TestFeatureCatalogDescribe:
         with pytest.raises(KeyError, match="not found"):
             catalog.describe("nonexistent")
 
+    def test_describe_tolerates_unavailable_lookback(self, registry):
+        metadata = registry.get("rsi")
+        assert metadata is not None
+
+        def unavailable(**_parameters):
+            raise ValueError("not configurable")
+
+        metadata.lookback = unavailable
+
+        assert FeatureCatalog(registry).describe("rsi")["lookback_period"] is None
+
 
 class TestFeatureCatalogSearch:
     """Tests for FeatureCatalog.search()."""
@@ -218,6 +237,16 @@ class TestFeatureCatalogSearch:
         assert "rsi" in names
         assert "macd" in names
 
+    def test_search_category_references_and_unknown_fields(self, registry):
+        metadata = registry.get("rsi")
+        assert metadata is not None
+        metadata.references.append("Wilder 1978")
+        catalog = FeatureCatalog(registry)
+
+        assert catalog.search("momentum", search_fields=["category"])
+        assert catalog.search("Wilder", search_fields=["references"]) == [("rsi", 0.5)]
+        assert catalog.search("rsi", search_fields=["unknown"]) == []
+
 
 class TestFeatureCatalogConvenience:
     """Tests for convenience methods."""
@@ -232,9 +261,37 @@ class TestFeatureCatalogConvenience:
         assert "atr" in result
         assert "macd" not in result  # lookback = 35
 
+    def test_by_lookback_skips_unavailable_metadata(self, registry):
+        metadata = registry.get("rsi")
+        assert metadata is not None
+
+        def unavailable(**_parameters):
+            raise ValueError("not configurable")
+
+        metadata.lookback = unavailable
+
+        assert "rsi" not in FeatureCatalog(registry).by_lookback(100)
+
+    def test_configured_lookback(self, catalog):
+        assert catalog.lookback("sma", period=50) == 50
+
+    def test_lookback_unknown_feature(self, catalog):
+        with pytest.raises(KeyError, match="not found"):
+            catalog.lookback("unknown")
+
     def test_categories(self, catalog):
         result = catalog.categories()
         assert result == ["momentum", "trend", "volatility"]
+
+    def test_tags(self, catalog):
+        assert catalog.tags() == [
+            "average",
+            "momentum",
+            "oscillator",
+            "range",
+            "trend",
+            "volatility",
+        ]
 
     def test_input_types(self, catalog):
         result = catalog.input_types()
@@ -254,3 +311,30 @@ class TestFeatureCatalogConvenience:
     def test_repr(self, catalog):
         assert "FeatureCatalog" in repr(catalog)
         assert "4" in repr(catalog)
+
+
+def test_default_catalog_and_proxy_delegate_to_global_registry(monkeypatch, catalog):
+    monkeypatch.setattr(catalog_module, "_features", catalog)
+    proxy = _FeatureCatalogProxy()
+
+    assert proxy.list(category="momentum") == catalog.list(category="momentum")
+    assert proxy.describe("rsi") == catalog.describe("rsi")
+    assert proxy.search("average") == catalog.search("average")
+    assert proxy.by_input_type("close") == catalog.by_input_type("close")
+    assert proxy.by_lookback(14) == catalog.by_lookback(14)
+    assert proxy.lookback("sma", period=50) == 50
+    assert proxy.categories() == catalog.categories()
+    assert proxy.tags() == catalog.tags()
+    assert proxy.input_types() == catalog.input_types()
+    assert proxy.stats() == catalog.stats()
+    assert len(proxy) == len(catalog)
+    assert repr(proxy) == repr(catalog)
+
+
+def test_default_catalog_is_created_lazily(monkeypatch):
+    monkeypatch.setattr(catalog_module, "_features", None)
+
+    created = catalog_module._get_features()
+
+    assert isinstance(created, FeatureCatalog)
+    assert catalog_module._get_features() is created

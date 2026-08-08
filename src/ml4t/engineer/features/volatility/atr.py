@@ -8,8 +8,8 @@ Uses Wilder's smoothing method for exact TA-Lib compatibility.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
@@ -171,7 +171,6 @@ def atr_polars(
     name="atr",
     category="volatility",
     description="ATR - Average True Range",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

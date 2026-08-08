@@ -2,6 +2,7 @@
 
 import numpy as np
 import polars as pl
+import pytest
 
 from ml4t.engineer.features.volume import ad, adosc, obv
 from ml4t.engineer.features.volume.ad import ad_numba
@@ -83,9 +84,8 @@ class TestADNumba:
         low = np.array([98.0])  # Different length
         close = np.array([101.0, 102.0])
         volume = np.array([1000.0, 1100.0])
-        result = ad_numba(high, low, close, volume)
-        # AD may handle mismatched lengths gracefully, just verify it completes
-        assert len(result) > 0
+        with pytest.raises(ValueError, match="must have the same length"):
+            ad_numba(high, low, close, volume)
 
     def test_single_value(self):
         """Test AD with single data point."""

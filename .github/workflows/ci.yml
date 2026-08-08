@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  workflow_call:
 
 env:
   PYTHON_VERSION: "3.12"
@@ -14,10 +16,10 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.10.9"
 
@@ -37,10 +39,10 @@ jobs:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.10.9"
 
@@ -48,70 +50,175 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev
+        run: >-
+          uv sync --python ${{ env.PYTHON_VERSION }} --dev
+          --extra store --extra viz
 
       - name: Run ty check
-        run: uv run ty check
+        run: uv run --no-sync ty check
 
-  test:
-    name: Test (Python ${{ matrix.python-version }})
+  security:
+    name: Dependency Audit
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.10.9"
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
 
-      - name: Install TA-Lib C library
+      - name: Export locked environments
         run: |
-          wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-          tar -xzf ta-lib-0.4.0-src.tar.gz
-          cd ta-lib/
-          ./configure --prefix=/usr/local
-          make
-          sudo make install
-          sudo ldconfig
+          uv export --locked --no-dev --no-emit-project --no-hashes \
+            --output-file "${{ runner.temp }}/core.txt"
+          uv export --locked --all-extras --all-groups --no-emit-project --no-hashes \
+            --output-file "${{ runner.temp }}/complete.txt"
 
-      - name: Install dependencies
-        run: uv sync --python ${{ matrix.python-version }} --dev --extra ta
-
-      - name: Run tests
+      - name: Audit locked environments
         run: |
-          set +e
-          uv run pytest tests/ -v --tb=short -x --no-cov
-          PYTEST_EXIT=$?
-          if [ $PYTEST_EXIT -eq 0 ] || [ $PYTEST_EXIT -eq 5 ]; then
-            echo "Tests passed (exit code: $PYTEST_EXIT)"
-            exit 0
-          elif [ $PYTEST_EXIT -gt 128 ]; then
-            echo "Tests passed but process crashed during cleanup (exit code: $PYTEST_EXIT) - known numba issue"
-            exit 0
-          else
-            echo "Tests failed (exit code: $PYTEST_EXIT)"
-            exit $PYTEST_EXIT
-          fi
+          uv run pip-audit --requirement "${{ runner.temp }}/core.txt"
+          uv run pip-audit --requirement "${{ runner.temp }}/complete.txt"
 
-  build:
-    name: Build Package
-    runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
+  test:
+    name: Qualify (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13", "3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.15"
+          - os: macos-latest
+            python-version: "3.15"
+          - os: windows-latest
+            python-version: "3.15"
+
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.3.2
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.10.9"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [[ "${{ matrix.python-version }}" == "3.15" ]]; then
+            uv sync --python python --dev
+          else
+            uv sync --python python --dev --extra ta --extra store --extra viz
+          fi
+
+      - name: Import package
+        run: uv run --no-sync python -c "import ml4t.engineer"
+
+      - name: Run ty check
+        shell: bash
+        run: |
+          if [[ "${{ matrix.python-version }}" == "3.15" ]]; then
+            uv run --no-sync ty check --python-version 3.15 \
+              --extra-search-path tests/type_stubs
+          else
+            uv run --no-sync ty check --python-version ${{ matrix.python-version }}
+          fi
+
+      - name: Build package
+        run: uv build --python python
+
+      - name: Export installed-wheel test environment
+        shell: bash
+        run: |
+          if [[ "${{ matrix.python-version }}" == "3.15" ]]; then
+            uv export --locked --group dev --no-emit-project --no-hashes \
+              --output-file "${{ runner.temp }}/test-requirements.txt"
+          else
+            uv export --locked --group dev --extra ta --extra store --extra viz \
+              --no-emit-project --no-hashes \
+              --output-file "${{ runner.temp }}/test-requirements.txt"
+          fi
+
+      - name: Install built wheel
+        run: |
+          uv venv --python python .artifact-venv
+          uv pip install --python .artifact-venv --requirements "${{ runner.temp }}/test-requirements.txt"
+          python -c "import glob, subprocess; subprocess.check_call(['uv', 'pip', 'install', '--python', '.artifact-venv', glob.glob('dist/*.whl')[0]])"
+
+      - name: Import built wheel
+        run: uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
+
+      - name: Run tests
+        shell: bash
+        run: |
+          for iteration in {1..10}; do
+            echo "Installed-wheel suite ${iteration}/10"
+            uv run --python .artifact-venv --no-project \
+              python -m pytest tests/ -q --tb=short --no-cov
+          done
+
+      - name: Run documented workflows from built wheel
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python tests/documentation_workflows.py
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.10.9"
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: >-
+          uv sync --python ${{ env.PYTHON_VERSION }} --dev
+          --extra ta --extra store --extra viz
+
+      - name: Measure line and branch coverage
+        env:
+          NUMBA_DISABLE_JIT: "1"
+        run: >-
+          uv run pytest tests/ -q
+          --cov-report=
+          --cov-report=json:coverage.json
+          --cov-report=term:skip-covered
+
+      - name: Enforce release thresholds
+        run: uv run python scripts/check_coverage.py coverage.json
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, security, test, coverage]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.10.9"
 
@@ -121,8 +228,25 @@ jobs:
       - name: Build package
         run: uv build
 
+      - name: Validate package metadata
+        run: uv run twine check dist/*
+
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: >-
+          uv run python -c
+          "import os; from ml4t.engineer import __version__;
+          tag=os.environ['GITHUB_REF_NAME'];
+          assert tag == f'v{__version__}', f'{tag} does not match v{__version__}'"
+
+      - name: Validate wheel installation
+        run: |
+          uv venv --python ${{ env.PYTHON_VERSION }} .artifact-venv
+          uv pip install --python .artifact-venv dist/*.whl
+          uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
+
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/

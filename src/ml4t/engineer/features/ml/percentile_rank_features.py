@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="percentile_rank_features",
     category="ml",
     description="Percentile Rank Features - rank-based normalization",
-    lookback=0,
     normalized=True,
     value_range=(0.0, 100.0),
     formula="",

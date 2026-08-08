@@ -23,8 +23,16 @@ The goal: find the smallest d where the ADF test rejects the null hypothesis of 
 
 ### `ffdiff` — Apply Fractional Differencing
 
+<!-- ml4t-exec -->
 ```python
+import numpy as np
+import polars as pl
 from ml4t.engineer.features.fdiff import ffdiff
+
+rng = np.random.default_rng(42)
+df = pl.DataFrame({
+    "close": 100.0 * np.exp(np.cumsum(rng.normal(0.0002, 0.01, 500))),
+})
 
 # As a Polars expression (chainable)
 result = df.with_columns(
@@ -33,6 +41,8 @@ result = df.with_columns(
 
 # Or on a Series directly
 ffd_series = ffdiff(df["close"], d=0.4)
+
+assert len(result) == len(ffd_series) == len(df)
 ```
 
 **Parameters**:
@@ -144,16 +154,17 @@ Fractional differencing is also available through the standard `compute_features
 
 ```python
 result = compute_features(df, [
-    {"name": "fractional_diff", "params": {"d": 0.4}},
+    {"name": "ffdiff", "params": {"d": 0.4}, "output": "close_ffd"},
 ])
 ```
 
-Or find the optimal d and apply it:
+Optimal-d search is data-dependent, so it remains a direct two-step operation:
 
 ```python
-result = compute_features(df, [
-    {"name": "ffdiff_optimal", "params": {"adf_pvalue_threshold": 0.05}},
-])
+search = find_optimal_d(df["close"], adf_pvalue_threshold=0.05)
+result = df.with_columns(
+    ffdiff("close", d=search["optimal_d"]).alias("close_ffd")
+)
 ```
 
 ## Asset-Class Guidelines

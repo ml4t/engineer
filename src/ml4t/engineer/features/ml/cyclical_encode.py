@@ -13,7 +13,6 @@ from ml4t.engineer.logging import logged_feature
     name="cyclical_encode",
     category="ml",
     description="Cyclical Encoding - sin/cos encoding for cyclical features",
-    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=False,

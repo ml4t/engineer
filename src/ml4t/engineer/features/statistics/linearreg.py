@@ -8,8 +8,8 @@ for each period. It fits a straight line to the data using the least squares met
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -96,7 +96,6 @@ def linearreg_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="linearreg",
     category="statistics",
     description="LINEARREG - Linear Regression",
-    lookback=14,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

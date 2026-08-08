@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="roll_spread_estimator",
     category="microstructure",
     description="Roll Spread Estimator - bid-ask spread from price covariances",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,
@@ -62,6 +61,8 @@ def roll_spread_estimator(close: pl.Expr | str, period: int = 20) -> pl.Expr:
     cov_approx = ((price_changes - mean_change) * (lag_changes - mean_lag)).rolling_mean(period)
 
     # Roll spread = 2 * sqrt(max(-cov, 0))
-    spread = 2 * pl.when(cov_approx < 0).then((-cov_approx).sqrt()).otherwise(0)
+    spread = 2 * pl.when(cov_approx.is_null()).then(None).when(cov_approx < 0).then(
+        (-cov_approx).sqrt()
+    ).otherwise(0)
 
     return spread

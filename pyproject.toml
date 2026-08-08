@@ -52,7 +52,7 @@ keywords = [
     "polars",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
@@ -71,21 +71,21 @@ requires-python = ">=3.12"
 
 # Core dependencies
 dependencies = [
-    "ml4t-specs>=0.1.0b0",
+    "ml4t-specs>=0.1.0,<0.2.0",
 
     # Data processing (Polars-first)
     "polars>=0.20.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0,<2.6",
-    "pyarrow>=14.0.0",
+    "pyarrow>=14.0.0; python_version < '3.15'",
 
     # Scientific computing
-    "scipy>=1.10.0",
-    "scikit-learn>=1.3.0",
-    "statsmodels>=0.14.0",
+    "scipy>=1.10.0; python_version < '3.15'",
+    "scikit-learn>=1.3.0; python_version < '3.15'",
+    "statsmodels>=0.14.0; python_version < '3.15'",
 
     # Performance optimization
-    "numba>=0.57.0",
+    "numba>=0.57.0; python_version < '3.15'",
 
     # Configuration
     "pydantic>=2.0.0",
@@ -95,8 +95,6 @@ dependencies = [
     "structlog>=23.0.0",
     "python-dateutil>=2.8.0",
 
-    # Visualization
-    "matplotlib>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -201,6 +199,7 @@ dev = [
     "ty",
     "pre-commit>=3.3.0",
     "twine>=6.0.0",
+    "pip-audit>=2.10.1",
     "pandas-market-calendars>=4.0.0",
 ]
 
@@ -264,16 +263,8 @@ root = ["src"]
 include = ["src"]
 exclude = ["tests", "benchmarks", "examples", "docs"]
 
-[tool.ty.rules]
-unused-type-ignore-comment = "ignore"  # mypy type: ignore comments not recognized by ty
-invalid-assignment = "ignore"
-unsupported-operator = "ignore"
-invalid-argument-type = "ignore"
-unresolved-import = "ignore"
-invalid-return-type = "ignore"
-unresolved-attribute = "ignore"
-
 [tool.coverage.run]
+branch = true
 source = ["src/ml4t/engineer"]
 omit = [
     "*/tests/*",

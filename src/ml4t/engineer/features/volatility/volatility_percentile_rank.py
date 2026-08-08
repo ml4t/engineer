@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="volatility_percentile_rank",
     category="volatility",
     description="Volatility Percentile Rank - current vol vs historical distribution",
-    lookback=0,
     normalized=True,
     value_range=(0.0, 100.0),
     formula="",

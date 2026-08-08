@@ -63,7 +63,19 @@ class VolumeBarSampler(BarSampler):
             raise DataValidationError("Volume bars require 'side' column")
 
         if len(data) == 0:
-            return pl.DataFrame()
+            return self._empty_result(
+                [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "tick_count",
+                    "buy_volume",
+                    "sell_volume",
+                ]
+            )
 
         # Convert to numpy for efficient processing
         volumes = data["volume"].to_numpy()
@@ -124,18 +136,18 @@ class VolumeBarSampler(BarSampler):
 
         # Convert to DataFrame
         if not bars:
-            return pl.DataFrame(
-                {
-                    "timestamp": [],
-                    "open": [],
-                    "high": [],
-                    "low": [],
-                    "close": [],
-                    "volume": [],
-                    "tick_count": [],
-                    "buy_volume": [],
-                    "sell_volume": [],
-                },
+            return self._empty_result(
+                [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "tick_count",
+                    "buy_volume",
+                    "sell_volume",
+                ]
             )
 
         return pl.DataFrame(bars)
@@ -195,7 +207,19 @@ class DollarBarSampler(BarSampler):
         self._validate_data(data)
 
         if len(data) == 0:
-            return pl.DataFrame()
+            return self._empty_result(
+                [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "tick_count",
+                    "dollar_volume",
+                    "vwap",
+                ]
+            )
 
         # Calculate dollar volumes
         prices = data["price"].to_numpy()
@@ -265,18 +289,18 @@ class DollarBarSampler(BarSampler):
 
         # Convert to DataFrame
         if not bars:
-            return pl.DataFrame(
-                {
-                    "timestamp": [],
-                    "open": [],
-                    "high": [],
-                    "low": [],
-                    "close": [],
-                    "volume": [],
-                    "tick_count": [],
-                    "dollar_volume": [],
-                    "vwap": [],
-                },
+            return self._empty_result(
+                [
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "tick_count",
+                    "dollar_volume",
+                    "vwap",
+                ]
             )
 
         return pl.DataFrame(bars)

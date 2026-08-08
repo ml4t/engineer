@@ -8,8 +8,8 @@ linear regression line for each period.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -92,7 +92,6 @@ def linearreg_slope_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="linearreg_slope",
     category="statistics",
     description="LINEARREG_SLOPE - slope of linear regression",
-    lookback=14,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

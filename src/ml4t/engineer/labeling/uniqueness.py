@@ -21,10 +21,10 @@ from ml4t.engineer.labeling.numba_ops import _build_concurrency_nb
 
 
 def build_concurrency(
-    event_indices: npt.NDArray[np.float64],
-    label_indices: npt.NDArray[np.float64],
+    event_indices: npt.NDArray[np.int64],
+    label_indices: npt.NDArray[np.int64],
     n_bars: int | None = None,
-) -> npt.NDArray[np.float64]:
+) -> npt.NDArray[np.int64]:
     """
     Calculate per-bar concurrency (how many labels are active at each time).
 
@@ -206,29 +206,58 @@ def calculate_sample_weights(
     .. [1] López de Prado, M. (2018). Advances in Financial Machine Learning. Wiley.
            Chapter 4: Sample Weights.
     """
-    # Input validation
-    if len(uniqueness) != len(returns):
+    valid_schemes = {
+        "returns_uniqueness",
+        "uniqueness_only",
+        "returns_only",
+        "equal",
+    }
+    if weight_scheme not in valid_schemes:
+        choices = ", ".join(sorted(valid_schemes))
+        raise ValueError(f"weight_scheme must be one of: {choices}")
+
+    uniqueness_array = np.asarray(uniqueness)
+    returns_array = np.asarray(returns)
+    if uniqueness_array.ndim != 1 or returns_array.ndim != 1:
+        raise ValueError("uniqueness and returns must be one-dimensional arrays")
+    if not np.issubdtype(uniqueness_array.dtype, np.number) or np.issubdtype(
+        uniqueness_array.dtype, np.complexfloating
+    ):
+        raise TypeError("uniqueness must contain real numeric values")
+    if not np.issubdtype(returns_array.dtype, np.number) or np.issubdtype(
+        returns_array.dtype, np.complexfloating
+    ):
+        raise TypeError("returns must contain real numeric values")
+
+    uniqueness_array = uniqueness_array.astype(np.float64, copy=False)
+    returns_array = returns_array.astype(np.float64, copy=False)
+    if len(uniqueness_array) != len(returns_array):
         raise ValueError(
             f"uniqueness and returns must have same length, "
-            f"got {len(uniqueness)} and {len(returns)}"
+            f"got {len(uniqueness_array)} and {len(returns_array)}"
         )
 
-    if len(uniqueness) == 0:
-        return np.array([])
+    if not np.all(np.isfinite(uniqueness_array)) or not np.all(np.isfinite(returns_array)):
+        raise ValueError("uniqueness and returns must contain only finite values")
+    if np.any((uniqueness_array < 0.0) | (uniqueness_array > 1.0)):
+        raise ValueError("uniqueness values must be between 0 and 1")
+
+    if len(uniqueness_array) == 0:
+        return np.array([], dtype=np.float64)
 
     if weight_scheme == "returns_uniqueness":
         # De Prado's formula: combine uniqueness with economic significance
-        weights = uniqueness * np.abs(returns)
+        weights = uniqueness_array * np.abs(returns_array)
     elif weight_scheme == "uniqueness_only":
-        weights = uniqueness
+        weights = uniqueness_array
     elif weight_scheme == "returns_only":
-        weights = np.abs(returns)
-    else:  # "equal"
-        weights = np.ones_like(uniqueness)
+        weights = np.abs(returns_array)
+    else:
+        weights = np.ones_like(uniqueness_array)
 
     # Normalize weights to sum to len(weights) for compatibility with ML libraries
     total = np.sum(weights)
-    weights = weights * len(weights) / total if total > 0 else np.ones_like(uniqueness)
+    weights = weights * len(weights) / total if total > 0 else np.ones_like(uniqueness_array)
 
     return weights
 

@@ -8,8 +8,8 @@ instead of price data, creating a more sensitive momentum indicator.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 from ml4t.engineer.features.momentum.rsi import rsi_numba
@@ -168,7 +168,6 @@ def stochrsi_polars(
     name="stochrsi",
     category="momentum",
     description="Stochastic RSI - applies stochastic formula to RSI",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

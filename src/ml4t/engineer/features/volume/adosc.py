@@ -5,8 +5,8 @@ Chaikin A/D Oscillator (ADOSC) - TA-Lib compatible implementation.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -125,11 +125,9 @@ def adosc_polars(
     name="adosc",
     category="volume",
     description="ADOSC - Chaikin A/D Oscillator",
-    lookback="slowperiod",
     normalized=False,  # Oscillator of unbounded A/D line is not stationary
     formula="",
     ta_lib_compatible=True,
-    parameters={"fastperiod": 3, "slowperiod": 10},
 )
 def adosc(
     high: npt.NDArray[np.float64] | pl.Series | str,
@@ -159,21 +157,27 @@ def adosc(
     if slowperiod <= 0:
         raise ValueError("slowperiod must be > 0")
 
-    # Convert to numpy arrays
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
-    if isinstance(volume, pl.Series):
-        volume = volume.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
+    volume_array = np.asarray(volume, dtype=np.float64)
 
     # Validate inputs
-    if len(high) != len(low) or len(high) != len(close) or len(high) != len(volume):
+    if (
+        len(high_array) != len(low_array)
+        or len(high_array) != len(close_array)
+        or len(high_array) != len(volume_array)
+    ):
         raise ValueError("high, low, close, and volume must have the same length")
 
-    return adosc_numba(high, low, close, volume, fastperiod, slowperiod)
+    return adosc_numba(
+        high_array,
+        low_array,
+        close_array,
+        volume_array,
+        fastperiod,
+        slowperiod,
+    )
 
 
 # Export the main function

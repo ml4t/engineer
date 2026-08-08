@@ -4,9 +4,13 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
-from scipy import stats
 
 from ml4t.engineer.relationships.correlation import compute_correlation_matrix
+
+
+def _to_pandas(frame: pl.DataFrame) -> pd.DataFrame:
+    """Convert without requiring the optional PyArrow dependency."""
+    return pd.DataFrame(frame.to_dict(as_series=False))
 
 
 class TestCorrelationBasic:
@@ -24,7 +28,7 @@ class TestCorrelationBasic:
         assert "y" in corr.columns
 
         # Convert to pandas for easier testing
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Perfect positive correlation
         assert corr_pd.loc["x", "y"] == pytest.approx(1.0, abs=1e-10)
@@ -39,7 +43,7 @@ class TestCorrelationBasic:
         df = pl.DataFrame({"x": [1, 2, 3, 4, 5], "y": [10, 8, 6, 4, 2]})
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Perfect negative correlation
         assert corr_pd.loc["x", "y"] == pytest.approx(-1.0, abs=1e-10)
@@ -56,7 +60,7 @@ class TestCorrelationBasic:
         )
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Should be close to 0 (not exact due to randomness)
         assert abs(corr_pd.loc["x", "y"]) < 0.2  # Loose bound for random data
@@ -69,7 +73,7 @@ class TestCorrelationBasic:
         df = pl.DataFrame({"x": x, "y": y})
 
         corr = compute_correlation_matrix(df, method="spearman")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Spearman should be perfect for monotonic relationship
         assert corr_pd.loc["x", "y"] == pytest.approx(1.0, abs=1e-10)
@@ -79,7 +83,7 @@ class TestCorrelationBasic:
         df = pl.DataFrame({"x": [1, 2, 3, 4, 5], "y": [1, 3, 2, 4, 5]})
 
         corr = compute_correlation_matrix(df, method="kendall")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Kendall should give reasonable correlation
         assert 0.5 < corr_pd.loc["x", "y"] < 1.0
@@ -104,6 +108,24 @@ class TestCorrelationMethods:
             assert len(corr) == 3  # 3 features
             assert len(corr.columns) == 4  # feature + 3 correlations
 
+    def test_kendall_handles_ties_missing_values_and_min_periods(self):
+        """Kendall tau-b works without SciPy and honors pairwise minimums."""
+        df = pl.DataFrame(
+            {
+                "x": [1.0, 1.0, 2.0, 3.0, None],
+                "y": [1.0, 2.0, 2.0, 4.0, 5.0],
+            }
+        )
+
+        corr = compute_correlation_matrix(df, method="kendall", min_periods=4)
+        corr_pd = _to_pandas(corr).set_index("feature")
+        assert corr_pd.loc["x", "y"] == pytest.approx(0.8)
+        assert corr_pd.loc["y", "x"] == pytest.approx(0.8)
+
+        insufficient = compute_correlation_matrix(df, method="kendall", min_periods=5)
+        insufficient_pd = _to_pandas(insufficient).set_index("feature")
+        assert np.isnan(insufficient_pd.loc["x", "y"])
+
     def test_invalid_method(self):
         """Test error on invalid method."""
         df = pl.DataFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
@@ -126,7 +148,7 @@ class TestMissingDataHandling:
         )
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Should compute correlation using available pairs
         assert not np.isnan(corr_pd.loc["x", "y"])
@@ -143,12 +165,12 @@ class TestMissingDataHandling:
 
         # Should compute with 2 observations
         corr1 = compute_correlation_matrix(df, method="pearson", min_periods=2)
-        corr1_pd = corr1.to_pandas().set_index("feature")
+        corr1_pd = _to_pandas(corr1).set_index("feature")
         assert not np.isnan(corr1_pd.loc["x", "y"])
 
         # Should return NaN with min_periods=3
         corr2 = compute_correlation_matrix(df, method="pearson", min_periods=3)
-        corr2_pd = corr2.to_pandas().set_index("feature")
+        corr2_pd = _to_pandas(corr2).set_index("feature")
         assert np.isnan(corr2_pd.loc["x", "y"])
 
     def test_all_nans_column(self):
@@ -162,7 +184,7 @@ class TestMissingDataHandling:
         )
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Correlation with all-NaN column should be NaN
         assert np.isnan(corr_pd.loc["x", "y"])
@@ -185,7 +207,7 @@ class TestFeatureSelection:
 
         # Compute correlation for subset
         corr = compute_correlation_matrix(df, features=["a", "b"])
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         assert len(corr_pd) == 2
         assert "a" in corr_pd.index
@@ -222,7 +244,7 @@ class TestFeatureSelection:
         )
 
         corr = compute_correlation_matrix(df)
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Should only include numeric columns
         assert len(corr_pd) == 2
@@ -241,7 +263,7 @@ class TestInputFormats:
         corr = compute_correlation_matrix(df, method="pearson")
 
         assert isinstance(corr, pl.DataFrame)
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
         assert corr_pd.loc["x", "y"] == pytest.approx(1.0, abs=1e-10)
 
     def test_polars_dataframe_input(self):
@@ -251,7 +273,7 @@ class TestInputFormats:
         corr = compute_correlation_matrix(df, method="pearson")
 
         assert isinstance(corr, pl.DataFrame)
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
         assert corr_pd.loc["x", "y"] == pytest.approx(1.0, abs=1e-10)
 
 
@@ -277,7 +299,7 @@ class TestRealWorldScenarios:
         )
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Stock1 should be more correlated with market than stock2
         assert corr_pd.loc["market", "stock1"] > corr_pd.loc["market", "stock2"]
@@ -297,7 +319,7 @@ class TestRealWorldScenarios:
         assert len(corr.columns) == 11
 
         # All diagonal elements should be 1
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
         for feat in corr_pd.index:
             assert corr_pd.loc[feat, feat] == pytest.approx(1.0)
 
@@ -311,12 +333,12 @@ class TestRealWorldScenarios:
 
         # Our implementation
         corr = compute_correlation_matrix(df, method="spearman")
-        our_corr = corr.to_pandas().set_index("feature").loc["x", "y"]
+        our_corr = _to_pandas(corr).set_index("feature").loc["x", "y"]
 
-        # Scipy reference
-        scipy_corr, _ = stats.spearmanr(x, y)
+        # Independent definition: Pearson correlation of the ranked values.
+        expected_corr = pd.Series(x).rank().corr(pd.Series(y).rank())
 
-        assert our_corr == pytest.approx(scipy_corr, abs=1e-10)
+        assert our_corr == pytest.approx(expected_corr, abs=1e-10)
 
 
 class TestEdgeCases:
@@ -327,7 +349,7 @@ class TestEdgeCases:
         df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         assert len(corr_pd) == 1
         assert corr_pd.loc["x", "x"] == pytest.approx(1.0)
@@ -342,7 +364,7 @@ class TestEdgeCases:
         )
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # Correlation with constant should be NaN
         assert np.isnan(corr_pd.loc["x", "const"])
@@ -352,7 +374,7 @@ class TestEdgeCases:
         df = pl.DataFrame({"x": [1, 2], "y": [3, 4]})
 
         corr = compute_correlation_matrix(df, method="pearson")
-        corr_pd = corr.to_pandas().set_index("feature")
+        corr_pd = _to_pandas(corr).set_index("feature")
 
         # With 2 points, correlation is always perfect (or undefined)
         assert corr_pd.loc["x", "y"] == pytest.approx(1.0, abs=1e-10)

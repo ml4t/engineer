@@ -8,8 +8,8 @@ It's the average of the absolute deviations from the mean.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -81,7 +81,6 @@ def avgdev_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="avgdev",
     category="statistics",
     description="AVGDEV - Average Deviation",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

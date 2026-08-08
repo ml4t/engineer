@@ -1,9 +1,10 @@
 """Tests for fractional differencing module."""
 
+import importlib.util
+
 import numpy as np
 import polars as pl
 import pytest
-from statsmodels.tsa.stattools import adfuller
 
 from ml4t.engineer.core.exceptions import InvalidParameterError
 from ml4t.engineer.features.fdiff import (
@@ -12,6 +13,11 @@ from ml4t.engineer.features.fdiff import (
     find_optimal_d,
     get_ffd_weights,
 )
+
+
+def _adfuller(values: np.ndarray) -> tuple:
+    statsmodels = pytest.importorskip("statsmodels.tsa.stattools")
+    return statsmodels.adfuller(values, autolag="AIC")
 
 
 class TestFFDWeights:
@@ -88,12 +94,10 @@ class TestFFDiff:
         assert len(ffd_clean) > 0
         # For d=1, result should be stationary
         if len(ffd_clean) > 50:
-            from statsmodels.tsa.stattools import adfuller
-
             clean_array = ffd_clean.to_numpy()
             # Check for inf/nan values
             if np.all(np.isfinite(clean_array)):
-                adf_result = adfuller(clean_array, autolag="AIC")
+                adf_result = _adfuller(clean_array)
                 # Should be stationary
                 assert adf_result[1] < 0.5  # Relaxed threshold
 
@@ -105,7 +109,7 @@ class TestFFDiff:
         data = pl.DataFrame({"value": values})
 
         # Original should be non-stationary
-        adf_original = adfuller(data["value"].to_numpy(), autolag="AIC")
+        adf_original = _adfuller(data["value"].to_numpy())
         assert adf_original[1] > 0.05  # p-value > 0.05 means non-stationary
 
         # Apply fractional differencing with higher d
@@ -118,7 +122,7 @@ class TestFFDiff:
             # Check for inf/nan values
             if np.all(np.isfinite(clean_array)) and np.std(clean_array) > 0:
                 try:
-                    adf_ffd = adfuller(clean_array, autolag="AIC")
+                    adf_ffd = _adfuller(clean_array)
                     # Should be more stationary (lower p-value)
                     assert adf_ffd[1] < adf_original[1]
                 except Exception:
@@ -154,6 +158,7 @@ class TestFFDiff:
         assert abs(corr_05) > abs(corr_10) * 0.8  # Allow some tolerance
 
 
+@pytest.mark.skipif(importlib.util.find_spec("statsmodels") is None, reason="requires statsmodels")
 class TestFindOptimalD:
     """Test optimal d parameter search."""
 
@@ -193,6 +198,7 @@ class TestFindOptimalD:
         assert result["correlation"] > 0  # Should preserve some memory
 
 
+@pytest.mark.skipif(importlib.util.find_spec("statsmodels") is None, reason="requires statsmodels")
 class TestDiagnostics:
     """Test diagnostics functionality."""
 

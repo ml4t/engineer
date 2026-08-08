@@ -11,6 +11,7 @@ Tests cover:
 import polars as pl
 import pytest
 
+from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.registry import FeatureMetadata, FeatureRegistry, get_registry
 
 # Test fixtures
@@ -179,6 +180,60 @@ def test_register_duplicate_name_raises_error(registry, sample_metadata):
 
     with pytest.raises(ValueError, match="already registered"):
         registry.register(sample_metadata)
+
+
+def test_feature_decorator_rejects_inconsistent_parameter_metadata():
+    def candidate(close: str, period: int = 2) -> pl.Expr:
+        return pl.col(close).rolling_mean(period)
+
+    with pytest.raises(TypeError, match="unknown parameters"):
+        feature(
+            name="invalid_unknown_parameter",
+            category="ml",
+            description="Invalid fixture",
+            lookback=0,
+            parameters={"missing": 2},
+        )(candidate)
+
+    with pytest.raises(TypeError, match="metadata default"):
+        feature(
+            name="invalid_default",
+            category="ml",
+            description="Invalid fixture",
+            lookback=0,
+            parameters={"period": 3},
+        )(candidate)
+
+
+def test_feature_decorator_validates_lookback_and_classification_metadata():
+    def candidate(close: str) -> pl.Expr:
+        return pl.col(close)
+
+    with pytest.raises(TypeError, match="invalid default lookback"):
+        feature(
+            name="invalid_lookback",
+            category="ml",
+            description="Invalid fixture",
+            lookback=lambda: True,
+        )(candidate)
+
+    with pytest.warns(UserWarning, match="value ranges"):
+        feature(
+            name="normalized_without_range",
+            category="ml",
+            description="Warning fixture",
+            lookback=0,
+            normalized=True,
+        )(candidate)
+
+    with pytest.warns(UserWarning, match="bounded value_range"):
+        feature(
+            name="bounded_without_normalized",
+            category="ml",
+            description="Warning fixture",
+            lookback=0,
+            value_range=(0.0, 1.0),
+        )(candidate)
 
 
 def test_register_multiple_features(registry):

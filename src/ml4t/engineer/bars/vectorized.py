@@ -25,8 +25,8 @@ efficiently in a vectorized manner.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.bars.base import BarSampler
 from ml4t.engineer.core.exceptions import DataValidationError
 
@@ -134,7 +134,7 @@ class VolumeBarSamplerVectorized(BarSampler):
             raise DataValidationError("Volume bars require 'side' column")
 
         if len(data) == 0:
-            return pl.DataFrame()
+            return self._empty_volume_bars_df()
 
         # Step 1: Identify bar boundaries using Numba-optimized function
         volumes = data["volume"].to_numpy()
@@ -189,18 +189,18 @@ class VolumeBarSamplerVectorized(BarSampler):
 
     def _empty_volume_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+            ]
         )
 
 
@@ -223,7 +223,7 @@ class DollarBarSamplerVectorized(BarSampler):
         self._validate_data(data)
 
         if len(data) == 0:
-            return pl.DataFrame()
+            return self._empty_dollar_bars_df()
 
         # Step 1: Calculate dollar volumes and identify bar boundaries
         prices = data["price"].to_numpy()
@@ -276,18 +276,18 @@ class DollarBarSamplerVectorized(BarSampler):
 
     def _empty_dollar_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "dollar_volume": [],
-                "vwap": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "dollar_volume",
+                "vwap",
+            ]
         )
 
 
@@ -310,7 +310,7 @@ class TickBarSamplerVectorized(BarSampler):
         self._validate_data(data)
 
         if len(data) == 0:
-            return pl.DataFrame()
+            return self._empty_tick_bars_df()
 
         # Step 1: Add row indices and calculate bar IDs
         df_with_bars = data.with_row_index("row_idx").with_columns(
@@ -354,16 +354,8 @@ class TickBarSamplerVectorized(BarSampler):
 
     def _empty_tick_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-            },
+        return self._empty_result(
+            ["timestamp", "open", "high", "low", "close", "volume", "tick_count"]
         )
 
 
@@ -426,7 +418,7 @@ class ImbalanceBarSamplerVectorized(BarSampler):
             raise DataValidationError("Imbalance bars require 'side' column")
 
         if len(data) == 0:
-            return pl.DataFrame()
+            return self._empty_imbalance_bars_df()
 
         # Extract arrays
         volumes = data["volume"].to_numpy().astype(np.float64)
@@ -622,26 +614,25 @@ class ImbalanceBarSamplerVectorized(BarSampler):
 
     def _empty_imbalance_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "imbalance": [],
-                "cumulative_theta": [],
-                "expected_imbalance": [],
-                # AFML diagnostic columns
-                "expected_t": [],
-                "p_buy": [],
-                "v_plus": [],
-                "e_v": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "imbalance",
+                "cumulative_theta",
+                "expected_imbalance",
+                "expected_t",
+                "p_buy",
+                "v_plus",
+                "e_v",
+            ]
         )
 
 

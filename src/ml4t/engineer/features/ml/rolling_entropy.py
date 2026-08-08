@@ -34,8 +34,8 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import validate_window
 from ml4t.engineer.logging import logged_feature
@@ -511,7 +511,6 @@ def _plugin_entropy_nb(
     name="rolling_entropy",
     category="ml",
     description="Rolling Shannon entropy - information content over window",
-    lookback="window",
     normalized=True,
     value_range=(0.0, 10.0),
     formula="H = -sum(p_i * log2(p_i))",
@@ -567,7 +566,6 @@ def rolling_entropy(
     name="rolling_entropy_lz",
     category="ml",
     description="Rolling Kontoyiannis (LZ) entropy - compression-based complexity",
-    lookback="window",
     normalized=True,
     value_range=(0.0, 10.0),
     formula="H = [1/k * sum(L_i / log2(n))]^(-1)",
@@ -645,7 +643,6 @@ def rolling_entropy_lz(
     name="rolling_entropy_plugin",
     category="ml",
     description="Rolling plug-in (ML) entropy - word frequency estimator",
-    lookback="window",
     normalized=True,
     value_range=(0.0, 10.0),
     formula="H = -sum(f_w/n * log2(f_w/n))",

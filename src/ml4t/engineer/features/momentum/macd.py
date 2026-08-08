@@ -8,8 +8,8 @@ between two moving averages of a security's price.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 from ml4t.engineer.features.trend.ema import ema_numba
@@ -30,12 +30,15 @@ def _int_ema_talib_nb(
     """
     n = len(close)
     result = np.full(n, np.nan)
+    if n == 0 or period <= 0:
+        return result
 
     # Calculate lookback exactly like TA-Lib
     lookback_total = period - 1
 
     # Move up start if not enough data (line 291-292)
     start_idx = max(start_idx, lookback_total)
+    end_idx = min(end_idx, n - 1)
 
     # Check if anything to evaluate (line 295-300)
     if start_idx > end_idx:
@@ -255,7 +258,6 @@ def macd_polars(column: str, fast_period: int = 12, slow_period: int = 26) -> pl
     name="macd",
     category="momentum",
     description="MACD - trend-following momentum indicator",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

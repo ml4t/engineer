@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="volume_at_price_ratio",
     category="microstructure",
     description="Volume at Price Ratio - volume profile concentration",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

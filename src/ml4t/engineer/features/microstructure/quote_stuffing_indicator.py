@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="quote_stuffing_indicator",
     category="microstructure",
     description="Quote Stuffing Indicator - detects quote manipulation",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,
@@ -61,7 +60,13 @@ def quote_stuffing_indicator(
         current_avg = avg_trade_size.rolling_mean(period)
 
         # Indicator: current average much smaller than historical
-        indicator = pl.when(current_avg < 0.5 * historical_avg).then(1.0).otherwise(0.0)
+        indicator = (
+            pl.when(historical_avg.is_null())
+            .then(None)
+            .when(current_avg < 0.5 * historical_avg)
+            .then(1.0)
+            .otherwise(0.0)
+        )
     else:
         # Without trade count, use volume spike detection
         vol_mean = volume.rolling_mean(period * 4)
@@ -69,6 +74,6 @@ def quote_stuffing_indicator(
 
         # Detect unusual volume spikes
         z_score = (volume - vol_mean) / (vol_std + 1e-10)
-        indicator = pl.when(z_score > 3).then(1.0).otherwise(0.0)
+        indicator = pl.when(z_score.is_null()).then(None).when(z_score > 3).then(1.0).otherwise(0.0)
 
     return indicator

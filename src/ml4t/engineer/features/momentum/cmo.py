@@ -10,8 +10,8 @@ the sum of all price movement over the period.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -113,7 +113,6 @@ def cmo_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="cmo",
     category="momentum",
     description="CMO - Chande Momentum Oscillator",
-    lookback=0,
     value_range=(-100.0, 100.0),
     normalized=True,
     formula="",

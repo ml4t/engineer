@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="parkinson_volatility",
     category="volatility",
     description="Parkinson Volatility - range-based volatility estimator",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

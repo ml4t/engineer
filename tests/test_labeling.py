@@ -27,12 +27,12 @@ class TestLabelingConfig:
         """Test custom barrier configuration."""
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=20,
             trailing_stop=True,
         )
         assert config.upper_barrier == 0.02
-        assert config.lower_barrier == -0.01
+        assert config.lower_barrier == 0.01
         assert config.max_holding_period == 20
         assert config.trailing_stop is True
 
@@ -71,7 +71,7 @@ class TestTripleBarrierLabels:
         """Test basic triple barrier labeling."""
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% profit target
-            lower_barrier=-0.01,  # 1% stop loss
+            lower_barrier=0.01,  # 1% stop loss
             max_holding_period=50,
         )
 
@@ -135,7 +135,7 @@ class TestTripleBarrierLabels:
         """Test trailing stop functionality."""
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.05,
-            lower_barrier=-0.02,
+            lower_barrier=0.02,
             max_holding_period=100,
             trailing_stop=True,
         )
@@ -155,7 +155,7 @@ class TestTripleBarrierLabels:
         """Test that max holding period is respected."""
         config = LabelingConfig.triple_barrier(
             upper_barrier=10.0,  # Very high barrier (unlikely to hit)
-            lower_barrier=-10.0,  # Very low barrier (unlikely to hit)
+            lower_barrier=10.0,  # Very low barrier (unlikely to hit)
             max_holding_period=5,
         )
 
@@ -199,7 +199,7 @@ class TestTripleBarrierLabels:
         """Test asymmetric barriers."""
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.03,  # 3% profit
-            lower_barrier=-0.01,  # 1% loss
+            lower_barrier=0.01,  # 1% loss
             max_holding_period=50,
         )
 
@@ -226,7 +226,7 @@ class TestTripleBarrierLabels:
             assert (returns < 0).all()  # Should be negative
             # Most should be reasonably close to the barrier
             median_return = returns.median()
-            assert abs(median_return - config.lower_barrier) / abs(config.lower_barrier) < 0.6
+            assert abs(median_return + config.lower_barrier) / config.lower_barrier < 0.6
 
 
 class TestEdgeCases:
@@ -235,7 +235,7 @@ class TestEdgeCases:
     def test_empty_dataframe(self):
         """Test with empty dataframe."""
         df = pl.DataFrame({"timestamp": [], "price": []})
-        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
 
         result = triple_barrier_labels(df, config, price_col="price")
         assert len(result) == 0
@@ -243,7 +243,7 @@ class TestEdgeCases:
     def test_single_row(self):
         """Test with single row."""
         df = pl.DataFrame({"timestamp": [datetime(2024, 1, 1)], "price": [100.0]})
-        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
 
         result = triple_barrier_labels(df, config, price_col="price")
         assert len(result) == 1
@@ -260,25 +260,20 @@ class TestEdgeCases:
                 "price": [float("nan")] * 10,
             },
         )
-        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
 
         with pytest.raises(DataValidationError, match="null/NaN"):
             triple_barrier_labels(df, config, price_col="price")
 
     def test_invalid_barriers(self):
         """Test with invalid barrier configuration."""
-        df = pl.DataFrame({"timestamp": [datetime(2024, 1, 1)], "price": [100.0]})
-
-        # Upper barrier less than lower barrier
-        # Note: Currently no validation for invalid barriers, so test just ensures no crash
-        config = LabelingConfig.triple_barrier(upper_barrier=-0.01, lower_barrier=0.02)
-        result = triple_barrier_labels(df, config, price_col="price")
-        assert len(result) == len(df)
+        with pytest.raises(ValueError, match="upper_barrier must be positive"):
+            LabelingConfig.triple_barrier(upper_barrier=-0.01, lower_barrier=0.02)
 
     def test_missing_columns(self):
         """Test with missing required columns."""
         df = pl.DataFrame({"time": [datetime(2024, 1, 1)], "value": [100.0]})
-        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
 
         # Missing price column should raise DataValidationError
         with pytest.raises(DataValidationError):
@@ -291,7 +286,7 @@ class TestEdgeCases:
     def test_missing_default_timestamp_does_not_warn(self):
         """Default config timestamp should not warn when not explicitly requested."""
         df = pl.DataFrame({"value": [100.0, 101.0, 102.0]})
-        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -305,7 +300,7 @@ class TestEdgeCases:
     def test_explicit_missing_timestamp_still_warns(self):
         """Explicitly requesting a missing timestamp column should still warn."""
         df = pl.DataFrame({"value": [100.0, 101.0, 102.0]})
-        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=-0.01)
+        config = LabelingConfig.triple_barrier(upper_barrier=0.02, lower_barrier=0.01)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -351,7 +346,7 @@ class TestBarDuration:
         """Test bar duration when barrier is hit."""
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,  # 2% up
-            lower_barrier=-0.01,  # 1% down
+            lower_barrier=0.01,  # 1% down
             max_holding_period=50,
         )
 
@@ -375,7 +370,7 @@ class TestBarDuration:
         """Test bar duration on timeout."""
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,  # 10% up (won't be hit)
-            lower_barrier=-0.10,  # 10% down (won't be hit)
+            lower_barrier=0.10,  # 10% down (won't be hit)
             max_holding_period=15,
         )
 
@@ -407,7 +402,7 @@ class TestBarDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.015,
+            lower_barrier=0.015,
             max_holding_period=30,
         )
 
@@ -452,7 +447,7 @@ class TestBarDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=20,
         )
 
@@ -482,7 +477,7 @@ class TestBarDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=20,
         )
 
@@ -520,7 +515,7 @@ class TestBarDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=15,
         )
 
@@ -563,7 +558,7 @@ class TestTimeDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.015,
+            lower_barrier=0.015,
             max_holding_period=20,
         )
 
@@ -625,7 +620,7 @@ class TestTimeDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,  # Won't be hit
-            lower_barrier=-0.10,  # Won't be hit
+            lower_barrier=0.10,  # Won't be hit
             max_holding_period=15,  # Will timeout
         )
 
@@ -674,7 +669,7 @@ class TestTimeDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,
-            lower_barrier=-0.10,
+            lower_barrier=0.10,
             max_holding_period=5,
         )
 
@@ -715,7 +710,7 @@ class TestTimeDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=20,
         )
 
@@ -751,7 +746,7 @@ class TestTimeDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.03,
-            lower_barrier=-0.02,
+            lower_barrier=0.02,
             max_holding_period=15,
         )
 
@@ -800,7 +795,7 @@ class TestTimeDuration:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.10,
-            lower_barrier=-0.10,
+            lower_barrier=0.10,
             max_holding_period=10,
         )
 
@@ -886,7 +881,7 @@ class TestPerformance:
         # Create config
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=20,
         )
 
@@ -922,7 +917,7 @@ class TestPerformance:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=20,
         )
 
@@ -1004,7 +999,7 @@ class TestPerformance:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=max_holding_period,
         )
 
@@ -1035,7 +1030,7 @@ class TestPerformance:
 
         config = LabelingConfig.triple_barrier(
             upper_barrier=0.02,
-            lower_barrier=-0.01,
+            lower_barrier=0.01,
             max_holding_period=20,
         )
 

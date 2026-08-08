@@ -10,8 +10,8 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
@@ -95,7 +95,6 @@ def sma_polars(column: str, period: int) -> pl.Expr:
     name="sma",
     category="trend",
     description="SMA - Simple Moving Average",
-    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,
@@ -105,7 +104,7 @@ def sma(
     close: npt.NDArray[np.float64] | pl.Series | str,
     period: int,
     implementation: Literal["auto", "numba", "polars"] = "auto",
-) -> npt.NDArray[np.float64] | pl.Expr:
+) -> npt.NDArray[np.float64] | pl.Expr | pl.Series:
     """
     Simple Moving Average with automatic implementation selection.
 

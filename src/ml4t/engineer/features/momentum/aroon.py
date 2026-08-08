@@ -8,8 +8,8 @@ They measure how long it has been since the highest high and lowest low.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
@@ -218,7 +218,6 @@ def aroonosc_polars(high_column: str, low_column: str, timeperiod: int = 14) -> 
     name="aroon",
     category="momentum",
     description="Aroon - identifies trend changes and strength",
-    lookback=0,
     normalized=True,
     value_range=(0.0, 100.0),
     formula="",
@@ -278,32 +277,27 @@ def aroon(
         # Column names provided for Polars
         return aroon_polars(high, low, timeperiod)
 
-    # Convert to numpy if needed
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
 
     # Ensure both arrays have the same length
-    if len(high) != len(low):
+    if len(high_array) != len(low_array):
         raise ValueError(
-            f"high and low must have the same length. Got {len(high)} and {len(low)}",
+            f"high and low must have the same length. Got {len(high_array)} and {len(low_array)}",
         )
 
-    return tuple(aroon_numba(high, low, timeperiod))
+    return tuple(aroon_numba(high_array, low_array, timeperiod))
 
 
 @feature(
     name="aroonosc",
     category="momentum",
     description="Aroon Oscillator - difference between Aroon Up and Aroon Down",
-    lookback="timeperiod",
     normalized=True,
     value_range=(-100.0, 100.0),
     formula="AroonOsc = AroonUp - AroonDown",
     ta_lib_compatible=True,
     input_type="HL",
-    parameters={"timeperiod": 14},
     tags=["oscillator", "trend"],
 )
 def aroonosc(
@@ -357,19 +351,16 @@ def aroonosc(
         # Column names provided for Polars
         return aroonosc_polars(high, low, timeperiod)
 
-    # Convert to numpy if needed
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
 
     # Ensure both arrays have the same length
-    if len(high) != len(low):
+    if len(high_array) != len(low_array):
         raise ValueError(
-            f"high and low must have the same length. Got {len(high)} and {len(low)}",
+            f"high and low must have the same length. Got {len(high_array)} and {len(low_array)}",
         )
 
-    return aroonosc_numba(high, low, timeperiod)
+    return aroonosc_numba(high_array, low_array, timeperiod)
 
 
 # Export all functions

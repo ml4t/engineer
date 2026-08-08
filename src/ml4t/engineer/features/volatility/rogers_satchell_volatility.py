@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="rogers_satchell_volatility",
     category="volatility",
     description="Rogers-Satchell Volatility - drift-independent OHLC estimator",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

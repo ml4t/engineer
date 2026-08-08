@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="volume_weighted_price_momentum",
     category="microstructure",
     description="VWPM - volume-weighted price momentum",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

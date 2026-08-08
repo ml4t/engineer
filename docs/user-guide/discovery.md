@@ -11,12 +11,16 @@ registry-driven workflows instead of hardcoding indicator names.
 
 ## Feature Registry
 
-The registry is the metadata backbone — every feature registers its name, category, parameters, input requirements, and validation status.
+The registry records every feature's name, category, parameters, input requirements,
+and validation status.
 
+<!-- ml4t-exec -->
 ```python
 from ml4t.engineer.core.registry import get_registry
 
 registry = get_registry()
+assert "rsi" in registry.list_all()
+assert registry.get("rsi").category == "momentum"
 ```
 
 ### List Features
@@ -164,7 +168,17 @@ feature_catalog.tags()
 | `dependencies` | `list[str]` | Other features this depends on |
 | `references` | `list[str]` | Academic references |
 | `tags` | `list[str]` | Searchable tags |
-| `lookback` | `Callable` | Function returning minimum lookback period |
+| `lookback` | `Callable` | Function returning the first usable zero-based row |
+
+Lookback values assume finite input columns. A value of `19` means that rows
+0 through 18 are warm-up and the feature first becomes usable on row 19, after
+20 input rows. The callable accepts feature parameters, so configured history
+requirements can be inspected before execution:
+
+```python
+feature_catalog.lookback("sma", period=50)
+# 49
+```
 
 ## See It In The Book
 

@@ -9,8 +9,8 @@ can be customized.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.features.trend.ema import ema_numba
 
@@ -144,7 +144,6 @@ def macdfix_numba(
     name="macdfix",
     category="momentum",
     description="MACD Fix - MACD with fixed 12/26 periods",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

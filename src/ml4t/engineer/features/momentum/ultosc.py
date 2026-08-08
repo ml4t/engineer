@@ -16,8 +16,8 @@ Formula:
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -153,7 +153,6 @@ def ultosc_polars(
     name="ultosc",
     category="momentum",
     description="Ultimate Oscillator - weighted average of 3 stochastics",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",
@@ -217,15 +216,12 @@ def ultosc(
         return ultosc_polars(high, low, close, timeperiod1, timeperiod2, timeperiod3)
 
     # Convert to numpy arrays
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
 
     # Validate inputs
-    if len(high) != len(low) or len(high) != len(close):
+    if len(high_array) != len(low_array) or len(high_array) != len(close_array):
         raise ValueError("high, low, and close must have the same length")
 
     if timeperiod1 <= 0 or timeperiod2 <= 0 or timeperiod3 <= 0:
@@ -236,7 +232,14 @@ def ultosc(
             "Time periods must be in ascending order: timeperiod1 < timeperiod2 < timeperiod3",
         )
 
-    return ultosc_numba(high, low, close, timeperiod1, timeperiod2, timeperiod3)
+    return ultosc_numba(
+        high_array,
+        low_array,
+        close_array,
+        timeperiod1,
+        timeperiod2,
+        timeperiod3,
+    )
 
 
 # Export the main function

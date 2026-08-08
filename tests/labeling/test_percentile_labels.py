@@ -166,6 +166,135 @@ class TestRollingPercentileBinaryLabels:
         labels = result["label_long_p100_h1"].drop_nulls().to_list()
         assert 0 in labels
 
+    def test_bar_threshold_waits_for_outcome_realization(self) -> None:
+        """Changing an unresolved future outcome must not alter an earlier threshold."""
+        base = pl.DataFrame({"close": [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 105.0]})
+        changed = (
+            base.with_row_index()
+            .with_columns(
+                pl.when(pl.col("index") == 5).then(110.0).otherwise(pl.col("close")).alias("close")
+            )
+            .drop("index")
+        )
+
+        kwargs = {
+            "horizon": 3,
+            "percentile": 50,
+            "direction": "long",
+            "lookback_window": 1,
+            "min_samples": 1,
+        }
+        base_result = rolling_percentile_binary_labels(base, **kwargs)
+        changed_result = rolling_percentile_binary_labels(changed, **kwargs)
+
+        assert base_result["forward_return_3"][3] == changed_result["forward_return_3"][3]
+        assert base_result["threshold_p50_h3"][3] == changed_result["threshold_p50_h3"][3]
+        assert base_result["label_long_p50_h3"][3] == changed_result["label_long_p50_h3"][3]
+
+    def test_time_threshold_waits_for_irregular_outcome_realization(self) -> None:
+        """Time horizons must align history to the matched outcome timestamp."""
+        from datetime import datetime, timedelta
+
+        start = datetime(2024, 1, 1, 9, 30)
+        timestamps = [start + timedelta(minutes=offset) for offset in (0, 1, 3, 4, 6)]
+        base = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "close": [100.0, 100.0, 100.0, 100.0, 100.0],
+            }
+        )
+        changed = (
+            base.with_row_index()
+            .with_columns(
+                pl.when(pl.col("index") == 4).then(110.0).otherwise(pl.col("close")).alias("close")
+            )
+            .drop("index")
+        )
+
+        kwargs = {
+            "horizon": "3m",
+            "percentile": 100,
+            "direction": "long",
+            "lookback_window": "10m",
+            "min_samples": 1,
+        }
+        base_result = rolling_percentile_binary_labels(base, **kwargs)
+        changed_result = rolling_percentile_binary_labels(changed, **kwargs)
+
+        target_index = 3
+        assert (
+            base_result["threshold_p100_h3m"][target_index]
+            == changed_result["threshold_p100_h3m"][target_index]
+        )
+
+    def test_time_threshold_includes_all_outcomes_realized_at_same_time(self) -> None:
+        """Rolling thresholds must retain duplicate realization timestamps."""
+        from datetime import datetime, timedelta
+
+        start = datetime(2024, 1, 1, 9, 30)
+        data = pl.DataFrame(
+            {
+                "timestamp": [start, start + timedelta(minutes=1), start + timedelta(minutes=3)],
+                "close": [100.0, 200.0, 300.0],
+            }
+        )
+
+        low = rolling_percentile_binary_labels(
+            data,
+            horizon="2m",
+            percentile=0,
+            lookback_window="10m",
+            min_samples=1,
+        )
+        high = rolling_percentile_binary_labels(
+            data,
+            horizon="2m",
+            percentile=100,
+            lookback_window="10m",
+            min_samples=1,
+        )
+
+        assert low["threshold_p0_h2m"][2] == pytest.approx(0.5)
+        assert high["threshold_p100_h2m"][2] == pytest.approx(2.0)
+
+    def test_bar_threshold_isolated_by_panel_and_session(self) -> None:
+        """Outcome availability must respect both asset and session boundaries."""
+        data = pl.DataFrame(
+            {
+                "symbol": ["A"] * 6 + ["B"] * 6,
+                "session": ["s1"] * 3 + ["s2"] * 3 + ["s1"] * 3 + ["s2"] * 3,
+                "close": [
+                    100.0,
+                    101.0,
+                    102.0,
+                    200.0,
+                    202.0,
+                    204.0,
+                    1000.0,
+                    990.0,
+                    980.0,
+                    500.0,
+                    495.0,
+                    490.0,
+                ],
+            }
+        )
+
+        result = rolling_percentile_binary_labels(
+            data,
+            horizon=2,
+            percentile=50,
+            lookback_window=10,
+            min_samples=1,
+            session_col="session",
+            group_col="symbol",
+        )
+
+        a = result.filter(pl.col("symbol") == "A")
+        b = result.filter(pl.col("symbol") == "B")
+        assert a["threshold_p50_h2"][2] == pytest.approx(0.02)
+        assert b["threshold_p50_h2"][2] == pytest.approx(-0.02)
+
     def test_time_based_threshold_uses_only_historical_forward_returns(self) -> None:
         """Time-based rolling threshold should also use shifted forward returns."""
         from datetime import datetime
@@ -336,6 +465,60 @@ class TestRollingPercentileMultiLabels:
         # Should have 4 label columns (2 horizons × 2 percentiles)
         label_cols = [c for c in result.columns if c.startswith("label_")]
         assert len(label_cols) == 4
+
+    def test_distinct_float_percentiles_have_distinct_columns(
+        self, sample_price_data: pl.DataFrame
+    ) -> None:
+        """Accepted float configurations must retain separate identities."""
+        result = rolling_percentile_multi_labels(
+            sample_price_data,
+            horizons=[2],
+            percentiles=[50.1, 50.9],
+            lookback_window=10,
+        )
+
+        assert "threshold_p50p1_h2" in result.columns
+        assert "threshold_p50p9_h2" in result.columns
+        assert "label_long_p50p1_h2" in result.columns
+        assert "label_long_p50p9_h2" in result.columns
+
+    @pytest.mark.parametrize(
+        ("horizons", "percentiles", "message"),
+        [
+            ([], [50], "horizons"),
+            ([2], [], "percentiles"),
+            ([2], [50, 50.0], "duplicate percentile"),
+            (["1h", "1H"], [50], "duplicate horizon"),
+        ],
+    )
+    def test_rejects_empty_or_duplicate_requests(
+        self,
+        sample_price_data: pl.DataFrame,
+        horizons,
+        percentiles,
+        message,
+    ) -> None:
+        """Multi-label validation must fail atomically before computation."""
+        with pytest.raises(ValueError, match=message):
+            rolling_percentile_multi_labels(
+                sample_price_data,
+                horizons=horizons,
+                percentiles=percentiles,
+                lookback_window=10,
+            )
+
+    @pytest.mark.parametrize("percentile", [-0.1, 100.1, np.nan, np.inf, -np.inf])
+    def test_rejects_invalid_percentiles(
+        self, sample_price_data: pl.DataFrame, percentile: float
+    ) -> None:
+        """Percentiles must be finite values in the closed unit-percent range."""
+        with pytest.raises(ValueError, match="percentile"):
+            rolling_percentile_binary_labels(
+                sample_price_data,
+                horizon=2,
+                percentile=percentile,
+                lookback_window=10,
+            )
 
     def test_uses_shared_contract_column_mapping(self) -> None:
         """Multi-label API should pass DataContractConfig through to binary calls."""

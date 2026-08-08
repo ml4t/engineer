@@ -10,8 +10,8 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -74,7 +74,6 @@ def max_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArray[np
     name="maximum",
     category="math",
     description="MAXIMUM - Highest value over period",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

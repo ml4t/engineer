@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="kyle_lambda",
     category="microstructure",
     description="Kyle's Lambda - measures price impact per unit of order flow",
-    lookback="period",
     normalized=False,
     formula="lambda = cov(r, sqrt(|v|)) / var(sqrt(|v|))",
     ta_lib_compatible=False,

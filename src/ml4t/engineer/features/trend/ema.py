@@ -8,8 +8,8 @@ decreasing exponentially for older close. Uses TA-Lib's exact initialization met
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
@@ -114,7 +114,6 @@ def ema_polars(column: str, period: int) -> pl.Expr:
     name="ema",
     category="trend",
     description="EMA - Exponential Moving Average",
-    lookback="period",
     normalized=False,
     formula="",
     ta_lib_compatible=True,

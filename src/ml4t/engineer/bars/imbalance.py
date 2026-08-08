@@ -22,8 +22,8 @@ Where:
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.bars.base import BarSampler
 from ml4t.engineer.core.exceptions import DataValidationError
 
@@ -502,25 +502,25 @@ class TickImbalanceBarSampler(BarSampler):
 
     def _empty_tick_imbalance_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "buy_count": [],
-                "sell_count": [],
-                "tick_imbalance": [],
-                "cumulative_theta": [],
-                "expected_imbalance": [],
-                "expected_t": [],
-                "p_buy": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "buy_count",
+                "sell_count",
+                "tick_imbalance",
+                "cumulative_theta",
+                "expected_imbalance",
+                "expected_t",
+                "p_buy",
+            ]
         )
 
 
@@ -750,25 +750,25 @@ class ImbalanceBarSampler(BarSampler):
 
     def _empty_imbalance_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "imbalance": [],
-                "cumulative_theta": [],
-                "expected_imbalance": [],
-                "expected_t": [],
-                "p_buy": [],
-                "v_plus": [],
-                "e_v": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "imbalance",
+                "cumulative_theta",
+                "expected_imbalance",
+                "expected_t",
+                "p_buy",
+                "v_plus",
+                "e_v",
+            ]
         )
 
 
@@ -1009,23 +1009,23 @@ class FixedTickImbalanceBarSampler(BarSampler):
 
     def _empty_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "buy_count": [],
-                "sell_count": [],
-                "tick_imbalance": [],
-                "cumulative_theta": [],
-                "threshold": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "buy_count",
+                "sell_count",
+                "tick_imbalance",
+                "cumulative_theta",
+                "threshold",
+            ]
         )
 
 
@@ -1171,21 +1171,21 @@ class FixedVolumeImbalanceBarSampler(BarSampler):
 
     def _empty_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "volume_imbalance": [],
-                "cumulative_theta": [],
-                "threshold": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "volume_imbalance",
+                "cumulative_theta",
+                "threshold",
+            ]
         )
 
 
@@ -1436,14 +1436,14 @@ class WindowTickImbalanceBarSampler(BarSampler):
                         "tick_imbalance": buy_count - sell_count,
                         "cumulative_theta": float(np.sum(bar_sides)),
                         "expected_imbalance": (
-                            float(expected_thetas[-1]) if expected_thetas else 0.0
+                            float(expected_thetas[-1]) if expected_thetas.size > 0 else 0.0
                         ),
                         "expected_t": (
                             float(expected_ts[-1])
-                            if expected_ts
+                            if expected_ts.size > 0
                             else float(self.initial_expected_t)
                         ),
-                        "p_buy": float(p_buys[-1]) if p_buys else 0.5,
+                        "p_buy": float(p_buys[-1]) if p_buys.size > 0 else 0.5,
                     },
                 )
                 bars.append(bar)
@@ -1455,25 +1455,25 @@ class WindowTickImbalanceBarSampler(BarSampler):
 
     def _empty_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "buy_count": [],
-                "sell_count": [],
-                "tick_imbalance": [],
-                "cumulative_theta": [],
-                "expected_imbalance": [],
-                "expected_t": [],
-                "p_buy": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "buy_count",
+                "sell_count",
+                "tick_imbalance",
+                "cumulative_theta",
+                "expected_imbalance",
+                "expected_t",
+                "p_buy",
+            ]
         )
 
 
@@ -1715,15 +1715,15 @@ class WindowVolumeImbalanceBarSampler(BarSampler):
                         "volume_imbalance": buy_volume - sell_volume,
                         "cumulative_theta": float(np.sum(bar_volumes * bar_sides)),
                         "expected_imbalance": (
-                            float(expected_thetas[-1]) if expected_thetas else 0.0
+                            float(expected_thetas[-1]) if expected_thetas.size > 0 else 0.0
                         ),
                         "expected_t": (
                             float(expected_ts[-1])
-                            if expected_ts
+                            if expected_ts.size > 0
                             else float(self.initial_expected_t)
                         ),
                         "imbalance_factor": (
-                            float(imbalance_factors[-1]) if imbalance_factors else 0.0
+                            float(imbalance_factors[-1]) if imbalance_factors.size > 0 else 0.0
                         ),
                     },
                 )
@@ -1736,23 +1736,23 @@ class WindowVolumeImbalanceBarSampler(BarSampler):
 
     def _empty_bars_df(self) -> pl.DataFrame:
         """Return empty DataFrame with correct schema."""
-        return pl.DataFrame(
-            {
-                "timestamp": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": [],
-                "tick_count": [],
-                "buy_volume": [],
-                "sell_volume": [],
-                "volume_imbalance": [],
-                "cumulative_theta": [],
-                "expected_imbalance": [],
-                "expected_t": [],
-                "imbalance_factor": [],
-            },
+        return self._empty_result(
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "tick_count",
+                "buy_volume",
+                "sell_volume",
+                "volume_imbalance",
+                "cumulative_theta",
+                "expected_imbalance",
+                "expected_t",
+                "imbalance_factor",
+            ]
         )
 
 

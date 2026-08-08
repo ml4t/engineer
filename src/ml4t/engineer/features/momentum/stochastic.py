@@ -8,8 +8,8 @@ over a specified period. %K is the raw stochastic, %D is a moving average of %K.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 from ml4t.engineer.features.trend.sma import sma_numba
@@ -165,7 +165,6 @@ def stochastic_polars(
     name="stochastic",
     category="momentum",
     description="Stochastic Oscillator - %K and %D",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",
@@ -250,18 +249,14 @@ def stochastic(
             slowd_period,
         )
 
-    # Convert to numpy if needed
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
 
     slowk, slowd = stochastic_numba(
-        high,
-        low,
-        close,
+        high_array,
+        low_array,
+        close_array,
         fastk_period,
         slowk_period,
         slowd_period,

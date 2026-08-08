@@ -12,7 +12,7 @@ Shows the main workflow in one place:
 - feature computation
 - labeling
 - preprocessing and dataset preparation
-- reusable workflow orchestration
+- leakage-safe train/test construction
 
 ```bash
 python examples/complete_workflow_example.py
@@ -25,7 +25,7 @@ Focused demonstration of the finance-specific feature stack:
 - information-driven bars
 - fractional differencing
 - triple-barrier labeling
-- pipeline integration
+- public API composition
 
 ## Individual Feature Examples
 
@@ -35,15 +35,14 @@ Demonstrates different bar sampling methods:
 
 - Tick bars, volume bars, dollar bars, imbalance bars
 - Statistical comparison of bar properties
-- Visualization of sampling differences
+- Contract checks and sampling statistics
 
 ### 4. **fdiff_example.py** - Fractional Differencing
 
 Shows how to achieve stationarity while preserving memory:
 
 - Finding optimal differencing parameter
-- Comparing with integer differencing
-- Weight function visualization
+- Diagnostics for the selected transform
 
 ### 5. **labeling_example.py** - Triple-Barrier Labeling
 
@@ -52,24 +51,22 @@ Demonstrates advanced labeling for ML:
 - Fixed and dynamic barriers
 - Volatility-based barriers
 - Trailing stops
-- Pipeline integration
+- OHLC execution semantics
 
-## Pipeline Examples
+## API Composition Example
 
-### 6. **pipeline_example.py** - Pipeline API
+### 6. **pipeline_example.py** - Feature and Preprocessing APIs
 
-Shows how to chain transformations:
+Shows how to compose supported transformations:
 
-- Feature engineering pipelines
-- Combining technical indicators
-- Data preprocessing workflows
+- Configured feature computation
+- Multiple technical indicators
+- Train-only data preprocessing
 
 ## Data Requirements
 
-Examples will use real data if available, otherwise create synthetic data:
-
-- BTC futures: `data/crypto/futures/BTC.parquet`
-- SPY tick data: `data/equities/SPY/`
+Every example creates deterministic synthetic data and can run without local
+datasets.
 
 ## Running Examples
 
@@ -85,10 +82,6 @@ python examples/fml_features_demo.py
 # Run specific feature example
 python examples/bars_example.py
 ```
-
-## Output
-
-Some examples generate plots or derived outputs in the working directory.
 
 ## Next Steps
 

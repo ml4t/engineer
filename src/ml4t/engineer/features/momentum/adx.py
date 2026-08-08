@@ -8,9 +8,10 @@ Range: 0-100, where higher close indicate stronger trends.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
+from ml4t.engineer.core.validation import validate_window
 from ml4t.engineer.logging import get_logger, logged_feature
 
 # Module logger
@@ -327,7 +328,6 @@ def adx_polars(
     name="adx",
     category="momentum",
     description="ADX - measures trend strength regardless of direction",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",
@@ -381,6 +381,8 @@ def adx(
     - Based on Directional Movement System from Wilder's book
     - Exact replication of TA-Lib ta_ADX.c algorithm
     """
+    validate_window(period, min_window=2, name="period")
+
     if isinstance(high, str) and isinstance(low, str) and isinstance(close, str):
         # Column names provided for Polars
         return adx_polars(high, low, close, period)
@@ -392,6 +394,9 @@ def adx(
         low = low.to_numpy()
     if isinstance(close, pl.Series):
         close = close.to_numpy()
+
+    if len(high) != len(low) or len(high) != len(close):
+        raise ValueError("high, low, and close must have the same length")
 
     return adx_numba(high, low, close, period)
 

@@ -10,7 +10,6 @@ from ml4t.engineer.core.validation import (
     name="regime_conditional_features",
     category="ml",
     description="Regime Conditional Features - regime-dependent features",
-    lookback=60,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

@@ -22,12 +22,10 @@ class TestRiskFeatures:
         normal_returns = np.random.normal(0.001, 0.02, n)
 
         # Fat-tailed returns (t-distribution)
-        from scipy import stats
-
-        fat_tail_returns = stats.t.rvs(df=4, loc=0.001, scale=0.02, size=n)
+        fat_tail_returns = np.random.standard_t(df=4, size=n) * 0.02 + 0.001
 
         # Skewed returns
-        skewed_returns = stats.skewnorm.rvs(a=-2, loc=0.001, scale=0.02, size=n)
+        skewed_returns = 0.001 - np.abs(np.random.normal(0.0, 0.02, n))
 
         # Create price series from returns
         prices = 100 * np.cumprod(1 + normal_returns)
@@ -196,6 +194,42 @@ class TestRiskFeatures:
         assert len(rolling_dd) > 0
         assert rolling_dd.max() <= 0  # Drawdowns are negative
 
+    def test_maximum_drawdown_uses_only_requested_window(self):
+        """A recovered prior-window loss does not enter the current window."""
+        prices = pl.DataFrame({"prices": [100.0, 50.0, 100.0, 100.0]})
+        expression = risk.maximum_drawdown("prices", window=2)["max_drawdown"]
+
+        actual = prices.select(expression.alias("max_drawdown"))["max_drawdown"].to_list()
+
+        assert actual == pytest.approx([0.0, -0.5, 0.0, 0.0])
+
+    def test_rolling_drawdown_outputs_match_independent_paths(self):
+        """Every rolling output is calculated from one local price path."""
+        values = np.array([100.0, 80.0, 90.0, 70.0, 100.0, 95.0])
+        window = 3
+        expressions = risk.maximum_drawdown("prices", window=window)
+        result = pl.DataFrame({"prices": values}).select(
+            [expr.alias(name) for name, expr in expressions.items()]
+        )
+
+        expected = {name: [] for name in expressions}
+        for end in range(len(values)):
+            local = values[max(0, end - window + 1) : end + 1]
+            peaks = np.maximum.accumulate(local)
+            drawdowns = (local - peaks) / peaks
+            durations = []
+            duration = 0
+            for drawdown in drawdowns:
+                duration = duration + 1 if drawdown < 0 else 0
+                durations.append(duration)
+            expected["max_drawdown"].append(drawdowns.min())
+            expected["max_duration"].append(max(durations))
+            expected["current_drawdown"].append(drawdowns[-1])
+            expected["time_underwater"].append(np.mean(drawdowns < 0))
+
+        for name, values in expected.items():
+            np.testing.assert_allclose(result[name].to_numpy(), values)
+
     def test_downside_deviation(self):
         """Test downside deviation calculation."""
         result = self.df.with_columns(
@@ -268,6 +302,45 @@ class TestRiskFeatures:
         # Check kurtosis exists
         assert kurt.mean() != 0
 
+    def test_higher_moments_use_one_trailing_window(self):
+        """Fifth and sixth moments standardize the same requested sample."""
+        values = np.array([-0.04, 0.01, 0.02, 0.08, -0.02, 0.03, 0.10, -0.01])
+        frame = pl.DataFrame({"returns": values})
+        moments = risk.higher_moments("returns", window=4)
+        result = frame.select(
+            moments["hyperskewness"].alias("fifth"),
+            moments["hyperkurtosis"].alias("sixth"),
+        )
+
+        trailing = values[-4:]
+        standardized = (trailing - trailing.mean()) / trailing.std(ddof=1)
+
+        assert result["fifth"][-1] == pytest.approx(np.mean(standardized**5))
+        assert result["sixth"][-1] == pytest.approx(np.mean(standardized**6) - 15)
+
+    @pytest.mark.parametrize(
+        "transform",
+        [
+            lambda values: values,
+            lambda values: values + 100.0,
+            lambda values: values * 3.0,
+        ],
+    )
+    def test_higher_moments_are_location_and_scale_invariant(self, transform):
+        """Standardized moments are unchanged by positive affine transforms."""
+        base = np.array([-0.04, 0.01, 0.02, 0.08, -0.02, 0.03, 0.10, -0.01])
+        values = transform(base)
+        moments = risk.higher_moments(pl.lit(pl.Series(values)), window=4)
+        result = pl.select(
+            moments["hyperskewness"].alias("fifth"),
+            moments["hyperkurtosis"].alias("sixth"),
+        )
+
+        trailing = values[-4:]
+        standardized = (trailing - trailing.mean()) / trailing.std(ddof=1)
+        assert result["fifth"][-1] == pytest.approx(np.mean(standardized**5))
+        assert result["sixth"][-1] == pytest.approx(np.mean(standardized**6) - 15)
+
     def test_risk_adjusted_returns(self):
         """Test risk-adjusted return metrics."""
         ratios = risk.risk_adjusted_returns(
@@ -318,11 +391,9 @@ class TestRiskFeatures:
 
     def test_information_ratio(self):
         """Test Information Ratio calculation."""
-        # Create benchmark returns
-        benchmark_returns = self.df["normal_returns"] * 0.8 + np.random.normal(
-            0,
-            0.005,
-            len(self.df),
+        # Construct a benchmark with lower expected returns and small tracking noise.
+        benchmark_returns = (
+            self.df["normal_returns"] - 0.001 + np.random.normal(0, 0.0001, len(self.df))
         )
 
         result = self.df.with_columns(

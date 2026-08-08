@@ -8,16 +8,29 @@ Based on advances in financial machine learning, particularly the work on
 fractional differencing for feature engineering.
 """
 
+import importlib
 from functools import lru_cache
 
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
-from statsmodels.tsa.stattools import adfuller
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
+
+
+def _adfuller(values: npt.NDArray[np.float64]) -> tuple[float, float]:
+    try:
+        adfuller = importlib.import_module("statsmodels.tsa.stattools").adfuller
+    except ImportError as error:
+        raise ImportError(
+            "ADF diagnostics require statsmodels, which is unavailable on Python 3.15 "
+            "until its compiled dependencies publish compatible wheels."
+        ) from error
+
+    result = adfuller(values, autolag="AIC")
+    return float(result[0]), float(result[1])
 
 
 @jit(nopython=True, cache=True)  # type: ignore[misc]
@@ -151,7 +164,6 @@ def _apply_ffd_weights_nb(
     name="ffdiff",
     category="ml",
     description="Fractional differencing for stationarity with memory preservation (FFD)",
-    lookback="variable",
     # Note: Output is stationary but value_range is data-dependent (based on input volatility)
     # so we don't set normalized=True to avoid normalization warnings
     formula="w_k = prod_{i=0}^{k-1} (d-i) / k! ; result_t = sum_{k=0}^K w_k * x_{t-k}",
@@ -264,7 +276,7 @@ def find_optimal_d(
     clean_values = values_np[~np.isnan(values_np)]
 
     # Test if already stationary
-    adf_result = adfuller(clean_values, autolag="AIC")
+    adf_result = _adfuller(clean_values)
     if adf_result[1] < adf_pvalue_threshold:
         return {"optimal_d": 0.0, "adf_pvalue": adf_result[1], "correlation": 1.0}
 
@@ -288,7 +300,7 @@ def find_optimal_d(
             continue
 
         # Test stationarity
-        adf_result = adfuller(clean_ffd, autolag="AIC")
+        adf_result = _adfuller(clean_ffd)
 
         if adf_result[1] < adf_pvalue_threshold:
             # Calculate correlation with original
@@ -352,7 +364,7 @@ def fdiff_diagnostics(
 
     # Calculate diagnostics
     if len(clean_ffd) >= 50:
-        adf_result = adfuller(clean_ffd, autolag="AIC")
+        adf_result = _adfuller(clean_ffd)
         adf_stat = adf_result[0]
         adf_pvalue = adf_result[1]
 

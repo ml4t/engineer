@@ -27,9 +27,7 @@ Critical for large datasets with long periods.
 # Donchian Channel
 df = max_(df, period=20, price_col="high")
 df = min_(df, period=20, price_col="low")
-df = df.with_columns([
-    ((pl.col("max_20") + pl.col("min_20")) / 2).alias("donchian_mid")
-])
+df = df.with_columns([((pl.col("max_20") + pl.col("min_20")) / 2).alias("donchian_mid")])
 ```
 
 ## Note on Naming

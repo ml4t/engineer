@@ -42,7 +42,6 @@ def effective_tick_rule(close: pl.Expr | str) -> pl.Expr:
     name="order_flow_imbalance",
     category="microstructure",
     description="Order Flow Imbalance - imbalance between buy and sell orders",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

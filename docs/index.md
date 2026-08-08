@@ -54,14 +54,25 @@ library calls.
 
 You have OHLCV data and need a feature matrix:
 
+<!-- ml4t-exec -->
 ```python
+from datetime import date, timedelta
+
 import polars as pl
 from ml4t.engineer import compute_features
 
-df = pl.read_parquet("spy_daily.parquet")
+close = [100.0 + i * 0.1 + (i % 7) * 0.2 for i in range(100)]
+df = pl.DataFrame({
+    "timestamp": [date(2024, 1, 1) + timedelta(days=i) for i in range(100)],
+    "open": close,
+    "high": [price + 1.0 for price in close],
+    "low": [price - 1.0 for price in close],
+    "close": close,
+    "volume": [100_000 + i * 100 for i in range(100)],
+})
 features = compute_features(df, ["rsi", "macd", "atr"])
 
-print(features.select("rsi_14", "macd", "atr_14").tail(3))
+assert {"rsi", "macd", "atr"} <= set(features.columns)
 ```
 
 That single call appends validated indicator columns to the same DataFrame you will
@@ -94,7 +105,7 @@ You have features and labels. You need train/test splits with train-only scaling
 from ml4t.engineer import create_dataset_builder
 
 builder = create_dataset_builder(
-    features=labels.select(["rsi_14", "macd", "atr_14"]),
+    features=labels.select(["rsi", "macd", "atr"]),
     labels=labels["label"],
     dates=labels["timestamp"],
     scaler="robust",

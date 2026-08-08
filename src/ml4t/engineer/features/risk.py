@@ -33,15 +33,19 @@ Conditional VaR (CVaR/Expected Shortfall), maximum drawdown analysis, and
 higher moment calculations for financial risk management.
 """
 
+from statistics import NormalDist
+
 import numpy as np
+import numpy.typing as npt
 import polars as pl
-from scipy import stats
 
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import (
     validate_threshold,
     validate_window,
 )
+
+_STANDARD_NORMAL = NormalDist()
 
 
 def value_at_risk(
@@ -105,7 +109,7 @@ def value_at_risk(
         # Parametric VaR: assume normal distribution
         mean = returns.rolling_mean(window, min_samples=window // 2)
         std = returns.rolling_std(window, min_samples=window // 2)
-        z_score = pl.lit(stats.norm.ppf(alpha))
+        z_score = pl.lit(_STANDARD_NORMAL.inv_cdf(alpha))
         return mean + z_score * std
 
     # cornish_fisher
@@ -118,7 +122,7 @@ def value_at_risk(
     kurt = returns.rolling_kurtosis(window, fisher=False)
 
     # Cornish-Fisher expansion
-    z = pl.lit(stats.norm.ppf(alpha))
+    z = pl.lit(_STANDARD_NORMAL.inv_cdf(alpha))
     cf_adjustment = (
         z
         + (z**2 - 1) * skew / 6
@@ -203,8 +207,8 @@ def conditional_value_at_risk(
     alpha = 1 - confidence_level
 
     # For normal distribution: ES = μ - σ * φ(z_α) / α
-    z_alpha = stats.norm.ppf(alpha)
-    pdf_z = stats.norm.pdf(z_alpha)
+    z_alpha = _STANDARD_NORMAL.inv_cdf(alpha)
+    pdf_z = _STANDARD_NORMAL.pdf(z_alpha)
 
     return mean - std * pl.lit(pdf_z / alpha)
 
@@ -213,11 +217,9 @@ def conditional_value_at_risk(
     name="maximum_drawdown",
     category="risk",
     description="Maximum Drawdown - largest peak-to-trough decline",
-    lookback="window",  # Uses window parameter for rolling calculation
     normalized=False,
     formula="MDD = max((peak - trough) / peak)",
     input_type="close",
-    parameters={"window": 252},
     tags=["risk", "drawdown"],
 )
 def maximum_drawdown(
@@ -233,8 +235,8 @@ def maximum_drawdown(
     ----------
     close : pl.Expr | str
         Price series (not returns)
-    window : int, optional
-        Rolling window size. If None, calculates expanding maximum drawdown
+    window : int or None, default None
+        Rolling window size. If None, calculates expanding maximum drawdown.
 
     Returns
     -------
@@ -259,10 +261,25 @@ def maximum_drawdown(
         running_max = close.cum_max()
         drawdown = (close - running_max) / running_max
 
-        # For expanding window, return simple metrics
+        def expanding_max_duration(series: pl.Series) -> pl.Series:
+            current_duration = 0
+            maximum_duration = 0
+            result = []
+            for value in series:
+                if value is not None and value < 0:
+                    current_duration += 1
+                    maximum_duration = max(maximum_duration, current_duration)
+                else:
+                    current_duration = 0
+                result.append(maximum_duration)
+            return pl.Series(result, dtype=pl.Int64)
+
         return {
             "max_drawdown": drawdown.cum_min(),
-            "max_duration": pl.lit(None),  # Not easily computed in expanding mode
+            "max_duration": drawdown.map_batches(
+                expanding_max_duration,
+                return_dtype=pl.Int64,
+            ),
             "current_drawdown": drawdown,
             "time_underwater": (drawdown < 0).cast(pl.Int32).cum_sum()
             / pl.int_range(1, pl.len() + 1),
@@ -271,41 +288,55 @@ def maximum_drawdown(
     running_max = close.rolling_max(window, min_samples=window // 2)
     drawdown = (close - running_max) / running_max
 
-    # Calculate rolling maximum drawdown
-    max_drawdown = drawdown.rolling_min(window, min_samples=window // 2)
+    def window_drawdowns(s: pl.Series) -> npt.NDArray[np.float64]:
+        values = s.to_numpy()
+        clean_values = values[np.isfinite(values)]
+        if len(clean_values) == 0:
+            return np.array([], dtype=np.float64)
+        peaks = np.maximum.accumulate(clean_values)
+        return (clean_values - peaks) / peaks
 
-    # Calculate drawdown duration using a custom function
-    def calculate_dd_duration(s: pl.Series) -> float:
-        """Calculate maximum drawdown duration in a window."""
-        close = s.to_numpy()
-        mask = ~np.isnan(close)
-        clean_values = close[mask]
-
-        if len(clean_values) < 2:
+    def calculate_max_drawdown(s: pl.Series) -> float:
+        local_drawdowns = window_drawdowns(s)
+        if len(local_drawdowns) == 0:
             return float(np.nan)
+        return float(np.min(local_drawdowns))
 
-        # Simple duration calculation
+    def calculate_dd_duration(s: pl.Series) -> float:
+        local_drawdowns = window_drawdowns(s)
+        if len(local_drawdowns) == 0:
+            return float(np.nan)
         max_duration = 0
         current_duration = 0
-
-        for val in clean_values:
-            if val < 0:
+        for value in local_drawdowns:
+            if value < 0:
                 current_duration += 1
                 max_duration = max(max_duration, current_duration)
             else:
                 current_duration = 0
-
         return float(max_duration)
 
-    # Apply duration calculation
-    max_duration = drawdown.rolling_map(
+    def calculate_time_underwater(s: pl.Series) -> float:
+        local_drawdowns = window_drawdowns(s)
+        if len(local_drawdowns) == 0:
+            return float(np.nan)
+        return float(np.mean(local_drawdowns < 0))
+
+    max_drawdown = close.rolling_map(
+        calculate_max_drawdown,
+        window_size=window,
+        min_samples=window // 2,
+    )
+    max_duration = close.rolling_map(
         calculate_dd_duration,
         window_size=window,
         min_samples=window // 2,
     )
-
-    # Time underwater (percentage of time in drawdown)
-    time_underwater = (drawdown < 0).cast(pl.Float64).rolling_mean(window, min_samples=window // 2)
+    time_underwater = close.rolling_map(
+        calculate_time_underwater,
+        window_size=window,
+        min_samples=window // 2,
+    )
 
     return {
         "max_drawdown": max_drawdown,
@@ -319,12 +350,10 @@ def maximum_drawdown(
     name="downside_deviation",
     category="risk",
     description="Downside Deviation (Semi-Deviation) - volatility of negative returns",
-    lookback="window",
     normalized=True,
     value_range=(0.0, 2.0),  # Typical range for daily return volatility
     formula="DD = sqrt(mean((min(r - target, 0))^2))",
     input_type="returns",
-    parameters={"window": 252},
     tags=["risk", "downside", "semi-deviation"],
 )
 def downside_deviation(
@@ -371,12 +400,10 @@ def downside_deviation(
     name="tail_ratio",
     category="risk",
     description="Tail Ratio - ratio of positive to negative tail events",
-    lookback="window",
     normalized=True,
     value_range=(0.0, 10.0),  # Ratio range, typically 0.5-2.0, but wider for safety
     formula="TR = abs(95th percentile) / abs(5th percentile)",
     input_type="returns",
-    parameters={"window": 252},
     tags=["risk", "tails", "extremes"],
 )
 def tail_ratio(
@@ -433,11 +460,9 @@ def tail_ratio(
     name="higher_moments",
     category="risk",
     description="Higher Moments - skewness and kurtosis of returns",
-    lookback="window",
     normalized=False,  # Returns dict with multiple metrics
     formula="Skew = E[(r - mean)^3] / std^3, Kurt = E[(r - mean)^4] / std^4",
     input_type="returns",
-    parameters={"window": 252},
     tags=["risk", "skewness", "kurtosis", "moments"],
 )
 def higher_moments(
@@ -475,20 +500,30 @@ def higher_moments(
 
     returns = pl.col(returns) if isinstance(returns, str) else returns
 
-    # Standardized returns for moment calculation
-    mean = returns.rolling_mean(window, min_samples=window // 2)
-    std = returns.rolling_std(window, min_samples=window // 2)
-    standardized = (returns - mean) / (std + 1e-10)
+    def standardized_moment(s: pl.Series, power: int, excess: float = 0.0) -> float:
+        values = s.to_numpy()
+        clean_values = values[np.isfinite(values)]
+        if len(clean_values) < 2:
+            return float(np.nan)
+        std = np.std(clean_values, ddof=1)
+        if std == 0 or not np.isfinite(std):
+            return float(np.nan)
+        standardized = (clean_values - np.mean(clean_values)) / std
+        return float(np.mean(standardized**power) - excess)
 
     return {
         "skewness": returns.rolling_skew(window),
         "kurtosis": returns.rolling_kurtosis(window, fisher=True),  # Excess kurtosis
-        "hyperskewness": (standardized**5).rolling_mean(
-            window,
-            min_samples=window // 2,
+        "hyperskewness": returns.rolling_map(
+            lambda s: standardized_moment(s, 5),
+            window_size=window,
+            min_samples=window,
         ),
-        "hyperkurtosis": (standardized**6).rolling_mean(window, min_samples=window // 2)
-        - 15,  # Excess
+        "hyperkurtosis": returns.rolling_map(
+            lambda s: standardized_moment(s, 6, 15.0),
+            window_size=window,
+            min_samples=window,
+        ),
     }
 
 
@@ -496,11 +531,9 @@ def higher_moments(
     name="risk_adjusted_returns",
     category="risk",
     description="Risk-Adjusted Return Metrics - Sharpe, Sortino, Calmar ratios",
-    lookback="window",
     normalized=False,  # Returns dict with multiple ratios
     formula="Sharpe = (mean_return - rf) / std_return",
     input_type="returns",
-    parameters={"window": 252},
     tags=["risk", "sharpe", "sortino", "risk-adjusted"],
 )
 def risk_adjusted_returns(
@@ -610,16 +643,14 @@ def risk_adjusted_returns(
     name="ulcer_index",
     category="risk",
     description="Ulcer Index - drawdown volatility measure",
-    lookback="window",
     normalized=False,
     formula="UI = sqrt(mean(drawdown^2))",
     input_type="close",
-    parameters={"window": 14},
     tags=["risk", "drawdown", "volatility"],
 )
 def ulcer_index(
     close: pl.Expr | str,
-    window: int = 252,
+    window: int = 14,
 ) -> pl.Expr:
     """Calculate Ulcer Index measuring downside volatility.
 
@@ -630,7 +661,7 @@ def ulcer_index(
     ----------
     close : pl.Expr | str
         Price series (not returns)
-    window : int, default 252
+    window : int, default 14
         Rolling window size
 
     Returns

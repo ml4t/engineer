@@ -23,7 +23,7 @@ from ml4t.engineer.labeling.uniqueness import (
     calculate_sample_weights,
 )
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 from ml4t.engineer.labeling.utils import (
@@ -33,6 +33,57 @@ from ml4t.engineer.labeling.utils import (
     time_horizon_to_bars,
     validate_price_no_nans,
 )
+
+
+def _finite_float_array(values: Any, name: str, *, positive: bool = False) -> np.ndarray:
+    """Convert a one-dimensional input to finite floats and validate its domain."""
+    try:
+        array = np.asarray(values, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise DataValidationError(f"{name} must contain numeric values") from exc
+    if array.ndim != 1 or not np.isfinite(array).all():
+        raise DataValidationError(f"{name} must contain finite numeric values")
+    if positive and np.any(array <= 0):
+        raise DataValidationError(f"{name} must contain positive values")
+    return array
+
+
+def _validate_ohlc_arrays(
+    data: pl.DataFrame,
+    price_col: str,
+    open_col: str | None,
+    high_col: str | None,
+    low_col: str | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Validate prices and return close, open, high, and low arrays."""
+    closes = _finite_float_array(data[price_col].to_numpy(), price_col, positive=True)
+    if high_col is not None and high_col not in data.columns:
+        raise DataValidationError(f"High column '{high_col}' not found in data")
+    if low_col is not None and low_col not in data.columns:
+        raise DataValidationError(f"Low column '{low_col}' not found in data")
+    if (high_col is None) != (low_col is None):
+        raise DataValidationError("high_col and low_col must be provided together")
+    if high_col is None or low_col is None:
+        if open_col is not None:
+            raise DataValidationError("open_col requires high_col and low_col")
+        return closes, np.full(len(closes), np.nan), closes, closes
+
+    highs = _finite_float_array(data[high_col].to_numpy(), high_col, positive=True)
+    lows = _finite_float_array(data[low_col].to_numpy(), low_col, positive=True)
+    if np.any(highs < lows):
+        raise DataValidationError("high prices must be greater than or equal to low prices")
+    if np.any((closes < lows) | (closes > highs)):
+        raise DataValidationError("close prices must lie within each bar's low-high range")
+
+    if open_col is None:
+        opens = np.full(len(closes), np.nan)
+    else:
+        if open_col not in data.columns:
+            raise DataValidationError(f"Open column '{open_col}' not found in data")
+        opens = _finite_float_array(data[open_col].to_numpy(), open_col, positive=True)
+        if np.any((opens < lows) | (opens > highs)):
+            raise DataValidationError("open prices must lie within each bar's low-high range")
+    return closes, opens, highs, lows
 
 
 def _prepare_barrier_arrays(
@@ -72,7 +123,11 @@ def _prepare_barrier_arrays(
     else:
         if config.upper_barrier not in data.columns:
             raise DataValidationError(f"Upper barrier column '{config.upper_barrier}' not found")
-        upper_barriers = data[config.upper_barrier].to_numpy()[event_indices]
+        upper_barriers = _finite_float_array(
+            data[config.upper_barrier].to_numpy()[event_indices],
+            "upper barrier",
+            positive=True,
+        )
 
     # Lower barriers
     if config.lower_barrier is None:
@@ -82,7 +137,11 @@ def _prepare_barrier_arrays(
     else:
         if config.lower_barrier not in data.columns:
             raise DataValidationError(f"Lower barrier column '{config.lower_barrier}' not found")
-        lower_barriers = data[config.lower_barrier].to_numpy()[event_indices]
+        lower_barriers = _finite_float_array(
+            data[config.lower_barrier].to_numpy()[event_indices],
+            "lower barrier",
+            positive=True,
+        )
 
     # Max periods - now supports int, timedelta, duration string, or column name
     max_hp = config.max_holding_period
@@ -116,7 +175,14 @@ def _prepare_barrier_arrays(
                 f"Max holding period column '{max_hp}' not found. "
                 f"If you intended a duration, use format like '1h', '30m', '1d'."
             )
-        max_periods = data[max_hp].to_numpy()[event_indices].astype(np.int64)
+        raw_periods = _finite_float_array(
+            data[max_hp].to_numpy()[event_indices],
+            "holding period",
+            positive=True,
+        )
+        if np.any(raw_periods != np.floor(raw_periods)):
+            raise DataValidationError("holding period must contain integral bar counts")
+        max_periods = raw_periods.astype(np.int64)
     else:
         raise DataValidationError(
             f"Invalid max_holding_period type: {type(max_hp)}. "
@@ -131,7 +197,13 @@ def _prepare_barrier_arrays(
     else:
         if config.side not in data.columns:
             raise DataValidationError(f"Side column '{config.side}' not found")
-        sides = data[config.side].to_numpy()[event_indices].astype(np.int32)
+        raw_sides = _finite_float_array(
+            data[config.side].to_numpy()[event_indices],
+            "side",
+        )
+        if np.any(raw_sides != np.floor(raw_sides)) or not np.isin(raw_sides, [-1, 0, 1]).all():
+            raise DataValidationError("side must contain only -1, 0, or 1")
+        sides = raw_sides.astype(np.int32)
 
     # Trailing stops
     if config.trailing_stop is False or config.trailing_stop is None:
@@ -145,7 +217,11 @@ def _prepare_barrier_arrays(
                 raise DataValidationError(
                     f"Lower barrier column '{config.lower_barrier}' not found"
                 )
-            trailing_stops = np.abs(data[config.lower_barrier].to_numpy()[event_indices])
+            trailing_stops = _finite_float_array(
+                data[config.lower_barrier].to_numpy()[event_indices],
+                "trailing stop",
+                positive=True,
+            )
         else:
             raise DataValidationError(
                 "trailing_stop=True requires either a numeric lower_barrier to derive the "
@@ -156,7 +232,14 @@ def _prepare_barrier_arrays(
     else:
         if config.trailing_stop not in data.columns:
             raise DataValidationError(f"Trailing stop column '{config.trailing_stop}' not found")
-        trailing_stops = data[config.trailing_stop].to_numpy()[event_indices]
+        trailing_stops = _finite_float_array(
+            data[config.trailing_stop].to_numpy()[event_indices],
+            "trailing stop",
+            positive=True,
+        )
+
+    if not np.isfinite(trailing_stops).all() or np.any(trailing_stops < 0):
+        raise DataValidationError("trailing stop values must be finite and nonnegative")
 
     return upper_barriers, lower_barriers, max_periods, sides, trailing_stops
 
@@ -258,6 +341,7 @@ def _triple_barrier_labels_single_group(
     data: pl.DataFrame,
     config: LabelingConfig,
     price_col: str,
+    open_col: str | None,
     high_col: str | None,
     low_col: str | None,
     timestamp_col: str | None,
@@ -286,26 +370,20 @@ def _triple_barrier_labels_single_group(
     else:
         event_indices = np.arange(len(data))
 
-    closes = data[price_col].to_numpy()
-    if high_col is not None:
-        if high_col not in data.columns:
-            raise DataValidationError(f"High column '{high_col}' not found in data")
-        highs = data[high_col].to_numpy()
-    else:
-        highs = closes
-
-    if low_col is not None:
-        if low_col not in data.columns:
-            raise DataValidationError(f"Low column '{low_col}' not found in data")
-        lows = data[low_col].to_numpy()
-    else:
-        lows = closes
+    closes, opens, highs, lows = _validate_ohlc_arrays(
+        data,
+        price_col,
+        open_col,
+        high_col,
+        low_col,
+    )
 
     upper_barriers, lower_barriers, max_periods, sides, trailing_stops = _prepare_barrier_arrays(
         data, config, event_indices, timestamp_col=timestamp_col
     )
     labels, label_indices, label_prices, label_returns, bar_durations = _apply_triple_barrier_nb(
         closes,
+        opens,
         highs,
         lows,
         event_indices,
@@ -360,6 +438,7 @@ def triple_barrier_labels(
         "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
     ] = "returns_uniqueness",
     contract: DataContractConfig | None = None,
+    open_col: str | None = None,
 ) -> pl.DataFrame:
     """Apply triple-barrier labeling to data.
 
@@ -389,6 +468,8 @@ def triple_barrier_labels(
         Weighting scheme: "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
     contract : DataContractConfig | None, default None
         Optional shared dataframe contract. Used when explicit columns/config are omitted.
+    open_col : str, optional
+        Open price used to execute gaps beyond a barrier
 
     Returns
     -------
@@ -398,6 +479,11 @@ def triple_barrier_labels(
 
     Notes
     -----
+    With OHLC inputs, barriers execute at their configured price. If ``open_col``
+    is supplied and the bar opens beyond a barrier, execution uses the open.
+    When one OHLC bar touches both barriers, the lower or stop barrier wins because
+    the bar does not reveal the order of its extremes.
+
     **Important**: Data is automatically sorted by [group_col, timestamp] before labeling.
     This is required because the algorithm scans forward in row order to find
     barrier touches. The result is returned sorted chronologically.
@@ -442,6 +528,7 @@ def triple_barrier_labels(
                 data=group_df,
                 config=config,
                 price_col=resolved_price_col,
+                open_col=open_col,
                 high_col=high_col,
                 low_col=low_col,
                 timestamp_col=resolved_ts_col,
@@ -456,6 +543,7 @@ def triple_barrier_labels(
         data=data,
         config=config,
         price_col=resolved_price_col,
+        open_col=open_col,
         high_col=high_col,
         low_col=low_col,
         timestamp_col=resolved_ts_col,

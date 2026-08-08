@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="interaction_features",
     category="ml",
     description="Interaction Features - feature products for ML",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

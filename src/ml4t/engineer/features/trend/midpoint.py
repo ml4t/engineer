@@ -7,8 +7,8 @@ The midpoint is the average of the highest and lowest close over a given period.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -73,7 +73,6 @@ def midpoint_polars(col: str, timeperiod: int = 14) -> pl.Expr:
     name="midpoint",
     category="trend",
     description="Midpoint - average of highest and lowest close",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

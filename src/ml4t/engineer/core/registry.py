@@ -39,9 +39,9 @@ class FeatureMetadata:
         Note: This indicates ML-readiness, NOT statistical stationarity.
               For proper stationarity testing (ADF/KPSS), use the
               ml4t.engineer.diagnostics.stationarity module.
-    lookback : Callable[[dict[str, Any]], int]
-        Function that returns minimum lookback period given parameters
-        For example: lambda **kwargs: kwargs.get("period", 14)
+    lookback : Callable[..., int]
+        Function returning the zero-based row index of the first structurally
+        usable output for the supplied parameters.
     ta_lib_compatible : bool
         Whether feature matches TA-Lib output
     input_type : str
@@ -98,7 +98,7 @@ class FeatureRegistry:
     ...     description="Relative Strength Index",
     ...     formula="RSI = 100 - (100 / (1 + RS))",
     ...     normalized=True,
-    ...     lookback=14,
+    ...     lookback=lambda **_kwargs: 14,
     ...     ta_lib_compatible=True,
     ... ))
     >>>

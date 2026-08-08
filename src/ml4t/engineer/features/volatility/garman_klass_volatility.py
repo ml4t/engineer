@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="garman_klass_volatility",
     category="volatility",
     description="Garman-Klass Volatility - OHLC-based estimator",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

@@ -11,7 +11,6 @@ from ml4t.engineer.core.validation import (
     name="price_impact_ratio",
     category="microstructure",
     description="Price Impact Ratio - realized price impact per trade",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,
@@ -68,6 +67,12 @@ def price_impact_ratio(
     high_count = high_impact.rolling_sum(period)
     low_count = low_impact.rolling_sum(period)
 
-    ratio = pl.when(low_count > 0).then(high_count / low_count).otherwise(1.0)
+    ratio = (
+        pl.when(low_count.is_null())
+        .then(None)
+        .when(low_count > 0)
+        .then(high_count / low_count)
+        .otherwise(1.0)
+    )
 
     return ratio

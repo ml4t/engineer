@@ -128,6 +128,80 @@ class TestBasicFunctionality:
             assert len(result) == len(sample_ohlc)
             assert "label" in result.columns
 
+    def test_normalizes_atr_and_executes_intrabar_target(self):
+        """ATR price distances must become return fractions before barrier execution."""
+        timestamps = pl.datetime_range(
+            eager=True,
+            start=datetime(2024, 1, 1),
+            end=datetime(2024, 1, 3),
+            interval="1d",
+        )
+        data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "high": [100.0, 101.0, 105.0],
+                "low": [100.0, 99.0, 99.0],
+                "close": [100.0, 100.0, 100.0],
+            }
+        )
+
+        result = atr_triple_barrier_labels(
+            data,
+            atr_tp_multiple=2.0,
+            atr_sl_multiple=1.0,
+            atr_period=1,
+            max_holding_bars=1,
+        )
+
+        assert result["label"][0] is None
+        assert result["upper_barrier_distance"][1] == pytest.approx(4.0)
+        assert result["label"][1] == 1
+        assert result["label_price"][1] == pytest.approx(104.0)
+        assert result["label_return"][1] == pytest.approx(0.04)
+
+    def test_computes_atr_independently_by_group(self):
+        """Interleaved assets must not contribute to one another's ATR."""
+        base = datetime(2024, 1, 1)
+        data = pl.DataFrame(
+            {
+                "timestamp": [
+                    base,
+                    base,
+                    base + timedelta(days=1),
+                    base + timedelta(days=1),
+                ],
+                "symbol": ["A", "B", "A", "B"],
+                "high": [101.0, 1001.0, 103.0, 1003.0],
+                "low": [99.0, 999.0, 101.0, 1001.0],
+                "close": [100.0, 1000.0, 102.0, 1002.0],
+            }
+        )
+
+        result = atr_triple_barrier_labels(
+            data,
+            atr_period=1,
+            max_holding_bars=1,
+            group_col="symbol",
+        )
+
+        for symbol in ("A", "B"):
+            atr_values = result.filter(pl.col("symbol") == symbol)["atr"].to_list()
+            assert np.isnan(atr_values[0])
+            assert atr_values[1] == pytest.approx(3.0)
+
+    def test_preserves_existing_event_time_values(self, sample_ohlc):
+        """ATR warm-up filtering must not overwrite the caller's event selection."""
+        data = sample_ohlc.with_columns(pl.col("timestamp").alias("event_time"))
+
+        result = atr_triple_barrier_labels(
+            data,
+            atr_period=14,
+            max_holding_bars=1,
+        )
+
+        assert result["event_time"].to_list() == data["event_time"].to_list()
+        assert result["label"][:14].is_null().all()
+
 
 class TestEdgeCases:
     """Test edge cases and error handling."""
@@ -298,7 +372,7 @@ class TestIntegration:
                 "high": [100.1, 1000.1, 101.1, 999.1],
                 "low": [99.9, 999.9, 100.9, 998.9],
                 "close": [100.0, 1000.0, 101.0, 999.0],
-                "px": [100.0, 1000.0, 101.0, 999.0],
+                "px": [100.05, 999.95, 101.05, 998.95],
             }
         )
         config = LabelingConfig.atr_barrier(
@@ -314,8 +388,12 @@ class TestIntegration:
         result = atr_triple_barrier_labels(data, config=config)
         a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
         b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
-        assert a0["label_price"] == pytest.approx(101.0)
-        assert b0["label_price"] == pytest.approx(999.0)
+        a1 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") > base)).row(0, named=True)
+        b1 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") > base)).row(0, named=True)
+        assert a0["label_price"] is None
+        assert b0["label_price"] is None
+        assert a1["label_price"] == pytest.approx(101.05)
+        assert b1["label_price"] == pytest.approx(998.95)
 
     def test_uses_shared_contract_column_mapping(self):
         """Column mapping should come from DataContractConfig when config is omitted."""
@@ -328,7 +406,7 @@ class TestIntegration:
                 "high": [100.1, 1000.1, 101.1, 999.1],
                 "low": [99.9, 999.9, 100.9, 998.9],
                 "close": [100.0, 1000.0, 101.0, 999.0],
-                "px": [100.0, 1000.0, 101.0, 999.0],
+                "px": [100.05, 999.95, 101.05, 998.95],
             }
         )
         contract = DataContractConfig(timestamp_col="ts", symbol_col="ticker", price_col="px")
@@ -343,8 +421,12 @@ class TestIntegration:
         )
         a0 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") == base)).row(0, named=True)
         b0 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") == base)).row(0, named=True)
-        assert a0["label_price"] == pytest.approx(101.0)
-        assert b0["label_price"] == pytest.approx(999.0)
+        a1 = result.filter((pl.col("ticker") == "A") & (pl.col("ts") > base)).row(0, named=True)
+        b1 = result.filter((pl.col("ticker") == "B") & (pl.col("ts") > base)).row(0, named=True)
+        assert a0["label_price"] is None
+        assert b0["label_price"] is None
+        assert a1["label_price"] == pytest.approx(101.05)
+        assert b1["label_price"] == pytest.approx(998.95)
 
 
 class TestDocumentationExamples:

@@ -9,8 +9,8 @@ Simple average of the four main price points (OHLC).
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -79,7 +79,6 @@ def avgprice_polars(
     name="avgprice",
     category="price_transform",
     description="AVGPRICE - Average Price",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,
@@ -139,21 +138,20 @@ def avgprice(
     ):
         return avgprice_polars(open, high, low, close)
 
-    # Convert to numpy arrays
-    if isinstance(open, pl.Series):
-        open = open.to_numpy()
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
+    open_array = np.asarray(open, dtype=np.float64)
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
 
     # Validate inputs
-    if len(open) != len(high) or len(open) != len(low) or len(open) != len(close):
+    if (
+        len(open_array) != len(high_array)
+        or len(open_array) != len(low_array)
+        or len(open_array) != len(close_array)
+    ):
         raise ValueError("open, high, low, and close must have the same length")
 
-    return avgprice_numba(open, high, low, close)
+    return avgprice_numba(open_array, high_array, low_array, close_array)
 
 
 # Export the main function

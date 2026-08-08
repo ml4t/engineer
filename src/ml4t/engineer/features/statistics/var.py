@@ -8,8 +8,8 @@ It is the square of the standard deviation.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -105,7 +105,6 @@ def var_polars(col: str, timeperiod: int = 5, nbdev: float = 1.0) -> pl.Expr:  #
     name="var",
     category="statistics",
     description="VAR - Variance",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

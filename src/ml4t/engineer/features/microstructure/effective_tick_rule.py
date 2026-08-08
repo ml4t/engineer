@@ -7,7 +7,6 @@ from ml4t.engineer.core.decorators import feature
     name="effective_tick_rule",
     category="microstructure",
     description="Effective Tick Rule - infers trade direction from price changes",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=False,

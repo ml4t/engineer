@@ -12,8 +12,8 @@ BOP = (Close - Open) / (High - Low)
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -45,7 +45,6 @@ def bop_numba(
     name="bop",
     category="momentum",
     description="BOP - Balance of Power",
-    lookback=0,
     value_range=(-1.0, 1.0),
     normalized=True,
     formula="",

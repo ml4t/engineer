@@ -10,8 +10,8 @@ PLUS_DM = max(high[i] - high[i-1], 0) if high[i] - high[i-1] > low[i-1] - low[i]
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -60,7 +60,6 @@ def plus_dm_numba(
     name="plus_dm",
     category="momentum",
     description="Plus Directional Movement",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

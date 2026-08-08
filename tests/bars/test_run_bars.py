@@ -760,3 +760,18 @@ class TestFixedTickRunBarSampler:
             sample_tick_data, include_incomplete=True
         )
         assert len(with_incomplete) >= len(complete)
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: TickRunBarSampler(expected_ticks_per_bar=5, min_bars_warmup=-1),
+        lambda: VolumeRunBarSampler(expected_ticks_per_bar=5, initial_p_buy=2.0),
+        lambda: VolumeRunBarSampler(expected_ticks_per_bar=5, min_bars_warmup=-1),
+        lambda: DollarRunBarSampler(expected_ticks_per_bar=5, initial_p_buy=2.0),
+        lambda: DollarRunBarSampler(expected_ticks_per_bar=5, min_bars_warmup=-1),
+    ],
+)
+def test_run_sampler_rejects_invalid_probability_and_warmup(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()

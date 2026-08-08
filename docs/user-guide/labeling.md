@@ -95,9 +95,25 @@ config = LabelingConfig.from_yaml("labeling_config.yaml")
 
 The triple-barrier method from AFML Chapter 3 creates labels based on which of three barriers is touched first: upper (profit target), lower (stop loss), or vertical (time limit).
 
+<!-- ml4t-exec -->
 ```python
+from datetime import datetime, timedelta
+
+import polars as pl
 from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.labeling import triple_barrier_labels
+
+close = [100.0 + i * 0.05 + (i % 6) * 0.2 for i in range(60)]
+df = pl.DataFrame({
+    "timestamp": [
+        datetime(2024, 1, 1) + timedelta(minutes=i)
+        for i in range(60)
+    ],
+    "open": close,
+    "high": [price + 0.5 for price in close],
+    "low": [price - 0.5 for price in close],
+    "close": close,
+})
 
 config = LabelingConfig.triple_barrier(
     upper_barrier=0.02,       # 2% profit target
@@ -110,12 +126,15 @@ result = triple_barrier_labels(
     data=df,
     config=config,
     price_col="close",
+    open_col="open",                  # Executes gaps at the open
     high_col="high",                  # For intrabar barrier touches
     low_col="low",                    # For intrabar barrier touches
     timestamp_col="timestamp",        # Required for time-based max_holding
-    calculate_uniqueness=False,       # Compute sample weights
+    calculate_uniqueness=False,
     uniqueness_weight_scheme="returns_uniqueness",
 )
+
+assert {"label", "label_return", "barrier_hit"} <= set(result.columns)
 ```
 
 ### Parameters
@@ -125,6 +144,7 @@ result = triple_barrier_labels(
 | `data` | `pl.DataFrame` | required | OHLCV data |
 | `config` | `LabelingConfig` | required | Barrier configuration |
 | `price_col` | `str` | `"close"` | Price column for barrier calculations |
+| `open_col` | `str \| None` | `None` | Open column for gap execution |
 | `high_col` | `str \| None` | `None` | High column for intrabar touch detection |
 | `low_col` | `str \| None` | `None` | Low column for intrabar touch detection |
 | `timestamp_col` | `str \| None` | `None` | Required when `max_holding_period` is time-based |
@@ -141,7 +161,7 @@ result = triple_barrier_labels(
 | `label_return` | Return from entry to barrier |
 | `label_bars` | Number of bars until barrier |
 | `label_duration` | Time duration until barrier |
-| `barrier_hit` | Which barrier: `"upper"`, `"lower"`, `"vertical"` |
+| `barrier_hit` | Which barrier: `"upper"`, `"lower"`, `"time"` |
 | `label_uniqueness` | Average uniqueness (when `calculate_uniqueness=True`) |
 | `sample_weight` | Sample weight (when `calculate_uniqueness=True`) |
 
@@ -150,8 +170,16 @@ result = triple_barrier_labels(
 Controls directional bias:
 
 - `side=1`: Long-only. Upper barrier = profit, lower barrier = loss.
-- `side=-1`: Short-only. Upper barrier = loss, lower barrier = profit. Labels are flipped.
+- `side=-1`: Short-only. Upper barrier = profit, lower barrier = loss.
 - `side=0`: Symmetric. Both barriers treated equally. Label is +1 or -1 based on direction.
+
+Barrier distances and holding periods must be positive. Dynamic side columns accept
+only -1, 0, and 1.
+
+With high and low columns, an intrabar touch exits at the barrier price. Supplying
+`open_col` makes a gap beyond a barrier exit at the open. If one bar touches both
+barriers, the function selects the stop-loss exit because OHLC data does not show
+which extreme occurred first.
 
 ### Trailing Stop
 
@@ -199,6 +227,12 @@ config = LabelingConfig.atr_barrier(
 result = atr_triple_barrier_labels(df, config=config)
 ```
 
+ATR is computed independently within each asset group. The returned
+`upper_barrier_distance` and `lower_barrier_distance` columns are price-unit
+distances. Internally, the function divides them by the event price before
+calling triple-barrier labeling. ATR warm-up rows and rows with zero ATR have
+null labels. High and low prices determine intrabar touches.
+
 ### When to Use ATR Barriers
 
 | Scenario | Recommendation |
@@ -212,7 +246,8 @@ result = atr_triple_barrier_labels(df, config=config)
 
 ## Rolling Percentile Labels
 
-Adaptive labeling where thresholds are computed from the rolling return distribution. Produces binary long/short signals based on whether forward returns exceed a historical percentile.
+Adaptive labeling computes each threshold from outcomes whose forward horizons have ended.
+An unresolved outcome never contributes to an earlier threshold.
 
 ```python
 from ml4t.engineer.labeling import rolling_percentile_binary_labels
@@ -238,6 +273,9 @@ result = rolling_percentile_binary_labels(
 | `forward_return_10` | 0.0123 | Forward return over horizon |
 | `threshold_p95_h10` | 0.0089 | Rolling 95th percentile threshold |
 | `label_long_p95_h10` | 1 | 1 if return exceeds threshold, 0 otherwise |
+
+Decimal percentiles use `p` in column names. For example, percentile `95.5`
+produces `threshold_p95p5_h10` and `label_long_p95p5_h10`.
 
 ### Multiple Horizons and Percentiles
 
@@ -269,6 +307,8 @@ from ml4t.engineer.labeling import fixed_time_horizon_labels
 result = fixed_time_horizon_labels(
     data=df,
     horizon=10,           # 10 bars forward
+    method="binary",
+    threshold=0.01,       # +1 above 1%, -1 below -1%, otherwise 0
     price_col="close",
 )
 
@@ -281,7 +321,10 @@ result = fixed_time_horizon_labels(
 )
 ```
 
-Output includes a `forward_return` column. For binary labels, use the `threshold` parameter or `rolling_percentile_binary_labels` for adaptive thresholds.
+Output names identify the method and horizon, such as `label_return_10p`,
+`label_log_return_1h`, or `label_direction_10p`. A supplied `LabelingConfig`
+controls the horizon, method, threshold, and column mapping. Conflicting explicit
+arguments fail before calculation.
 
 ## Trend Scanning
 
@@ -292,14 +335,20 @@ from ml4t.engineer.labeling import trend_scanning_labels
 
 result = trend_scanning_labels(
     data=df,
-    min_horizon=5,
-    max_horizon=20,
+    min_window=5,
+    max_window=20,
+    step=1,
     t_value_threshold=2.0,
     price_col="close",
 )
 ```
 
-Output includes `trend_label` (+1/-1/0), `optimal_horizon`, and `t_statistic`. Observations with |t-statistic| below the threshold receive label 0 (no trend).
+Output includes `label` (+1, -1, or null), `optimal_window`, and `t_value`.
+The function selects the tested window with the largest absolute slope t-statistic.
+Labels below `t_value_threshold` are null while `optimal_window` and `t_value`
+remain available. A supplied trend-scanning config controls all four numerical settings.
+Constant windows have null outputs. Exact nonconstant linear fits use the largest
+finite float as the signed `t_value`.
 
 > **Book**: Ch7 `03_label_methods.py` demonstrates trend scanning alongside triple-barrier and percentile methods, showing how the optimal horizon varies with market conditions.
 

@@ -10,6 +10,7 @@ import polars as pl
 import pytest
 
 from ml4t.engineer.config import DataContractConfig, LabelingConfig
+from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling import (
     fixed_time_horizon_labels,
     trend_scanning_labels,
@@ -196,6 +197,27 @@ class TestFixedTimeHorizonLabels:
         with pytest.raises(Exception):  # DataValidationError
             fixed_time_horizon_labels(sample_prices, price_col="nonexistent")
 
+    def test_config_controls_numerical_execution(self):
+        """A fixed-horizon config must determine the executed target."""
+        data = pl.DataFrame({"close": [100.0, 101.0, 99.0, 104.0, 103.0]})
+        config = LabelingConfig.fixed_horizon(
+            horizon=3,
+            return_method="binary",
+            threshold=0.02,
+        )
+
+        result = fixed_time_horizon_labels(data, config=config)
+
+        assert "label_direction_3p" in result.columns
+        assert result["label_direction_3p"].to_list() == [1, 0, None, None, None]
+
+    def test_config_conflict_fails_before_execution(self, sample_prices):
+        """Explicit numerical arguments may not contradict a supplied config."""
+        config = LabelingConfig.fixed_horizon(horizon=3, return_method="binary")
+
+        with pytest.raises(DataValidationError, match="conflicts"):
+            fixed_time_horizon_labels(sample_prices, horizon=1, config=config)
+
 
 class TestTrendScanningLabels:
     """Test trend scanning labeling."""
@@ -212,10 +234,38 @@ class TestTrendScanningLabels:
         assert "label" in result.columns
         assert "t_value" in result.columns
         assert "optimal_window" in result.columns
-
-        # Labels should be ±1 or null
         labels = result["label"].drop_nulls()
         assert labels.is_in([1, -1]).all()
+
+    def test_config_controls_windows_and_significance(self):
+        """A trend config must determine windows and label significance."""
+        data = pl.DataFrame({"close": [1.0, 2.0, 4.0, 7.0, 11.0, 16.0]})
+        config = LabelingConfig.trend_scanning(
+            min_horizon=3,
+            max_horizon=4,
+            t_value_threshold=1e6,
+        )
+
+        result = trend_scanning_labels(data, config=config)
+
+        assert result["optimal_window"][0] in (3, 4)
+        assert result["t_value"][0] is not None
+        assert result["label"][0] is None
+
+    def test_trend_config_conflict_fails_before_execution(self, sample_prices):
+        """Explicit trend windows may not contradict a supplied config."""
+        config = LabelingConfig.trend_scanning(min_horizon=3, max_horizon=4)
+
+        with pytest.raises(DataValidationError, match="conflict"):
+            trend_scanning_labels(sample_prices, min_window=5, config=config)
+
+    def test_existing_positional_price_column_keeps_its_meaning(self):
+        """Adding a significance threshold must not shift the price column argument."""
+        data = pl.DataFrame({"settle": [1.0, 2.0, 4.0, 7.0, 11.0]})
+
+        result = trend_scanning_labels(data, 3, 4, 1, "settle")
+
+        assert result["optimal_window"][0] in (3, 4)
 
     def test_uptrend_detection(self, trending_up):
         """Test that uptrend is detected."""
@@ -340,9 +390,9 @@ class TestTrendScanningLabels:
         with pytest.raises(ValueError, match="min_window must be at least 2"):
             trend_scanning_labels(sample_prices, min_window=1)
 
-        # max_window <= min_window
+        # max_window below min_window
         with pytest.raises(ValueError, match="max_window must be greater"):
-            trend_scanning_labels(sample_prices, min_window=10, max_window=10)
+            trend_scanning_labels(sample_prices, min_window=10, max_window=9)
 
         # Invalid step
         with pytest.raises(ValueError, match="step must be at least 1"):

@@ -7,8 +7,8 @@ Calculates standard deviation over a rolling window, exactly matching TA-Lib's a
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -118,7 +118,6 @@ def stddev_polars(
     name="stddev",
     category="statistics",
     description="STDDEV - Standard Deviation",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

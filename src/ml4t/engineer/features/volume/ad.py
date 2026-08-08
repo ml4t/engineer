@@ -17,8 +17,8 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -49,6 +49,9 @@ def ad_numba(
         A/D Line close
     """
     n = len(high)
+    if len(low) != n or len(close) != n or len(volume) != n:
+        raise ValueError("high, low, close, and volume must have the same length")
+
     result = np.zeros(n)
     ad_value = 0.0
 
@@ -120,7 +123,6 @@ def ad_polars(high: str, low_col: str, close_col: str, volume_col: str) -> pl.Ex
     name="ad",
     category="volume",
     description="AD - Accumulation/Distribution",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

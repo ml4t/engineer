@@ -14,8 +14,8 @@ Where:
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -55,7 +55,6 @@ def imi_numba(
     name="imi",
     category="momentum",
     description="IMI - Intraday Momentum Index",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

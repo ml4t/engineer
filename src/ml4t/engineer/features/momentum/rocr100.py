@@ -10,8 +10,8 @@ ROCR100 = (price[i] / price[i-n]) * 100
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -35,7 +35,6 @@ def rocr100_numba(close: npt.NDArray[np.float64], timeperiod: int) -> npt.NDArra
     name="rocr100",
     category="momentum",
     description="ROCR100 - Rate of Change Ratio * 100",
-    lookback=0,
     value_range=(0.0, float("inf")),
     normalized=False,
     formula="",

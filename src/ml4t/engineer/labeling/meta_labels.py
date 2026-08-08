@@ -17,6 +17,8 @@ References
        Chapter 3: Meta-Labeling.
 """
 
+import math
+from numbers import Real
 from typing import Literal
 
 import polars as pl
@@ -26,6 +28,40 @@ __all__ = [
     "apply_meta_model",
     "compute_bet_size",
 ]
+
+
+def _validate_finite_number(
+    value: float,
+    name: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    minimum_inclusive: bool = True,
+) -> None:
+    """Validate a scalar numeric option."""
+    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(float(value)):
+        raise ValueError(f"{name} must be a finite number")
+    if minimum is not None:
+        below_minimum = value < minimum if minimum_inclusive else value <= minimum
+        if below_minimum:
+            comparator = "at least" if minimum_inclusive else "greater than"
+            raise ValueError(f"{name} must be {comparator} {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{name} must be at most {maximum}")
+
+
+def _validate_numeric_column(data: pl.DataFrame, column: str, role: str) -> None:
+    """Validate a required numeric column while permitting null values."""
+    if column not in data.columns:
+        raise ValueError(f"Missing required {role} column: {column!r}")
+    if not data[column].dtype.is_numeric():
+        raise TypeError(f"{role} column {column!r} must be numeric")
+
+    has_nonfinite = data.select(
+        (pl.col(column).is_not_null() & ~pl.col(column).cast(pl.Float64).is_finite()).any()
+    ).item()
+    if has_nonfinite:
+        raise ValueError(f"{role} column {column!r} must contain only finite values or null")
 
 
 def meta_labels(
@@ -48,7 +84,7 @@ def meta_labels(
         Column name containing the primary signal. Values should be:
         - Positive: Long signal
         - Negative: Short signal
-        - Zero: No signal (will produce NaN meta-label)
+        - Zero: No signal (will produce a null meta-label)
     return_col : str
         Column name containing the forward returns to evaluate against.
         These should be the returns achieved after the signal was generated.
@@ -60,9 +96,9 @@ def meta_labels(
     -------
     pl.DataFrame
         Original DataFrame with added 'meta_label' column:
-        - 1: Signal was profitable (signal * return > threshold)
-        - 0: Signal was unprofitable (signal * return <= threshold)
-        - null: No signal (signal == 0)
+        - 1: Signal was profitable (sign(signal) * return > threshold)
+        - 0: Signal was unprofitable (sign(signal) * return <= threshold)
+        - null: No signal or an unavailable signal or return
 
     Notes
     -----
@@ -70,7 +106,8 @@ def meta_labels(
 
     .. math::
 
-        \\text{meta\\_label} = \\mathbb{1}[\\text{signal} \\cdot \\text{return} > \\text{threshold}]
+        \\text{meta\\_label} =
+        \\mathbb{1}[\\text{sign}(\\text{signal}) \\cdot \\text{return} > \\text{threshold}]
 
     This creates a binary classification target for a meta-model that predicts
     whether to act on the primary signal.
@@ -88,7 +125,7 @@ def meta_labels(
     >>> # Row 0: long + positive return = 1 (profitable)
     >>> # Row 1: short + negative return = 1 (profitable)
     >>> # Row 2: long + negative return = 0 (unprofitable)
-    >>> # Row 3: short + negative return = 0 (unprofitable, short lost)
+    >>> # Row 3: short + negative return = 1 (profitable)
     >>> # Row 4: no signal = null
 
     References
@@ -96,6 +133,12 @@ def meta_labels(
     .. [1] López de Prado, M. (2018). "Advances in Financial Machine Learning".
            Wiley. Chapter 3.
     """
+    if not isinstance(data, pl.DataFrame):
+        raise TypeError("data must be a Polars DataFrame")
+    _validate_finite_number(threshold, "threshold", minimum=0.0)
+    _validate_numeric_column(data, signal_col, "signal")
+    _validate_numeric_column(data, return_col, "return")
+
     signal = pl.col(signal_col)
     returns = pl.col(return_col)
 
@@ -104,7 +147,9 @@ def meta_labels(
 
     # Meta-label: 1 if profitable, 0 if not, null if no signal
     meta_label = (
-        pl.when(signal == 0)
+        pl.when(signal.is_null() | returns.is_null())
+        .then(None)
+        .when(signal == 0)
         .then(None)
         .when(signed_return > threshold)
         .then(1)
@@ -185,6 +230,7 @@ def compute_bet_size(
         return (prob - 0.5) * 2
 
     elif method == "sigmoid":
+        _validate_finite_number(scale, "scale", minimum=0.0, minimum_inclusive=False)
         # Sigmoid: S-curve centered at 0.5, scaled to [-1, 1]
         # Using polars expressions for the sigmoid transform
         x = (prob - 0.5) * scale
@@ -192,8 +238,9 @@ def compute_bet_size(
         return sigmoid * 2 - 1
 
     elif method == "discrete":
+        _validate_finite_number(threshold, "threshold", minimum=0.0, maximum=1.0)
         # Discrete: binary 0/1 based on threshold
-        return pl.when(prob > threshold).then(1.0).otherwise(0.0)
+        return pl.when(prob.is_null()).then(None).when(prob > threshold).then(1.0).otherwise(0.0)
 
     else:
         msg = f"Unknown method: {method}. Use 'linear', 'sigmoid', or 'discrete'."
@@ -235,7 +282,7 @@ def apply_meta_model(
     -------
     pl.DataFrame
         Original DataFrame with added sized signal column:
-        sized_signal = sign(primary_signal) * bet_size(probability)
+        sized_signal = sign(primary_signal) * max(0, bet_size(probability))
 
     Notes
     -----
@@ -243,12 +290,15 @@ def apply_meta_model(
 
     .. math::
 
-        \\text{sized\\_signal} = \\text{sign}(\\text{signal}) \\cdot f(\\text{probability})
+        \\text{sized\\_signal} =
+        \\text{sign}(\\text{signal}) \\cdot \\max(0, f(\\text{probability}))
 
     where f() is the bet sizing function.
 
     The output can be used directly as position weights in a backtest,
     where the sign indicates direction and magnitude indicates conviction.
+    Probabilities at or below the sizing function's cutoff produce a zero
+    position rather than reversing the primary signal.
 
     Examples
     --------
@@ -261,7 +311,7 @@ def apply_meta_model(
     ... })
     >>> result = apply_meta_model(df, "signal", "meta_prob")
     >>> # High prob + long signal -> strong positive
-    >>> # Low prob + short signal -> weak negative (may filter)
+    >>> # Low prob + short signal -> zero (filtered)
     >>> # 0.5 prob + any signal -> near zero (uncertain)
 
     See Also
@@ -269,6 +319,20 @@ def apply_meta_model(
     meta_labels : Create meta-labels for training meta-model.
     compute_bet_size : Underlying bet sizing functions.
     """
+    if not isinstance(data, pl.DataFrame):
+        raise TypeError("data must be a Polars DataFrame")
+    _validate_numeric_column(data, primary_signal_col, "primary signal")
+    _validate_numeric_column(data, meta_probability_col, "meta probability")
+
+    probability = pl.col(meta_probability_col)
+    has_invalid_probability = data.select(
+        (probability.is_not_null() & ((probability < 0.0) | (probability > 1.0))).any()
+    ).item()
+    if has_invalid_probability:
+        raise ValueError(
+            f"meta probability column {meta_probability_col!r} must be between 0 and 1"
+        )
+
     signal = pl.col(primary_signal_col)
 
     # Compute bet size from probability
@@ -279,7 +343,7 @@ def apply_meta_model(
         threshold=threshold,
     )
 
-    # Sized signal: direction from primary, magnitude from meta
-    sized_signal = signal.sign() * bet_size.abs()
+    # Negative transformed values mean the trade should be filtered, not reversed.
+    sized_signal = signal.sign() * bet_size.clip(lower_bound=0.0)
 
     return data.with_columns(sized_signal.alias(output_col))

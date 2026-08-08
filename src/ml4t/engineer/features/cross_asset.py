@@ -41,8 +41,8 @@ useful for portfolio models and cross-market signal detection.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.validation import (
     validate_lag,
     validate_list_length,
@@ -171,13 +171,22 @@ def beta_to_market(
     # divides by n-1. The result was biased low by ~2.4% on daily equity returns and
     # returned 0.977 for an asset regressed on itself, where 1.0 is the only correct
     # answer. Polars' rolling_cov and rolling_var both default to ddof=1.
+    pair_is_valid = (
+        asset_returns.is_not_null()
+        & market_returns.is_not_null()
+        & asset_returns.is_finite()
+        & market_returns.is_finite()
+    )
+    paired_asset_returns = pl.when(pair_is_valid).then(asset_returns)
+    paired_market_returns = pl.when(pair_is_valid).then(market_returns)
+
     covariance = pl.rolling_cov(
-        asset_returns,
-        market_returns,
+        paired_asset_returns,
+        paired_market_returns,
         window_size=window,
         min_samples=min_periods,
     )
-    market_variance = market_returns.rolling_var(window, min_samples=min_periods)
+    market_variance = paired_market_returns.rolling_var(window, min_samples=min_periods)
 
     return covariance / market_variance
 
@@ -492,6 +501,15 @@ def transfer_entropy_nb(
 
     Measures information flow from X to Y.
     """
+    if len(x) != len(y):
+        raise ValueError("x and y must have the same length")
+    if lag < 1:
+        raise ValueError("lag must be at least 1")
+    if bins < 2:
+        raise ValueError("bins must be at least 2")
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+        raise ValueError("x and y must contain only finite values")
+
     n = len(x) - lag
     if n < 10:  # Need minimum data
         return float(np.nan)
@@ -522,21 +540,24 @@ def transfer_entropy_nb(
             for k in range(bins):
                 # Count occurrences
                 count_ijk = 0
+                count_ij = 0
                 count_jk = 0
                 count_j = 0
 
                 for idx in range(n):
                     if int(y_disc[idx]) == j:
                         count_j += 1
+                        if int(x_disc[idx]) == i:
+                            count_ij += 1
                         if int(y_future_disc[idx]) == k:
                             count_jk += 1
                             if int(x_disc[idx]) == i:
                                 count_ijk += 1
 
                 # Calculate probabilities
-                if count_ijk > 0 and count_jk > 0 and count_j > 0:
+                if count_ijk > 0 and count_ij > 0 and count_jk > 0 and count_j > 0:
                     p_ijk = count_ijk / n
-                    p_k_given_ij = count_ijk / count_j
+                    p_k_given_ij = count_ijk / count_ij
                     p_k_given_j = count_jk / count_j
 
                     if p_k_given_ij > 0 and p_k_given_j > 0:

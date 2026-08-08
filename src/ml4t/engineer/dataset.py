@@ -47,18 +47,28 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, field
+from decimal import Decimal
+from numbers import Real
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 import polars as pl
 
+from ml4t.engineer.config.preprocessing_config import PreprocessingConfig
 from ml4t.engineer.preprocessing import BaseScaler, StandardScaler
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
+    from datetime import date, datetime
+
     import pandas as pd
     from numpy.typing import NDArray
 
-    from ml4t.engineer.config import PreprocessingConfig
+
+def _numeric_scalar(value: object, *, context: str) -> float:
+    """Convert a numeric Polars aggregation result to float."""
+    if isinstance(value, bool) or not isinstance(value, Real | Decimal):
+        raise ValueError(f"{context} requires at least one finite numeric value")
+    return float(value)
 
 
 class SplitterProtocol(Protocol):
@@ -75,7 +85,7 @@ class SplitterProtocol(Protocol):
         groups: Any = None,
     ) -> Generator[tuple[NDArray[np.intp], NDArray[np.intp]], None, None]:
         """Generate train/test indices."""
-        ...
+        ...  # pragma: no cover - protocol declaration has no runtime implementation
 
 
 @dataclass
@@ -171,7 +181,8 @@ class MLDatasetBuilder:
     labels : pl.Series | pl.DataFrame
         Target variable(s). If DataFrame, first column is used.
     dates : pl.Series | None, optional
-        Date/time index for time-series ordering.
+        Aligned Date or Datetime index. Values must be non-null and sorted in
+        nondecreasing order. Equal timestamps are kept in one train/test partition.
 
     Attributes
     ----------
@@ -238,9 +249,94 @@ class MLDatasetBuilder:
                 f"Dates must have same length as features. "
                 f"Got dates={len(self.dates)}, features={len(self.features)}"
             )
+        if self.dates is not None:
+            self._validate_dates()
 
         # Store feature column names
         self._feature_columns = list(self.features.columns)
+
+    def _validate_dates(self) -> None:
+        """Validate the aligned time index used by every split path."""
+        if not isinstance(self.dates, pl.Series):
+            raise ValueError(f"dates must be a Polars Series, got {type(self.dates).__name__}")
+        if self.dates.dtype != pl.Date and not isinstance(self.dates.dtype, pl.Datetime):
+            raise ValueError(
+                f"dates must use a Polars Date or Datetime dtype, got {self.dates.dtype}"
+            )
+        if self.dates.null_count():
+            raise ValueError("dates must not contain null values")
+        if not self.dates.is_sorted():
+            raise ValueError("dates must be sorted in nondecreasing order")
+
+    @staticmethod
+    def _validate_index_array(
+        indices: Any,
+        *,
+        partition: str,
+        fold_number: int,
+        n_samples: int,
+    ) -> NDArray[np.intp]:
+        """Normalize and validate one splitter index partition."""
+        array = np.asarray(indices)
+        prefix = f"Fold {fold_number} {partition} indices"
+
+        if array.ndim != 1:
+            raise ValueError(f"{prefix} must be one-dimensional")
+        if array.size == 0:
+            raise ValueError(f"{prefix} must be nonempty")
+        if not np.issubdtype(array.dtype, np.integer) or np.issubdtype(
+            array.dtype,
+            np.bool_,
+        ):
+            raise ValueError(f"{prefix} must contain integer positions")
+
+        normalized = array.astype(np.intp, copy=False)
+        if np.unique(normalized).size != normalized.size:
+            raise ValueError(f"{prefix} contain duplicate positions")
+        if normalized.min() < 0 or normalized.max() >= n_samples:
+            raise ValueError(f"{prefix} are out of bounds for a dataset with {n_samples} rows")
+        return normalized
+
+    def _validate_fold_boundary(
+        self,
+        train_idx: NDArray[np.intp],
+        test_idx: NDArray[np.intp],
+        *,
+        fold_number: int,
+    ) -> None:
+        """Require disjoint indices and a strict time boundary when dates exist."""
+        overlap = np.intersect1d(train_idx, test_idx)
+        if overlap.size:
+            raise ValueError(
+                f"Fold {fold_number} train and test indices overlap at {overlap.tolist()}"
+            )
+
+        if self.dates is None:
+            return
+        train_max = cast("date | datetime", self.dates.gather(train_idx).max())
+        test_min = cast("date | datetime", self.dates.gather(test_idx).min())
+        if train_max >= test_min:
+            raise ValueError(
+                f"Fold {fold_number} training dates must strictly precede test dates; "
+                f"got train maximum {train_max!r} and test minimum {test_min!r}"
+            )
+
+    def _resolve_temporal_boundary(self, requested: int) -> int:
+        """Move a row boundary so one timestamp never appears in both partitions."""
+        if self.dates is None:
+            return requested
+
+        changes = (self.dates != self.dates.shift(1)).fill_null(False).arg_true().to_list()
+        if not changes:
+            raise ValueError(
+                "dates must contain at least two distinct timestamp groups "
+                "for a leakage-safe train/test split"
+            )
+
+        earlier = [index for index in changes if index <= requested]
+        if earlier:
+            return earlier[-1]
+        return changes[0]
 
     @property
     def scaler(self) -> BaseScaler | None:
@@ -274,11 +370,14 @@ class MLDatasetBuilder:
         >>> builder.set_scaler(PreprocessingConfig.robust())
         """
         # Handle PreprocessingConfig by creating the scaler
-        create_scaler = getattr(scaler, "create_scaler", None)
-        if callable(create_scaler):
-            self._scaler = cast("BaseScaler | None", create_scaler())
-        else:
+        if scaler is None or isinstance(scaler, BaseScaler):
             self._scaler = scaler
+        elif isinstance(scaler, PreprocessingConfig):
+            self._scaler = scaler.create_scaler()
+        else:
+            raise TypeError(
+                f"scaler must be BaseScaler, PreprocessingConfig, or None. Got {type(scaler)}"
+            )
         return self
 
     @property
@@ -331,22 +430,46 @@ class MLDatasetBuilder:
         Notes
         -----
         For each fold:
-        1. Training indices are extracted from the splitter
-        2. Scaler (if any) is fit on training data ONLY
-        3. Both train and test features are transformed using train statistics
-        4. Labels are sliced without transformation
+        1. Splitter indices are checked for shape, dtype, bounds, uniqueness, and overlap
+        2. Training dates must strictly precede test dates when dates are present
+        3. Scaler (if any) is fit on training data ONLY
+        4. Both train and test features are transformed using train statistics
+        5. Labels are sliced without transformation
         """
         # Prepare data for splitter (numpy arrays for compatibility)
         X_for_split = self.features
         y_for_split = self.labels
 
         # Handle groups
+        if groups is not None and len(groups) != len(self.features):
+            raise ValueError(
+                "groups must have the same length as features; "
+                f"got groups={len(groups)}, features={len(self.features)}"
+            )
         groups_arr = groups.to_numpy() if groups is not None else None
 
         # Iterate through folds
-        for fold_idx, (train_idx, test_idx) in enumerate(
+        for fold_idx, (raw_train_idx, raw_test_idx) in enumerate(
             cv.split(X_for_split, y_for_split, groups_arr)
         ):
+            train_idx = self._validate_index_array(
+                raw_train_idx,
+                partition="training",
+                fold_number=fold_idx,
+                n_samples=len(self.features),
+            )
+            test_idx = self._validate_index_array(
+                raw_test_idx,
+                partition="test",
+                fold_number=fold_idx,
+                n_samples=len(self.features),
+            )
+            self._validate_fold_boundary(
+                train_idx,
+                test_idx,
+                fold_number=fold_idx,
+            )
+
             # Extract train/test features and labels
             X_train_raw = self.features[train_idx]
             X_test_raw = self.features[test_idx]
@@ -406,11 +529,29 @@ class MLDatasetBuilder:
 
         Notes
         -----
-        For time-series data, set shuffle=False to preserve temporal ordering.
-        The split point is based on row position, not dates.
+        When dates are present, they must be ordered, shuffling is prohibited, and
+        the boundary moves to keep equal timestamps in one partition. Without dates,
+        row order or the requested shuffle determines the split.
         """
+        if isinstance(train_size, bool) or not isinstance(train_size, Real):
+            raise ValueError(
+                f"train_size must be a finite number strictly between 0 and 1, got {train_size!r}"
+            )
+        validated_train_size = float(train_size)
+        if not np.isfinite(validated_train_size) or not 0 < validated_train_size < 1:
+            raise ValueError(
+                f"train_size must be a finite number strictly between 0 and 1, got {train_size!r}"
+            )
+        if self.dates is not None and shuffle:
+            raise ValueError("shuffle must be False when dates are provided")
+
         n_samples = len(self.features)
-        n_train = int(n_samples * train_size)
+        n_train = int(n_samples * validated_train_size)
+        if n_train == 0 or n_train == n_samples:
+            raise ValueError(
+                "train_size must leave at least one observation in both train and test"
+            )
+        n_train = self._resolve_temporal_boundary(n_train)
 
         if shuffle:
             rng = np.random.default_rng(random_state)
@@ -464,7 +605,11 @@ class MLDatasetBuilder:
         -----
         This does NOT apply scaling. Use for raw data access only.
         """
-        return self.features.to_pandas(), self.labels.to_pandas()
+        import pandas as pd
+
+        features = pd.DataFrame(self.features.to_dict(as_series=False))
+        labels = pd.Series(self.labels.to_list(), name=self.labels.name)
+        return features, labels
 
     def get_feature_percentiles(
         self,
@@ -504,9 +649,8 @@ class MLDatasetBuilder:
         result: dict[str, dict[float, float]] = {}
         for col in self._feature_columns:
             series = train_features[col].drop_nulls()
-            # Note: quantile on numeric columns returns numeric types (never None after drop_nulls)
             result[col] = {
-                q: float(series.quantile(q))  # type: ignore[arg-type]
+                q: _numeric_scalar(series.quantile(q), context=f"feature '{col}' quantile")
                 for q in quantiles
             }
 
@@ -546,10 +690,8 @@ class MLDatasetBuilder:
         train_labels = self.labels.gather(train_indices).drop_nulls()
 
         quantiles = [i / n_quantiles for i in range(1, n_quantiles)]
-        # Note: quantile on numeric columns returns numeric types (never None after drop_nulls)
         return [
-            float(train_labels.quantile(q))  # type: ignore[arg-type]
-            for q in quantiles
+            _numeric_scalar(train_labels.quantile(q), context="label quantile") for q in quantiles
         ]
 
     def __len__(self) -> int:
@@ -615,9 +757,6 @@ def create_dataset_builder(
 
     if scaler is None:
         pass
-    elif hasattr(scaler, "create_scaler"):
-        # PreprocessingConfig - use set_scaler which handles the conversion
-        builder.set_scaler(scaler)  # type: ignore[arg-type]
     elif isinstance(scaler, str):
         scaler_map = {
             "standard": StandardScaler,
@@ -629,7 +768,7 @@ def create_dataset_builder(
                 f"Unknown scaler: {scaler}. Options: {list(scaler_map.keys())} or None"
             )
         builder.set_scaler(scaler_map[scaler.lower()]())
-    elif isinstance(scaler, BaseScaler):
+    elif isinstance(scaler, BaseScaler | PreprocessingConfig):
         builder.set_scaler(scaler)
     else:
         raise TypeError(

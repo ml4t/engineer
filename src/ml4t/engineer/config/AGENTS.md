@@ -20,7 +20,9 @@ data contracts.
 from ml4t.engineer.config import LabelingConfig, PreprocessingConfig
 
 label_cfg = LabelingConfig.triple_barrier(
-    upper_barrier=0.02, lower_barrier=0.01, max_holding_period=20,
+    upper_barrier=0.02,
+    lower_barrier=0.01,
+    max_holding_period=20,
 )
 prep_cfg = PreprocessingConfig.robust()
 ```

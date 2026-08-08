@@ -9,8 +9,8 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
@@ -160,7 +160,6 @@ def midprice_polars(high: str, low_col: str, timeperiod: int = 14) -> pl.Expr:
     name="midprice",
     category="price_transform",
     description="MIDPRICE - Midpoint Price over period",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,

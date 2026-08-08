@@ -8,8 +8,8 @@ for long or short positions. It was developed by J. Welles Wilder Jr.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
@@ -225,7 +225,6 @@ def sar_polars(
     name="sar",
     category="momentum",
     description="SAR - Parabolic Stop and Reverse",
-    lookback=0,
     normalized=False,
     formula="",
     ta_lib_compatible=True,
@@ -290,19 +289,16 @@ def sar(
         # Column names provided for Polars
         return sar_polars(high, low, acceleration, maximum)
 
-    # Convert to numpy if needed
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
 
     # Ensure both arrays have the same length
-    if len(high) != len(low):
+    if len(high_array) != len(low_array):
         raise ValueError(
-            f"high and low must have the same length. Got {len(high)} and {len(low)}",
+            f"high and low must have the same length. Got {len(high_array)} and {len(low_array)}",
         )
 
-    return sar_numba(high, low, acceleration, maximum)
+    return sar_numba(high_array, low_array, acceleration, maximum)
 
 
 # Export all functions

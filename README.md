@@ -63,7 +63,10 @@ result = compute_features(df, ["rsi", "macd", "atr", "obv"])
 # Or with custom parameters
 result = compute_features(df, [
     {"name": "rsi", "params": {"period": 20}},
-    {"name": "bollinger_bands", "params": {"period": 20, "std_dev": 2.0}},
+    {
+        "name": "bollinger_bands",
+        "params": {"period": 20, "nbdevup": 2.0, "nbdevdn": 2.0},
+    },
 ])
 ```
 

@@ -12,7 +12,7 @@ import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
 
 # Datetime types for timestamp detection
@@ -280,7 +280,27 @@ def get_future_price_at_time(
     ...     df, "15m", price_col="close", tolerance="2m"
     ... )
     """
-    # Resolve timestamp column
+    result = _get_future_price_lookup(
+        data=data,
+        time_horizon=time_horizon,
+        price_col=price_col,
+        timestamp_col=timestamp_col,
+        tolerance=tolerance,
+        group_cols=group_cols,
+    )
+    future_prices = result["_future_price"]
+    return future_prices, future_prices.is_not_null()
+
+
+def _get_future_price_lookup(
+    data: pl.DataFrame,
+    time_horizon: str | timedelta,
+    price_col: str,
+    timestamp_col: str | None,
+    tolerance: str | None,
+    group_cols: list[str] | None,
+) -> pl.DataFrame:
+    """Return matched future prices, timestamps, and row indices."""
     ts_col = resolve_timestamp_col(data, timestamp_col)
     if ts_col is None:
         raise ValueError(
@@ -299,10 +319,11 @@ def get_future_price_at_time(
     target_ts = pl.col(ts_col) + pl.duration(microseconds=total_us)
 
     # Create future lookup table
-    lookup = data.select(
+    lookup = data.with_row_index("_future_row_index").select(
         [
             pl.col(ts_col).alias("_lookup_ts"),
             pl.col(price_col).alias("_future_price"),
+            pl.col("_future_row_index"),
             *(pl.col(c) for c in (group_cols or [])),
         ]
     )
@@ -324,13 +345,7 @@ def get_future_price_at_time(
         join_kwargs["by"] = group_cols
 
     # Perform asof join
-    result = data_with_target.join_asof(lookup, **join_kwargs)
-
-    # Extract results
-    future_prices = result["_future_price"]
-    valid_mask = future_prices.is_not_null()
-
-    return future_prices, valid_mask
+    return data_with_target.join_asof(lookup, **join_kwargs)
 
 
 def resolve_timestamp_col(

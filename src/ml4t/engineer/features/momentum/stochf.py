@@ -10,8 +10,8 @@ STOCHF is identical to STOCH with no additional smoothing (fastk_period=1).
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import njit
 
+from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.features.utils.ma_types import apply_ma
 
@@ -96,7 +96,6 @@ def stochf_numba(
     name="stochf",
     category="momentum",
     description="Stochastic Fast - fast version without smoothing",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",

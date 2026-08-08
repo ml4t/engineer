@@ -8,8 +8,8 @@ overbought or oversold conditions. It's similar to RSI but incorporates volume.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
@@ -187,7 +187,6 @@ def mfi_polars(
     name="mfi",
     category="momentum",
     description="MFI - volume-weighted RSI measuring buying/selling pressure",
-    lookback=0,
     value_range=(0.0, 100.0),
     normalized=True,
     formula="",
@@ -256,17 +255,11 @@ def mfi(
         # Column names provided for Polars
         return mfi_polars(high, low, close, volume, period)
 
-    # Convert to numpy if needed
-    if isinstance(high, pl.Series):
-        high = high.to_numpy()
-    if isinstance(low, pl.Series):
-        low = low.to_numpy()
-    if isinstance(close, pl.Series):
-        close = close.to_numpy()
-    if isinstance(volume, pl.Series):
-        volume = volume.to_numpy()
-
-    return mfi_numba(high, low, close, volume, period)
+    high_array = np.asarray(high, dtype=np.float64)
+    low_array = np.asarray(low, dtype=np.float64)
+    close_array = np.asarray(close, dtype=np.float64)
+    volume_array = np.asarray(volume, dtype=np.float64)
+    return mfi_numba(high_array, low_array, close_array, volume_array, period)
 
 
 # Export all functions

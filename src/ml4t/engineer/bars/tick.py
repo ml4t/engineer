@@ -58,7 +58,9 @@ class TickBarSampler(BarSampler):
         self._validate_data(data)
 
         if len(data) == 0:
-            return pl.DataFrame()
+            return self._empty_result(
+                ["timestamp", "open", "high", "low", "close", "volume", "tick_count"]
+            )
 
         # Calculate bar indices
         n_ticks = len(data)
@@ -85,17 +87,8 @@ class TickBarSampler(BarSampler):
 
         # Convert to DataFrame
         if not bars:
-            # Return empty DataFrame with correct schema
-            return pl.DataFrame(
-                {
-                    "timestamp": [],
-                    "open": [],
-                    "high": [],
-                    "low": [],
-                    "close": [],
-                    "volume": [],
-                    "tick_count": [],
-                },
+            return self._empty_result(
+                ["timestamp", "open", "high", "low", "close", "volume", "tick_count"]
             )
 
         return pl.DataFrame(bars)
