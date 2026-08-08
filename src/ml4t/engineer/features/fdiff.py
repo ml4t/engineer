@@ -8,6 +8,7 @@ Based on advances in financial machine learning, particularly the work on
 fractional differencing for feature engineering.
 """
 
+import importlib
 from functools import lru_cache
 
 import numpy as np
@@ -21,7 +22,7 @@ from ml4t.engineer.core.exceptions import InvalidParameterError
 
 def _adfuller(values: npt.NDArray[np.float64]) -> tuple[float, float]:
     try:
-        from statsmodels.tsa.stattools import adfuller
+        adfuller = importlib.import_module("statsmodels.tsa.stattools").adfuller
     except ImportError as error:
         raise ImportError(
             "ADF diagnostics require statsmodels, which is unavailable on Python 3.15 "
