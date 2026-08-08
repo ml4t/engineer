@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from importlib import import_module
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 _Function = TypeVar("_Function", bound=Callable[..., Any])
 
@@ -26,7 +26,7 @@ def _load_numba_decorators() -> tuple[Any, Any, bool]:
         numba = import_module("numba")
     except ImportError:
         return _identity_jit, _identity_jit, False
-    return cast(Any, numba.jit), cast(Any, numba.njit), True
+    return numba.jit, numba.njit, True
 
 
 jit, njit, NUMBA_AVAILABLE = _load_numba_decorators()
