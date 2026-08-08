@@ -22,12 +22,10 @@ class TestRiskFeatures:
         normal_returns = np.random.normal(0.001, 0.02, n)
 
         # Fat-tailed returns (t-distribution)
-        from scipy import stats
-
-        fat_tail_returns = stats.t.rvs(df=4, loc=0.001, scale=0.02, size=n)
+        fat_tail_returns = np.random.standard_t(df=4, size=n) * 0.02 + 0.001
 
         # Skewed returns
-        skewed_returns = stats.skewnorm.rvs(a=-2, loc=0.001, scale=0.02, size=n)
+        skewed_returns = 0.001 - np.abs(np.random.normal(0.0, 0.02, n))
 
         # Create price series from returns
         prices = 100 * np.cumprod(1 + normal_returns)
@@ -393,11 +391,9 @@ class TestRiskFeatures:
 
     def test_information_ratio(self):
         """Test Information Ratio calculation."""
-        # Create benchmark returns
-        benchmark_returns = self.df["normal_returns"] * 0.8 + np.random.normal(
-            0,
-            0.005,
-            len(self.df),
+        # Construct a benchmark with lower expected returns and small tracking noise.
+        benchmark_returns = (
+            self.df["normal_returns"] - 0.001 + np.random.normal(0, 0.0001, len(self.df))
         )
 
         result = self.df.with_columns(

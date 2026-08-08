@@ -164,6 +164,9 @@ def test_compiled_dependencies_are_conditional_until_upstream_supports_python_31
 
     assert "numba>=0.57.0; python_version < '3.15'" in project["project"]["dependencies"]
     assert "pyarrow>=14.0.0; python_version < '3.15'" in project["project"]["dependencies"]
+    assert "scipy>=1.10.0; python_version < '3.15'" in project["project"]["dependencies"]
+    assert "scikit-learn>=1.3.0; python_version < '3.15'" in project["project"]["dependencies"]
+    assert "statsmodels>=0.14.0; python_version < '3.15'" in project["project"]["dependencies"]
 
 
 def test_package_metadata_declares_stable_status() -> None:

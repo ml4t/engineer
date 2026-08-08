@@ -16,6 +16,7 @@ import math
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
@@ -29,6 +30,28 @@ from ml4t.engineer.labeling.utils import (
 
 if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
+
+
+def _linear_regression_slope_stderr(
+    x: npt.NDArray[np.int64],
+    y: npt.NDArray[np.float64],
+) -> tuple[float, float]:
+    if len(x) != len(y) or len(x) < 2 or not np.isfinite(y).all():
+        raise ValueError("linear regression requires equal finite arrays with at least two values")
+
+    centered_x = x - np.mean(x)
+    centered_y = y - np.mean(y)
+    sum_squared_x = float(np.dot(centered_x, centered_x))
+    if sum_squared_x == 0:
+        raise ValueError("linear regression requires varying x values")
+
+    slope = float(np.dot(centered_x, centered_y) / sum_squared_x)
+    if len(x) == 2:
+        return slope, 0.0
+
+    residuals = centered_y - slope * centered_x
+    residual_variance = float(np.dot(residuals, residuals) / (len(x) - 2))
+    return slope, float(np.sqrt(residual_variance / sum_squared_x))
 
 
 def fixed_time_horizon_labels(
@@ -349,8 +372,6 @@ def _trend_scanning_single_group(
     t_value_threshold: float,
 ) -> pl.DataFrame:
     """Apply trend scanning to a single asset/group."""
-    from scipy import stats
-
     # Sort data chronologically for correct forward scanning
     if timestamp_col:
         data = data.sort(timestamp_col)
@@ -379,7 +400,7 @@ def _trend_scanning_single_group(
 
             # Fit linear regression
             try:
-                slope, _intercept, _r_value, _p_value, std_err = stats.linregress(x, y)
+                slope, std_err = _linear_regression_slope_stderr(x, y)
 
                 # Compute t-statistic
                 if std_err > 0:

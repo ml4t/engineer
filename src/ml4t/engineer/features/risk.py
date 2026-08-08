@@ -33,16 +33,19 @@ Conditional VaR (CVaR/Expected Shortfall), maximum drawdown analysis, and
 higher moment calculations for financial risk management.
 """
 
+from statistics import NormalDist
+
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from scipy import stats
 
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import (
     validate_threshold,
     validate_window,
 )
+
+_STANDARD_NORMAL = NormalDist()
 
 
 def value_at_risk(
@@ -106,7 +109,7 @@ def value_at_risk(
         # Parametric VaR: assume normal distribution
         mean = returns.rolling_mean(window, min_samples=window // 2)
         std = returns.rolling_std(window, min_samples=window // 2)
-        z_score = pl.lit(stats.norm.ppf(alpha))
+        z_score = pl.lit(_STANDARD_NORMAL.inv_cdf(alpha))
         return mean + z_score * std
 
     # cornish_fisher
@@ -119,7 +122,7 @@ def value_at_risk(
     kurt = returns.rolling_kurtosis(window, fisher=False)
 
     # Cornish-Fisher expansion
-    z = pl.lit(stats.norm.ppf(alpha))
+    z = pl.lit(_STANDARD_NORMAL.inv_cdf(alpha))
     cf_adjustment = (
         z
         + (z**2 - 1) * skew / 6
@@ -204,8 +207,8 @@ def conditional_value_at_risk(
     alpha = 1 - confidence_level
 
     # For normal distribution: ES = μ - σ * φ(z_α) / α
-    z_alpha = stats.norm.ppf(alpha)
-    pdf_z = stats.norm.pdf(z_alpha)
+    z_alpha = _STANDARD_NORMAL.inv_cdf(alpha)
+    pdf_z = _STANDARD_NORMAL.pdf(z_alpha)
 
     return mean - std * pl.lit(pdf_z / alpha)
 

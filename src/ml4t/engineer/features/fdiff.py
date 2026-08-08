@@ -13,11 +13,23 @@ from functools import lru_cache
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from statsmodels.tsa.stattools import adfuller
 
 from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
+
+
+def _adfuller(values: npt.NDArray[np.float64]) -> tuple[float, float]:
+    try:
+        from statsmodels.tsa.stattools import adfuller
+    except ImportError as error:
+        raise ImportError(
+            "ADF diagnostics require statsmodels, which is unavailable on Python 3.15 "
+            "until its compiled dependencies publish compatible wheels."
+        ) from error
+
+    result = adfuller(values, autolag="AIC")
+    return float(result[0]), float(result[1])
 
 
 @jit(nopython=True, cache=True)  # type: ignore[misc]
@@ -263,7 +275,7 @@ def find_optimal_d(
     clean_values = values_np[~np.isnan(values_np)]
 
     # Test if already stationary
-    adf_result = adfuller(clean_values, autolag="AIC")
+    adf_result = _adfuller(clean_values)
     if adf_result[1] < adf_pvalue_threshold:
         return {"optimal_d": 0.0, "adf_pvalue": adf_result[1], "correlation": 1.0}
 
@@ -287,7 +299,7 @@ def find_optimal_d(
             continue
 
         # Test stationarity
-        adf_result = adfuller(clean_ffd, autolag="AIC")
+        adf_result = _adfuller(clean_ffd)
 
         if adf_result[1] < adf_pvalue_threshold:
             # Calculate correlation with original
@@ -351,7 +363,7 @@ def fdiff_diagnostics(
 
     # Calculate diagnostics
     if len(clean_ffd) >= 50:
-        adf_result = adfuller(clean_ffd, autolag="AIC")
+        adf_result = _adfuller(clean_ffd)
         adf_stat = adf_result[0]
         adf_pvalue = adf_result[1]
 

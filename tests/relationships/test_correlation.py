@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
-from scipy import stats
 
 from ml4t.engineer.relationships.correlation import compute_correlation_matrix
 
@@ -313,10 +312,10 @@ class TestRealWorldScenarios:
         corr = compute_correlation_matrix(df, method="spearman")
         our_corr = corr.to_pandas().set_index("feature").loc["x", "y"]
 
-        # Scipy reference
-        scipy_corr, _ = stats.spearmanr(x, y)
+        # Independent definition: Pearson correlation of the ranked values.
+        expected_corr = pd.Series(x).rank().corr(pd.Series(y).rank())
 
-        assert our_corr == pytest.approx(scipy_corr, abs=1e-10)
+        assert our_corr == pytest.approx(expected_corr, abs=1e-10)
 
 
 class TestEdgeCases:

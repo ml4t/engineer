@@ -80,9 +80,9 @@ dependencies = [
     "pyarrow>=14.0.0; python_version < '3.15'",
 
     # Scientific computing
-    "scipy>=1.10.0",
-    "scikit-learn>=1.3.0",
-    "statsmodels>=0.14.0",
+    "scipy>=1.10.0; python_version < '3.15'",
+    "scikit-learn>=1.3.0; python_version < '3.15'",
+    "statsmodels>=0.14.0; python_version < '3.15'",
 
     # Performance optimization
     "numba>=0.57.0; python_version < '3.15'",

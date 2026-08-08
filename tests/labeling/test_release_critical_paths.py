@@ -562,7 +562,7 @@ def test_grouped_trend_scanning_processes_each_group() -> None:
 
 def test_trend_scanning_tolerates_regression_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "scipy.stats.linregress",
+        "ml4t.engineer.labeling.horizon_labels._linear_regression_slope_stderr",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("singular")),
     )
     result = _trend_scanning_single_group(_ohlc_data(), 2, 3, 1, "close", "timestamp", 0.0)
