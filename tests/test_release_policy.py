@@ -74,8 +74,12 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
         "python-version": "${{ matrix.python-version }}",
         "allow-prereleases": "true",
     }
+    assert "--no-sync" in commands["Import package"]
+    assert "--python python" not in commands["Import package"]
     assert "--python-version ${{ matrix.python-version }}" in commands["Run ty check"]
     assert "--no-sync" in commands["Run ty check"]
+    assert 'matrix.python-version }}" == "3.15"' in commands["Run ty check"]
+    assert "--exclude 'src/ml4t/engineer/store/**'" in commands["Run ty check"]
     assert "--python python" in commands["Build package"]
 
     test_command = commands["Run tests"]
