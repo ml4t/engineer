@@ -41,8 +41,8 @@ useful for portfolio models and cross-market signal detection.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.validation import (
     validate_lag,
     validate_list_length,

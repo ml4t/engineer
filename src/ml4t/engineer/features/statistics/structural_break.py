@@ -42,8 +42,8 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import validate_window
 from ml4t.engineer.logging import logged_feature

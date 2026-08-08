@@ -6,7 +6,8 @@ Do not import directly - use the public API from labeling modules.
 
 import numpy as np
 import numpy.typing as npt
-from numba import jit
+
+from ml4t.engineer._numba import jit
 
 
 @jit(nopython=True, cache=True)  # type: ignore[misc]

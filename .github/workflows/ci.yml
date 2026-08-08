@@ -50,10 +50,10 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev
+        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev --extra store
 
       - name: Run ty check
-        run: uv run ty check
+        run: uv run --no-sync ty check
 
   security:
     name: Dependency Audit
@@ -115,24 +115,36 @@ jobs:
           allow-prereleases: true
 
       - name: Install dependencies
-        run: uv sync --python python --dev --extra ta --extra store
+        shell: bash
+        run: |
+          if [[ "${{ matrix.python-version }}" == "3.15" ]]; then
+            uv sync --python python --dev
+          else
+            uv sync --python python --dev --extra ta --extra store
+          fi
 
       - name: Import package
         run: uv run --python python python -c "import ml4t.engineer"
 
       - name: Run ty check
         run: >-
-          uv run --python python
+          uv run --python python --no-sync
           ty check --python-version ${{ matrix.python-version }}
 
       - name: Build package
         run: uv build --python python
 
       - name: Export installed-wheel test environment
-        run: >-
-          uv export --locked --group dev --extra ta --extra store
-          --no-emit-project --no-hashes
-          --output-file "${{ runner.temp }}/test-requirements.txt"
+        shell: bash
+        run: |
+          if [[ "${{ matrix.python-version }}" == "3.15" ]]; then
+            uv export --locked --group dev --no-emit-project --no-hashes \
+              --output-file "${{ runner.temp }}/test-requirements.txt"
+          else
+            uv export --locked --group dev --extra ta --extra store \
+              --no-emit-project --no-hashes \
+              --output-file "${{ runner.temp }}/test-requirements.txt"
+          fi
 
       - name: Install built wheel
         run: |

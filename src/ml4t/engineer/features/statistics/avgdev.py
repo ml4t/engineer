@@ -8,8 +8,8 @@ It's the average of the absolute deviations from the mean.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 

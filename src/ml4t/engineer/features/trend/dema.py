@@ -8,8 +8,8 @@ Formula: DEMA = 2 * EMA(close, period) - EMA(EMA(close, period), period)
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 from .ema import ema_numba

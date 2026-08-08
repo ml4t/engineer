@@ -66,12 +66,16 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
         "Install built wheel",
         "Import built wheel",
     } <= commands.keys()
-    assert "--extra ta --extra store" in commands["Install dependencies"]
+    install_command = commands["Install dependencies"]
+    assert 'matrix.python-version }}" == "3.15"' in install_command
+    assert "uv sync --python python --dev" in install_command
+    assert "--extra ta --extra store" in install_command
     assert setup["with"] == {
         "python-version": "${{ matrix.python-version }}",
         "allow-prereleases": "true",
     }
     assert "--python-version ${{ matrix.python-version }}" in commands["Run ty check"]
+    assert "--no-sync" in commands["Run ty check"]
     assert "--python python" in commands["Build package"]
 
     test_command = commands["Run tests"]
@@ -83,6 +87,8 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     assert "exit 0" not in test_command
 
     export_command = commands["Export installed-wheel test environment"]
+    assert 'matrix.python-version }}" == "3.15"' in export_command
+    assert "--group dev --no-emit-project" in export_command
     assert "--group dev --extra ta --extra store" in export_command
     assert "--no-emit-project" in export_command
     assert "--requirements" in commands["Install built wheel"]
@@ -151,6 +157,12 @@ def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
     assert "ml4t-specs>=0.1.0,<0.2.0" in project["project"]["dependencies"]
     specs = next(package for package in lock["package"] if package["name"] == "ml4t-specs")
     assert specs["version"] == "0.1.0"
+
+
+def test_numba_is_conditional_until_upstream_supports_python_315() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert "numba>=0.57.0; python_version < '3.15'" in project["project"]["dependencies"]
 
 
 def test_package_metadata_declares_stable_status() -> None:

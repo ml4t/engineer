@@ -1408,7 +1408,7 @@ source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },
     { name = "ml4t-specs" },
-    { name = "numba" },
+    { name = "numba", marker = "python_full_version < '3.15'" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "polars" },
@@ -1535,7 +1535,7 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'all'", specifier = ">=0.24.0" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.24.0" },
     { name = "ml4t-specs", specifier = ">=0.1.0,<0.2.0" },
-    { name = "numba", specifier = ">=0.57.0" },
+    { name = "numba", marker = "python_full_version < '3.15'", specifier = ">=0.57.0" },
     { name = "numpy", specifier = ">=1.24.0,<2.6" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pandas-market-calendars", marker = "extra == 'all'", specifier = ">=4.0.0" },

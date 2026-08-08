@@ -8,8 +8,8 @@ over a specified period. %K is the raw stochastic, %D is a moving average of %K.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 from ml4t.engineer.features.trend.sma import sma_numba

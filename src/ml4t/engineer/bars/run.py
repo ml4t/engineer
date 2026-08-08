@@ -29,8 +29,8 @@ Based on Advances in Financial Machine Learning by Marcos López de Prado.
 import numpy as np
 import numpy.typing as npt
 import polars as pl
-from numba import jit
 
+from ml4t.engineer._numba import jit
 from ml4t.engineer.bars.base import BarSampler
 from ml4t.engineer.core.exceptions import DataValidationError
 
