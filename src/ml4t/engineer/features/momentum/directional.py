@@ -15,7 +15,7 @@ from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def calculate_directional_movement_nb(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],
@@ -42,7 +42,7 @@ def calculate_directional_movement_nb(
     return plus_dm, minus_dm
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def wilders_smoothing_nb(close: npt.NDArray[np.float64], period: int) -> npt.NDArray[np.float64]:
     """
     Wilder's smoothing method matching TA-Lib implementation.
@@ -79,7 +79,7 @@ def wilders_smoothing_nb(close: npt.NDArray[np.float64], period: int) -> npt.NDA
     return result
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def plus_di_numba(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],
@@ -142,7 +142,7 @@ def plus_di_numba(
     return result
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def minus_di_numba(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],
@@ -205,7 +205,7 @@ def minus_di_numba(
     return result
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def dx_numba(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],

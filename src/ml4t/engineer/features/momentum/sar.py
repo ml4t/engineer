@@ -14,7 +14,7 @@ from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def sar_numba(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],

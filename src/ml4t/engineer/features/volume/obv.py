@@ -13,7 +13,7 @@ from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def obv_numba(
     close: npt.NDArray[np.float64], volume: npt.NDArray[np.float64]
 ) -> npt.NDArray[np.float64]:
@@ -46,6 +46,12 @@ def obv_numba(
 
     result = np.zeros(n)
 
+    # A missing bar leaves the running total undefined, and comparing against a
+    # NaN previous close is false in both directions, which would freeze the
+    # level at its last value instead. Propagate, as the A/D line does.
+    if np.isnan(close[0]) or np.isnan(volume[0]):
+        return np.full(n, np.nan)
+
     # Initialize with first volume
     prev_obv = volume[0]
     prev_close = close[0]
@@ -53,6 +59,11 @@ def obv_numba(
 
     # Calculate OBV
     for i in range(1, n):
+        if np.isnan(close[i]) or np.isnan(volume[i]):
+            for j in range(i, n):
+                result[j] = np.nan
+            break
+
         if close[i] > prev_close:
             prev_obv += volume[i]
         elif close[i] < prev_close:

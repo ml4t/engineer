@@ -16,7 +16,7 @@ from ml4t.engineer.features.trend.ema import ema_numba
 from ml4t.engineer.features.trend.sma import sma_numba
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def apo_numba(
     close: npt.NDArray[np.float64],
     fast_period: int = 12,

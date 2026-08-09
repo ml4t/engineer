@@ -17,7 +17,7 @@ from ml4t.engineer.core.decorators import feature
 from .atr import atr_numba
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def natr_numba(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],

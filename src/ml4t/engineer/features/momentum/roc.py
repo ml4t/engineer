@@ -9,7 +9,7 @@ from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def roc_numba(close: npt.NDArray[np.float64], period: int = 10) -> npt.NDArray[np.float64]:
     """ROC calculation using Numba for performance."""
     n = len(close)
