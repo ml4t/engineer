@@ -14,7 +14,6 @@ from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
 from importlib.metadata import version as _dist_version
 from pathlib import Path as _Path
 
-from . import _polars_compat as _polars_compat
 from . import (
     core,
     dataset,
