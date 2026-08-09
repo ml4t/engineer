@@ -25,8 +25,8 @@ def _adfuller(values: npt.NDArray[np.float64]) -> tuple[float, float]:
         adfuller = importlib.import_module("statsmodels.tsa.stattools").adfuller
     except ImportError as error:
         raise ImportError(
-            "ADF diagnostics require statsmodels, which is unavailable on Python 3.15 "
-            "until its compiled dependencies publish compatible wheels."
+            "ADF diagnostics require statsmodels. "
+            "Install statsmodels>=0.14 or reinstall ml4t-engineer."
         ) from error
 
     result = adfuller(values, autolag="AIC")

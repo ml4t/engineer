@@ -1,5 +1,6 @@
 """Tests for fractional differencing module."""
 
+import importlib
 import importlib.util
 
 import numpy as np
@@ -18,6 +19,21 @@ from ml4t.engineer.features.fdiff import (
 def _adfuller(values: np.ndarray) -> tuple:
     statsmodels = pytest.importorskip("statsmodels.tsa.stattools")
     return statsmodels.adfuller(values, autolag="AIC")
+
+
+def test_adf_error_explains_how_to_restore_missing_dependency(monkeypatch) -> None:
+    fdiff_module = importlib.import_module("ml4t.engineer.features.fdiff")
+
+    def missing_statsmodels(_name: str) -> None:
+        raise ModuleNotFoundError("No module named 'statsmodels'")
+
+    monkeypatch.setattr(fdiff_module.importlib, "import_module", missing_statsmodels)
+
+    with pytest.raises(
+        ImportError,
+        match=r"Install statsmodels>=0\.14 or reinstall ml4t-engineer",
+    ):
+        fdiff_module._adfuller(np.array([1.0]))
 
 
 class TestFFDWeights:

@@ -41,12 +41,11 @@ def test_ci_qualifies_required_python_platform_matrix() -> None:
 
     matrix = workflow["jobs"]["test"]["strategy"]["matrix"]
     actual = set(itertools.product(matrix["os"], matrix["python-version"]))
-    actual.update((entry["os"], entry["python-version"]) for entry in matrix["include"])
 
     stable = {"3.12", "3.13", "3.14"}
-    prerelease = {"3.15"}
     platforms = {"ubuntu-latest", "macos-latest", "windows-latest"}
-    assert actual == set(itertools.product(platforms, stable | prerelease))
+    assert actual == set(itertools.product(platforms, stable))
+    assert "include" not in matrix
 
 
 def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> None:
@@ -66,21 +65,16 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
         "Install built wheel",
         "Import built wheel",
     } <= commands.keys()
-    install_command = commands["Install dependencies"]
-    assert 'matrix.python-version }}" == "3.15"' in install_command
-    assert "uv sync --python python --dev" in install_command
-    assert "--extra ta --extra store --extra viz" in install_command
-    assert setup["with"] == {
-        "python-version": "${{ matrix.python-version }}",
-        "allow-prereleases": "true",
-    }
+    assert commands["Install dependencies"] == (
+        "uv sync --python python --dev --extra ta --extra store --extra viz"
+    )
+    assert setup["with"] == {"python-version": "${{ matrix.python-version }}"}
     assert "--no-sync" in commands["Import package"]
     assert "--python python" not in commands["Import package"]
     assert "--python-version ${{ matrix.python-version }}" in commands["Run ty check"]
     assert "--no-sync" in commands["Run ty check"]
-    assert 'matrix.python-version }}" == "3.15"' in commands["Run ty check"]
     assert "--exclude" not in commands["Run ty check"]
-    assert "--extra-search-path tests/type_stubs" in commands["Run ty check"]
+    assert "--extra-search-path" not in commands["Run ty check"]
     assert "--python python" in commands["Build package"]
 
     test_command = commands["Run tests"]
@@ -92,8 +86,6 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     assert "exit 0" not in test_command
 
     export_command = commands["Export installed-wheel test environment"]
-    assert 'matrix.python-version }}" == "3.15"' in export_command
-    assert "--group dev --no-emit-project" in export_command
     assert "--group dev --extra ta --extra store --extra viz" in export_command
     assert "--no-emit-project" in export_command
     wheel_install = commands["Install built wheel"]
@@ -175,17 +167,18 @@ def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
     assert specs["version"] == "0.1.0"
 
 
-def test_core_excludes_dependencies_without_complete_python_315_support() -> None:
+def test_package_supports_only_python_312_through_314() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     dependencies = project["project"]["dependencies"]
 
-    assert "numba>=0.57.0; python_version < '3.15'" in dependencies
-    assert "pyarrow>=14.0.0; python_version < '3.15'" in dependencies
-    assert "scipy>=1.10.0; python_version < '3.15'" in dependencies
-    assert "scikit-learn>=1.3.0; python_version < '3.15'" in dependencies
-    assert "statsmodels>=0.14.0; python_version < '3.15'" in dependencies
-    assert "pydantic>=2.0.0; python_version < '3.15'" in dependencies
-    assert "pydantic>=2.14.0b1; python_version >= '3.15'" in dependencies
+    assert project["project"]["requires-python"] == ">=3.12,<3.15"
+    assert "numba>=0.57.0" in dependencies
+    assert "pyarrow>=14.0.0" in dependencies
+    assert "scipy>=1.10.0" in dependencies
+    assert "scikit-learn>=1.3.0" in dependencies
+    assert "statsmodels>=0.14.0" in dependencies
+    assert "pydantic>=2.0.0" in dependencies
+    assert not any("python_version" in dependency for dependency in dependencies)
     assert not any(dependency.startswith("matplotlib") for dependency in dependencies)
     assert "matplotlib>=3.7.0" in project["project"]["optional-dependencies"]["viz"]
 
