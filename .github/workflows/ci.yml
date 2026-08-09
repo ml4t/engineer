@@ -154,10 +154,13 @@ jobs:
           fi
 
       - name: Install built wheel
+        shell: bash
         run: |
           uv venv --python python .artifact-venv
+          artifact_wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          UV_CACHE_DIR="${{ runner.temp }}/fresh-wheel-cache" \
+            uv pip install --python .artifact-venv "$artifact_wheel"
           uv pip install --python .artifact-venv --requirements "${{ runner.temp }}/test-requirements.txt"
-          python -c "import glob, subprocess; subprocess.check_call(['uv', 'pip', 'install', '--python', '.artifact-venv', glob.glob('dist/*.whl')[0]])"
 
       - name: Import built wheel
         run: uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"

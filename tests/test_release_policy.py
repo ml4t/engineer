@@ -96,7 +96,11 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     assert "--group dev --no-emit-project" in export_command
     assert "--group dev --extra ta --extra store --extra viz" in export_command
     assert "--no-emit-project" in export_command
-    assert "--requirements" in commands["Install built wheel"]
+    wheel_install = commands["Install built wheel"]
+    assert 'UV_CACHE_DIR="${{ runner.temp }}/fresh-wheel-cache"' in wheel_install
+    assert 'uv pip install --python .artifact-venv "$artifact_wheel"' in wheel_install
+    assert "--requirements" in wheel_install
+    assert wheel_install.index('"$artifact_wheel"') < wheel_install.index("--requirements")
 
     step_names = [step.get("name") for step in steps]
     assert step_names.index("Install built wheel") < step_names.index("Run tests")
@@ -180,6 +184,8 @@ def test_core_excludes_dependencies_without_complete_python_315_support() -> Non
     assert "scipy>=1.10.0; python_version < '3.15'" in dependencies
     assert "scikit-learn>=1.3.0; python_version < '3.15'" in dependencies
     assert "statsmodels>=0.14.0; python_version < '3.15'" in dependencies
+    assert "pydantic>=2.0.0; python_version < '3.15'" in dependencies
+    assert "pydantic>=2.14.0b1; python_version >= '3.15'" in dependencies
     assert not any(dependency.startswith("matplotlib") for dependency in dependencies)
     assert "matplotlib>=3.7.0" in project["project"]["optional-dependencies"]["viz"]
 
