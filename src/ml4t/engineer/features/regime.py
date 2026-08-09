@@ -27,7 +27,7 @@ import numpy as np
 import numpy.typing as npt
 import polars as pl
 
-from ml4t.engineer._numba import jit
+from ml4t.engineer._numba import jit, warm_rolling_callback
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import (
     validate_list_length,
@@ -405,6 +405,7 @@ def hurst_exponent(
         except (ZeroDivisionError, ValueError, RuntimeError):
             return float(np.nan)
 
+    warm_rolling_callback(safe_hurst, period)
     return close.rolling_map(
         safe_hurst,
         window_size=period,
