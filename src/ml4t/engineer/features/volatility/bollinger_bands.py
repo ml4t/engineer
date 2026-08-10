@@ -16,7 +16,7 @@ from ml4t.engineer.features.statistics.stddev import stddev_numba
 from ml4t.engineer.features.trend.sma import sma_numba
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def bollinger_bands_numba(
     close: npt.NDArray[np.float64],
     period: int = 20,

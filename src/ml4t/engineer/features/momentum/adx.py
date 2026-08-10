@@ -18,7 +18,7 @@ from ml4t.engineer.logging import get_logger, logged_feature
 _logger = get_logger("ta.adx")
 
 
-@jit(nopython=True, cache=True, fastmath=True)
+@jit(nopython=True, cache=True)
 def _calculate_directional_movement(
     prev_high: float,
     current_high: float,
@@ -57,7 +57,7 @@ def _calculate_directional_movement(
     return 0.0, 0.0
 
 
-@jit(nopython=True, cache=True, fastmath=True)
+@jit(nopython=True, cache=True)
 def _calculate_true_range(high: float, low: float, prev_close: float) -> float:
     """Calculate True Range for a single period.
 
@@ -81,7 +81,7 @@ def _calculate_true_range(high: float, low: float, prev_close: float) -> float:
     return max(tr_hl, tr_hc, tr_lc)
 
 
-@jit(nopython=True, cache=True, fastmath=True)
+@jit(nopython=True, cache=True)
 def _apply_wilders_smoothing(
     prev_smoothed: float,
     new_value: float,
@@ -108,7 +108,7 @@ def _apply_wilders_smoothing(
     return prev_smoothed - (prev_smoothed / period) + new_value
 
 
-@jit(nopython=True, cache=True, fastmath=True)
+@jit(nopython=True, cache=True)
 def _calculate_dx(plus_di: float, minus_di: float) -> float:
     """Calculate Directional Index (DX) from Directional Indicators.
 
@@ -130,7 +130,7 @@ def _calculate_dx(plus_di: float, minus_di: float) -> float:
     return 100.0 * (abs(minus_di - plus_di) / sum_di)
 
 
-@jit(nopython=True, cache=True, fastmath=True)
+@jit(nopython=True, cache=True)
 def adx_numba(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],

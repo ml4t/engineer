@@ -115,8 +115,18 @@ def ad_polars(high: str, low_col: str, close_col: str, volume_col: str) -> pl.Ex
     # Money Flow Volume
     mfv = mfm * pl.col(volume_col)
 
+    # `cum_sum` skips nulls, which would silently drop a missing bar's flow and
+    # carry the level on as if it had been observed. The Numba path propagates
+    # instead, so a missing bar has to end this series the same way.
+    observed = (
+        pl.col(high).is_not_null()
+        & pl.col(low_col).is_not_null()
+        & pl.col(close_col).is_not_null()
+        & pl.col(volume_col).is_not_null()
+    )
+
     # Cumulative sum for A/D Line
-    return mfv.cum_sum()
+    return pl.when(observed.cast(pl.UInt32).cum_min() == 1).then(mfv.cum_sum()).otherwise(None)
 
 
 @feature(

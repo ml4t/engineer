@@ -35,7 +35,7 @@ import numpy as np
 import numpy.typing as npt
 import polars as pl
 
-from ml4t.engineer._numba import jit
+from ml4t.engineer._numba import jit, warm_rolling_callback
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import validate_window
 from ml4t.engineer.logging import logged_feature
@@ -549,11 +549,13 @@ def rolling_entropy(
 
     feature_expr = pl.col(feature) if isinstance(feature, str) else feature
 
+    def compute_shannon_entropy(x: pl.Series) -> float:
+        arr = x.to_numpy().astype(np.float64) if hasattr(x, "to_numpy") else x
+        return _shannon_entropy_nb(arr, n_bins)
+
+    warm_rolling_callback(compute_shannon_entropy, window)
     return feature_expr.rolling_map(
-        lambda x: _shannon_entropy_nb(
-            x.to_numpy().astype(np.float64) if hasattr(x, "to_numpy") else x,
-            n_bins,
-        ),
+        compute_shannon_entropy,
         window_size=window,
         weights=None,
         min_samples=window // 2,
@@ -629,6 +631,7 @@ def rolling_entropy_lz(
 
         return _kontoyiannis_entropy_nb(encoded, window_size=len(arr) // 2)
 
+    warm_rolling_callback(compute_lz_entropy, window)
     return feature_expr.rolling_map(
         compute_lz_entropy,
         window_size=window,
@@ -704,6 +707,7 @@ def rolling_entropy_plugin(
 
         return _plugin_entropy_nb(encoded, word_length)
 
+    warm_rolling_callback(compute_plugin_entropy, window)
     return feature_expr.rolling_map(
         compute_plugin_entropy,
         window_size=window,

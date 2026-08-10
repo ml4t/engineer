@@ -21,7 +21,7 @@ from ml4t.engineer._numba import njit
 from ml4t.engineer.core.decorators import feature
 
 
-@njit(cache=True, fastmath=True)  # type: ignore[misc]
+@njit(cache=True)  # type: ignore[misc]
 def ultosc_numba(
     high: npt.NDArray[np.float64],
     low: npt.NDArray[np.float64],

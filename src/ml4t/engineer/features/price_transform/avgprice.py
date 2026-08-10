@@ -14,7 +14,7 @@ from ml4t.engineer._numba import jit
 from ml4t.engineer.core.decorators import feature
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def avgprice_numba(
     open: npt.NDArray[np.float64],
     high: npt.NDArray[np.float64],

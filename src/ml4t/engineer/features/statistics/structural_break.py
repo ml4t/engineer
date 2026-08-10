@@ -43,7 +43,7 @@ import numpy as np
 import numpy.typing as npt
 import polars as pl
 
-from ml4t.engineer._numba import jit
+from ml4t.engineer._numba import jit, warm_rolling_callback
 from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.core.validation import validate_window
 from ml4t.engineer.logging import logged_feature
@@ -127,8 +127,12 @@ def coefficient_of_variation(
     validate_window(window, min_window=2, name="window")
     feature_expr = pl.col(feature) if isinstance(feature, str) else feature
 
+    def compute(x: pl.Series) -> float:
+        return _cv_nb(x.to_numpy().astype(np.float64))
+
+    warm_rolling_callback(compute, window)
     return feature_expr.rolling_map(
-        lambda x: _cv_nb(x.to_numpy().astype(np.float64)),
+        compute,
         window_size=window,
         weights=None,
         min_samples=window // 2,
@@ -219,8 +223,12 @@ def rolling_cv_zscore(
     feature_expr = pl.col(feature) if isinstance(feature, str) else feature
     total_lookback = window * lookback_multiplier
 
+    def compute(x: pl.Series) -> float:
+        return _cv_zscore_nb(x.to_numpy().astype(np.float64), window)
+
+    warm_rolling_callback(compute, total_lookback)
     return feature_expr.rolling_map(
-        lambda x: _cv_zscore_nb(x.to_numpy().astype(np.float64), window),
+        compute,
         window_size=total_lookback,
         weights=None,
         min_samples=total_lookback // 2,
@@ -315,8 +323,12 @@ def variance_ratio(
     feature_expr = pl.col(feature) if isinstance(feature, str) else feature
 
     # Cast to Float64 to ensure consistent return type from rolling_map
+    def compute(x: pl.Series) -> float:
+        return _variance_ratio_nb(x.to_numpy().astype(np.float64), q)
+
+    warm_rolling_callback(compute, window)
     return feature_expr.cast(pl.Float64).rolling_map(
-        lambda x: _variance_ratio_nb(x.to_numpy().astype(np.float64), q),
+        compute,
         window_size=window,
         weights=None,
         min_samples=window // 2,
@@ -432,8 +444,12 @@ def rolling_kl_divergence(
     validate_window(n_bins, min_window=5, name="n_bins")
     feature_expr = pl.col(feature) if isinstance(feature, str) else feature
 
+    def compute(x: pl.Series) -> float:
+        return _kl_divergence_nb(x.to_numpy().astype(np.float64), len(x) // 2, n_bins)
+
+    warm_rolling_callback(compute, window)
     return feature_expr.rolling_map(
-        lambda x: _kl_divergence_nb(x.to_numpy().astype(np.float64), len(x) // 2, n_bins),
+        compute,
         window_size=window,
         weights=None,
         min_samples=window // 2,
@@ -538,8 +554,12 @@ def rolling_wasserstein(
     validate_window(window, min_window=10, name="window")
     feature_expr = pl.col(feature) if isinstance(feature, str) else feature
 
+    def compute(x: pl.Series) -> float:
+        return _wasserstein_1d_nb(x.to_numpy().astype(np.float64))
+
+    warm_rolling_callback(compute, window)
     return feature_expr.rolling_map(
-        lambda x: _wasserstein_1d_nb(x.to_numpy().astype(np.float64)),
+        compute,
         window_size=window,
         weights=None,
         min_samples=window // 2,
@@ -650,8 +670,12 @@ def rolling_drift(
 
     fn = _drift_zscore_nb if normalize else _drift_nb
 
+    def compute(x: pl.Series) -> float:
+        return fn(x.to_numpy().astype(np.float64))
+
+    warm_rolling_callback(compute, window)
     return feature_expr.rolling_map(
-        lambda x: fn(x.to_numpy().astype(np.float64)),
+        compute,
         window_size=window,
         weights=None,
         min_samples=window // 2,

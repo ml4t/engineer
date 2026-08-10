@@ -190,13 +190,18 @@ def amihud_illiquidity(
     # Amihud = |return| / dollar_volume
     # Use 1e-6 multiplier for readability (expressing as return per million dollars)
     # Protect against division by zero
-    amihud = (
-        pl.when(dollar_volume.abs() > 1e-10)
+    ratio = (
+        pl.when((dollar_volume.abs() > 1e-10) & returns.is_finite())
         .then(
             returns.abs() / dollar_volume * 1e6,
         )
         .otherwise(None)
-        .rolling_mean(period)
     )
 
-    return amihud
+    # Amihud (2002) averages over the D periods that traded, so a period with no
+    # trading leaves the window rather than emptying it. `rolling_mean` would
+    # propagate that null across the whole following window instead.
+    traded = ratio.is_not_null().cast(pl.UInt32).rolling_sum(period)
+    total = ratio.fill_null(0.0).rolling_sum(period)
+
+    return pl.when(traded > 0).then(total / traded).otherwise(None)

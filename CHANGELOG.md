@@ -5,6 +5,55 @@ All notable changes to ml4t-engineer are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`momentum.rsi` no longer saturates at 100 after a null in the input.** Wilder's
+  average is recursive and had no notion of a gap, and the kernel was compiled with
+  `fastmath=True`, which licenses the compiler to assume no NaN. One null returned
+  exactly `100.0` for the rest of the series. The input is now split on NaN and each
+  gap-free run is seeded on its own, so a gap costs the missing observation plus
+  `period` warmup rows and the oscillator then resumes.
+
+  Two published datasets carried this in their output. A crypto perpetual-funding
+  premium index with 537 nulls emitted `100.0` on 79.0% of 100,812 rows against a
+  hand-computed median of 49.68. A CME crude-oil series carried a **single** null,
+  on 2020-04-20, the day the contract settled negative and the caller's own
+  non-positive-price gate nulled it - 12.6% of that product's `rsi_14`, every one of
+  them after the null, running to the end of the series five years later.
+
+- **A missing observation no longer produces a silently wrong value anywhere in the
+  feature surface.** `fastmath=True` was the general mechanism, not an RSI detail.
+  Feeding one null into every momentum, volatility and volume feature, 20 of 91
+  feature-column pairs returned a finite number that differed from the correct one,
+  by up to 91.9 for `mfi` and 1.6e4 for the A/D line. `fastmath` is removed from the
+  feature kernels; `volume.obv` no longer freezes its level forever when both
+  comparisons against a NaN previous close are false; and `volume.ad`'s Polars path
+  no longer uses `cum_sum`, which skips nulls and carries the level on as if the bar
+  had been observed while the Numba path propagates. Every feature now either
+  recovers from a gap or returns NaN.
+
+  Measured cost over 5M rows: `rsi` 42.7 -> 53.8 ms, `atr` 51.4 -> 90.3 ms, `adx`
+  unchanged. No TA-Lib exactness result changed.
+
+- **`microstructure.amihud_illiquidity` averages over the periods that traded.**
+  Amihud (2002) divides by the number of days the asset traded; nulling untraded bars
+  and taking `rolling_mean(period)` propagates the null across the following window,
+  which instead required every bar in the window to have traded. On a NASDAQ-100
+  minute panel, 0.64% untraded bars produced a 9.08% null share.
+
+- **A rolling kernel is compiled before its window runs, not inside it.**
+  `polars.Expr.rolling_map` does not advance its window while the callback is being
+  compiled, so the first evaluation of a feature whose callback calls a lazily-jitted
+  kernel returned the first window's value for the entire series, near-constant, with
+  nothing raised. `regime.hurst_exponent`, `statistics.coefficient_of_variation`,
+  `statistics.rolling_cv_zscore`, `statistics.rolling_drift`, `ml.rolling_entropy_lz`
+  and `ml.rolling_entropy_plugin` each returned two distinct values on their first
+  evaluation in a process and the full set on every later one. Affects any fresh
+  environment - a new virtualenv, a CI job, a first run - and not a repeat run, which
+  loads the kernel already compiled.
+
 ## [0.1.0b9] - 2026-06-21
 
 ### Added

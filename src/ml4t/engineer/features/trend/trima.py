@@ -15,7 +15,7 @@ from ml4t.engineer.core.decorators import feature
 from .sma import sma_numba
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def trima_numba(close: npt.NDArray[np.float64], period: int = 30) -> npt.NDArray[np.float64]:
     """
     Triangular Moving Average calculation exactly matching TA-Lib.

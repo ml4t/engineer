@@ -20,7 +20,7 @@ from ml4t.engineer.core.decorators import feature
 from ml4t.engineer.features.trend.ema import ema_numba
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def trix_numba(close: npt.NDArray[np.float64], timeperiod: int = 30) -> npt.NDArray[np.float64]:
     """
     TRIX calculation using Numba.

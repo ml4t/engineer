@@ -306,6 +306,58 @@ def test_amihud_positive_values(sample_microstructure_data):
     assert np.all(amihud_values >= 0)
 
 
+def test_amihud_averages_over_the_bars_that_traded():
+    """An untraded bar leaves the window; it does not empty it.
+
+    Amihud (2002) sums over the D periods the asset traded and divides by D. A
+    `rolling_mean` over a series nulled on untraded bars instead requires every bar
+    in the window to have traded, which nulled 9.08% of the NASDAQ-100 minute panel
+    at period=30 from 0.64% untraded bars.
+    """
+    n = 100
+    period = 10
+    rng = np.random.default_rng(1)
+    returns = rng.normal(0, 0.01, n)
+    volume = np.full(n, 1e5)
+    volume[50] = 0.0  # one bar with no trading
+    close = np.full(n, 100.0)
+
+    frame = pl.DataFrame({"returns": returns, "volume": volume, "close": close})
+    result = frame.select(
+        amihud_illiquidity("returns", "volume", "close", period=period).alias("illiq")
+    )["illiq"]
+
+    # Only the warmup is null: the untraded bar costs its own contribution, not
+    # the following `period` rows.
+    assert result.is_null().arg_true().to_list() == list(range(period - 1))
+
+    # The reported value is the mean over the bars in the window that traded.
+    window = slice(46, 56)
+    dollar_volume = close[window] * volume[window]
+    traded = dollar_volume > 1e-10
+    expected = np.mean(np.abs(returns[window][traded]) / dollar_volume[traded] * 1e6)
+    assert result[55] == pytest.approx(expected)
+
+
+def test_amihud_is_null_only_where_nothing_traded():
+    """A window in which no bar traded has no Amihud value to report."""
+    n = 40
+    frame = pl.DataFrame(
+        {
+            "returns": np.full(n, 0.01),
+            "volume": np.concatenate([np.full(20, 1e5), np.zeros(20)]),
+            "close": np.full(n, 100.0),
+        }
+    )
+    result = frame.select(amihud_illiquidity("returns", "volume", "close", period=5).alias("i"))[
+        "i"
+    ]
+
+    assert result[19] is not None  # last fully traded window
+    assert result[23] is not None  # window still holds one traded bar
+    assert result[25] is None  # nothing in the window traded
+
+
 # =============================================================================
 # Roll Spread Tests
 # =============================================================================

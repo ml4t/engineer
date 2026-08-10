@@ -15,7 +15,7 @@ from ml4t.engineer.core.decorators import feature
 from .ema import ema_numba
 
 
-@jit(nopython=True, cache=True, fastmath=True)  # type: ignore[misc]
+@jit(nopython=True, cache=True)  # type: ignore[misc]
 def dema_numba(close: npt.NDArray[np.float64], period: int = 30) -> npt.NDArray[np.float64]:
     """
     DEMA calculation exactly replicating TA-Lib algorithm.
