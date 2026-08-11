@@ -1495,7 +1495,9 @@ viz = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "duckdb" },
     { name = "hypothesis" },
+    { name = "matplotlib" },
     { name = "pandas-market-calendars" },
     { name = "pip-audit" },
     { name = "pre-commit" },
@@ -1579,7 +1581,9 @@ provides-extras = ["all", "calendars", "dev", "docs", "ml", "store", "ta", "viz"
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "duckdb", specifier = ">=0.9.0" },
     { name = "hypothesis", specifier = ">=6.80.0" },
+    { name = "matplotlib", specifier = ">=3.7.0" },
     { name = "pandas-market-calendars", specifier = ">=4.0.0" },
     { name = "pip-audit", specifier = ">=2.10.1" },
     { name = "pre-commit", specifier = ">=3.3.0" },
