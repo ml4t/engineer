@@ -17,37 +17,14 @@ from ml4t.engineer.features.utils.ma_types import apply_ma
 
 
 @jit(nopython=True, cache=True, fastmath=False)  # type: ignore[misc]
-def stochrsi_fastk_numba(
-    close: npt.NDArray[np.float64],
-    timeperiod: int = 14,
+def _stochrsi_fastk_from_rsi_numba(
+    rsi_values: npt.NDArray[np.float64],
     fastk_period: int = 5,
 ) -> npt.NDArray[np.float64]:
-    """
-    Calculate STOCHRSI %K using Numba for performance.
-
-    Parameters
-    ----------
-    close : npt.NDArray
-        Price data (typically closing close)
-    timeperiod : int, default 14
-        Period for RSI calculation
-    fastk_period : int, default 5
-        Period for Stochastic calculation on RSI
-
-    Returns
-    -------
-    npt.NDArray
-        The STOCHRSI %K close (0-100 scale)
-    """
-    n = len(close)
-
-    # Calculate RSI first
-    rsi_values = rsi_numba(close, timeperiod)
-
-    # Initialize output array
+    """Calculate STOCHRSI %K from precomputed RSI values."""
+    n = len(rsi_values)
     fastk = np.full(n, np.nan)
 
-    # Find first valid RSI
     first_rsi = -1
     for i in range(n):
         if not np.isnan(rsi_values[i]):
@@ -80,6 +57,35 @@ def stochrsi_fastk_numba(
             fastk[i] = 0.0
 
     return fastk
+
+
+def stochrsi_fastk_numba(
+    close: npt.NDArray[np.float64],
+    timeperiod: int = 14,
+    fastk_period: int = 5,
+) -> npt.NDArray[np.float64]:
+    """
+    Calculate STOCHRSI %K using Numba for performance.
+
+    RSI is computed outside the cached StochRSI kernel so a cached caller cannot
+    retain an older compiled RSI implementation after a package upgrade.
+
+    Parameters
+    ----------
+    close : npt.NDArray
+        Price data (typically closing close)
+    timeperiod : int, default 14
+        Period for RSI calculation
+    fastk_period : int, default 5
+        Period for Stochastic calculation on RSI
+
+    Returns
+    -------
+    npt.NDArray
+        The STOCHRSI %K close (0-100 scale)
+    """
+    rsi_values = rsi_numba(close, timeperiod)
+    return _stochrsi_fastk_from_rsi_numba(rsi_values, fastk_period)
 
 
 def stochrsi_numba(
