@@ -177,8 +177,10 @@ def test_package_supports_python_312_and_later() -> None:
     assert "scipy>=1.10.0" in dependencies
     assert "scikit-learn>=1.3.0" in dependencies
     assert "statsmodels>=0.14.0" in dependencies
-    assert "pydantic>=2.0.0" in dependencies
-    assert not any("python_version" in dependency for dependency in dependencies)
+    assert {
+        "pydantic>=2.0.0,<3; python_version < '3.15'",
+        "pydantic==2.14.0b1; python_version >= '3.15'",
+    } <= set(dependencies)
     assert not any(dependency.startswith("matplotlib") for dependency in dependencies)
     assert "matplotlib>=3.7.0" in project["project"]["optional-dependencies"]["viz"]
 
