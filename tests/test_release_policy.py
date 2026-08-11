@@ -112,7 +112,7 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
     release_jobs = _load_workflow("release.yml")["jobs"]
 
     assert release_jobs["qualification"]["uses"] == "./.github/workflows/ci.yml"
-    assert release_jobs["publish"]["needs"] == "qualification"
+    assert release_jobs["publish"]["needs"] == ["ecosystem-qualification", "qualification"]
 
     release_step = release_jobs["github-release"]["steps"][0]
     assert release_step["env"]["GH_REPO"] == "${{ github.repository }}"
@@ -167,18 +167,20 @@ def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
     assert specs["version"] == "0.1.0"
 
 
-def test_package_supports_only_python_312_through_314() -> None:
+def test_package_supports_python_312_through_314() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     dependencies = project["project"]["dependencies"]
 
     assert project["project"]["requires-python"] == ">=3.12,<3.15"
     assert "numba>=0.57.0" in dependencies
-    assert "pyarrow>=14.0.0" in dependencies
-    assert "scipy>=1.10.0" in dependencies
-    assert "scikit-learn>=1.3.0" in dependencies
-    assert "statsmodels>=0.14.0" in dependencies
-    assert "pydantic>=2.0.0" in dependencies
-    assert not any("python_version" in dependency for dependency in dependencies)
+    assert "statsmodels>=0.14.0" in project["project"]["optional-dependencies"]["stats"]
+    assert "pyarrow>=14.0.0" in project["project"]["optional-dependencies"]["store"]
+    assert "pyarrow>=14.0.0" in project["project"]["optional-dependencies"]["viz"]
+    assert not any(
+        dependency.startswith(("pyarrow", "scipy", "scikit-learn", "statsmodels"))
+        for dependency in dependencies
+    )
+    assert "pydantic>=2.0.0,<3" in dependencies
     assert not any(dependency.startswith("matplotlib") for dependency in dependencies)
     assert "matplotlib>=3.7.0" in project["project"]["optional-dependencies"]["viz"]
 

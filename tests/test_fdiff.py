@@ -31,7 +31,7 @@ def test_adf_error_explains_how_to_restore_missing_dependency(monkeypatch) -> No
 
     with pytest.raises(
         ImportError,
-        match=r"Install statsmodels>=0\.14 or reinstall ml4t-engineer",
+        match=r"Install ml4t-engineer\[stats\] or statsmodels>=0\.14",
     ):
         fdiff_module._adfuller(np.array([1.0]))
 

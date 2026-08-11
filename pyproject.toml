@@ -77,18 +77,12 @@ dependencies = [
     "polars>=0.20.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0,<2.6",
-    "pyarrow>=14.0.0",
-
-    # Scientific computing
-    "scipy>=1.10.0",
-    "scikit-learn>=1.3.0",
-    "statsmodels>=0.14.0",
 
     # Performance optimization
     "numba>=0.57.0",
 
     # Configuration
-    "pydantic>=2.0.0",
+    "pydantic>=2.0.0,<3",
     "pyyaml>=6.0.0",
 
     # Utilities
@@ -106,6 +100,7 @@ ta = [
 # Feature store with DuckDB
 store = [
     "duckdb>=0.9.0",
+    "pyarrow>=14.0.0",
 ]
 
 # Trading calendar support
@@ -113,11 +108,17 @@ calendars = [
     "pandas-market-calendars>=4.0.0",
 ]
 
+# Statistical diagnostics
+stats = [
+    "statsmodels>=0.14.0",
+]
+
 # Visualization and plotting
 viz = [
     "plotly>=5.15.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
+    "pyarrow>=14.0.0",
 ]
 
 # ML diagnostics
@@ -145,6 +146,8 @@ dev = [
     "lightgbm>=4.0.0",
     "shap>=0.44.0",
     "arch>=6.0.0",
+    "pyarrow>=14.0.0",
+    "statsmodels>=0.14.0",
 ]
 
 # Documentation generation
@@ -175,6 +178,8 @@ all = [
     "ipdb>=0.13.0",
     "pre-commit>=3.3.0",
     "arch>=6.0.0",
+    "pyarrow>=14.0.0",
+    "statsmodels>=0.14.0",
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5.0",
     "mkdocstrings[python]>=0.24.0",
@@ -188,19 +193,26 @@ Issues = "https://github.com/ml4t/engineer/issues"
 Changelog = "https://github.com/ml4t/engineer/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = [
+test = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.3.0",
     "pytest-timeout>=2.1.0",
     "pytest-benchmark>=4.0.0",
     "hypothesis>=6.80.0",
+]
+dev = [
+    { include-group = "test" },
     "ruff>=0.8.0",
     "ty",
     "pre-commit>=3.3.0",
     "twine>=6.0.0",
     "pip-audit>=2.10.1",
     "pandas-market-calendars>=4.0.0",
+    "duckdb>=0.9.0",
+    "matplotlib>=3.7.0",
+    "pyarrow>=14.0.0",
+    "statsmodels>=0.14.0",
 ]
 
 [tool.pytest.ini_options]
