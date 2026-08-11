@@ -167,12 +167,12 @@ def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
     assert specs["version"] == "0.1.0"
 
 
-def test_package_supports_python_312_and_later() -> None:
+def test_package_supports_python_312_through_314() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     dependencies = project["project"]["dependencies"]
 
-    assert project["project"]["requires-python"] == ">=3.12"
-    assert "numba>=0.57.0; python_version < '3.15'" in dependencies
+    assert project["project"]["requires-python"] == ">=3.12,<3.15"
+    assert "numba>=0.57.0" in dependencies
     assert "statsmodels>=0.14.0" in project["project"]["optional-dependencies"]["stats"]
     assert "pyarrow>=14.0.0" in project["project"]["optional-dependencies"]["store"]
     assert "pyarrow>=14.0.0" in project["project"]["optional-dependencies"]["viz"]
@@ -180,10 +180,7 @@ def test_package_supports_python_312_and_later() -> None:
         dependency.startswith(("pyarrow", "scipy", "scikit-learn", "statsmodels"))
         for dependency in dependencies
     )
-    assert {
-        "pydantic>=2.0.0,<3; python_version < '3.15'",
-        "pydantic==2.14.0b1; python_version >= '3.15'",
-    } <= set(dependencies)
+    assert "pydantic>=2.0.0,<3" in dependencies
     assert not any(dependency.startswith("matplotlib") for dependency in dependencies)
     assert "matplotlib>=3.7.0" in project["project"]["optional-dependencies"]["viz"]
 

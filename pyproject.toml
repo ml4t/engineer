@@ -67,7 +67,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Typing :: Typed",
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.15"
 
 # Core dependencies
 dependencies = [
@@ -79,11 +79,10 @@ dependencies = [
     "numpy>=1.24.0,<2.6",
 
     # Performance optimization
-    "numba>=0.57.0; python_version < '3.15'",
+    "numba>=0.57.0",
 
     # Configuration
-    "pydantic>=2.0.0,<3; python_version < '3.15'",
-    "pydantic==2.14.0b1; python_version >= '3.15'",
+    "pydantic>=2.0.0,<3",
     "pyyaml>=6.0.0",
 
     # Utilities
