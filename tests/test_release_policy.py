@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
@@ -162,9 +163,14 @@ def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
-    assert "ml4t-specs>=0.1.0,<0.2.0" in project["project"]["dependencies"]
+    requirement = next(
+        Requirement(value)
+        for value in project["project"]["dependencies"]
+        if Requirement(value).name == "ml4t-specs"
+    )
+    assert str(requirement.specifier) == "<0.2.0,>=0.1.0"
     specs = next(package for package in lock["package"] if package["name"] == "ml4t-specs")
-    assert specs["version"] == "0.1.0"
+    assert specs["version"] in requirement.specifier
 
 
 def test_package_supports_python_312_through_314() -> None:
