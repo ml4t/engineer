@@ -12,5 +12,7 @@ site/
 # Claude Code (local development only)
 CLAUDE.md
 .claude/
+.codex/
+.workspace/
 .venv-mlfinpy/
 .idea/
