@@ -168,3 +168,49 @@ def test_pypi_publication_must_match_candidate_manifest(
     response["urls"][0]["digests"]["sha256"] = "0" * 64
     with pytest.raises(ValueError, match="artifacts do not match"):
         release.verify_publication(candidate_dir)
+
+
+def test_pypi_install_verification_retries_index_propagation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    results = iter(
+        (
+            subprocess.CompletedProcess([], 1),
+            subprocess.CompletedProcess([], 1),
+            subprocess.CompletedProcess([], 0),
+        )
+    )
+    commands: list[list[str]] = []
+    sleeps: list[int] = []
+
+    def run(command: list[str], *, check: bool) -> subprocess.CompletedProcess[bytes]:
+        assert check is False
+        commands.append(command)
+        return next(results)
+
+    monkeypatch.setattr(release.subprocess, "run", run)
+    monkeypatch.setattr(release.time, "sleep", sleeps.append)
+
+    release.verify_install(
+        "ml4t-engineer",
+        "0.1.4",
+        Path("tests/documentation_workflows.py"),
+        attempts=3,
+        retry_seconds=7,
+    )
+
+    assert len(commands) == 3
+    assert commands[0] == [
+        "uv",
+        "run",
+        "--isolated",
+        "--no-project",
+        "--refresh-package",
+        "ml4t-engineer",
+        "--with",
+        "ml4t-engineer==0.1.4",
+        "python",
+        "tests/documentation_workflows.py",
+        "--readme-only",
+    ]
+    assert sleeps == [7, 7]

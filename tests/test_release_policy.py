@@ -192,7 +192,7 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
         in verify_commands["Verify PyPI metadata and artifact SHA256 digests"]
     )
     assert (
-        "--readme-only"
+        "release.py smoke-test"
         in verify_commands["Install the published wheel and run the README quick start"]
     )
     assert (
