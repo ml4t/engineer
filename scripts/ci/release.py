@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
@@ -67,6 +69,36 @@ def verify_publication(candidate_dir: Path) -> None:
         raise ValueError("PyPI artifacts do not match the candidate manifest")
 
 
+def verify_install(
+    name: str,
+    version: str,
+    script: Path,
+    *,
+    attempts: int = 12,
+    retry_seconds: int = 10,
+) -> None:
+    command = [
+        "uv",
+        "run",
+        "--isolated",
+        "--no-project",
+        "--refresh-package",
+        name,
+        "--with",
+        f"{name}=={version}",
+        "python",
+        str(script),
+        "--readme-only",
+    ]
+    for attempt in range(attempts):
+        result = subprocess.run(command, check=False)
+        if result.returncode == 0:
+            return
+        if attempt + 1 < attempts:
+            time.sleep(retry_seconds)
+    raise RuntimeError(f"failed to install and exercise {name} {version} from PyPI")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -75,6 +107,10 @@ def _parser() -> argparse.ArgumentParser:
     absent.add_argument("version")
     verify = subparsers.add_parser("verify")
     verify.add_argument("candidate_dir", type=Path)
+    smoke_test = subparsers.add_parser("smoke-test")
+    smoke_test.add_argument("name")
+    smoke_test.add_argument("version")
+    smoke_test.add_argument("script", type=Path)
     return parser
 
 
@@ -82,8 +118,10 @@ def main() -> None:
     args = _parser().parse_args()
     if args.command == "require-absent":
         require_version_absent(args.name, args.version)
-    else:
+    elif args.command == "verify":
         verify_publication(args.candidate_dir)
+    else:
+        verify_install(args.name, args.version, args.script)
 
 
 if __name__ == "__main__":

@@ -278,9 +278,9 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
         run: >-
-          uv run --isolated --no-project
-          --with "ml4t-engineer==${RELEASE_VERSION}"
-          python tests/documentation_workflows.py --readme-only
+          python scripts/ci/release.py smoke-test
+          ml4t-engineer "${RELEASE_VERSION}"
+          tests/documentation_workflows.py
       - name: Verify GitHub release artifacts against the manifest
         env:
           GH_TOKEN: ${{ github.token }}
