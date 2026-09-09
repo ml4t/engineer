@@ -181,6 +181,7 @@ jobs:
           name: release-candidate
           path: candidate
       - name: Verify candidate identity
+        shell: bash
         run: >-
           python scripts/ci/candidate.py verify candidate
           --expected-commit "${{ github.sha }}"

@@ -70,6 +70,10 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     assert "candidate.py verify candidate" in identity
     assert '--expected-commit "${{ github.sha }}"' in identity
     assert '--expected-tree "$(git rev-parse HEAD^{tree})"' in identity
+    assert (
+        next(step for step in steps if step.get("name") == "Verify candidate identity")["shell"]
+        == "bash"
+    )
 
     assert "--python-version ${{ matrix.python-version }}" in commands["Run ty check"]
     assert "--python .artifact-venv --no-project" in commands["Run ty check"]
