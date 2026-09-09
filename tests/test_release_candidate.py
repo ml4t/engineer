@@ -33,6 +33,11 @@ def test_candidate_manifest_binds_both_artifacts_to_source(candidate_dir: Path) 
     )
     assert manifest["name"] == "ml4t-engineer"
     assert manifest["version"]
+    assert manifest["metadata"]["description"] == (
+        "Feature engineering, labeling, alternative bars, and leakage-safe datasets for financial ML."
+    )
+    assert manifest["metadata"]["author_email"] == "Stefan Jansen <stefan@applied-ai.com>"
+    assert manifest["metadata"]["maintainer_email"] == "Stefan Jansen <pm@ml4trading.io>"
     assert len(manifest["artifacts"]) == 2
     assert all(len(record["sha256"]) == 64 for record in manifest["artifacts"])
 
@@ -134,8 +139,20 @@ def test_pypi_publication_must_match_candidate_manifest(
     candidate_dir: Path,
 ) -> None:
     manifest = json.loads((candidate_dir / "candidate.json").read_text(encoding="utf-8"))
+    metadata = manifest["metadata"]
     response = {
-        "info": {"name": manifest["name"], "version": manifest["version"]},
+        "info": {
+            "author_email": metadata["author_email"],
+            "classifiers": metadata["classifiers"],
+            "keywords": ",".join(metadata["keywords"]),
+            "license": metadata["license"],
+            "maintainer_email": metadata["maintainer_email"],
+            "name": manifest["name"],
+            "project_urls": metadata["project_urls"],
+            "requires_python": metadata["requires_python"],
+            "summary": metadata["description"],
+            "version": manifest["version"],
+        },
         "urls": [
             {
                 "filename": record["filename"],

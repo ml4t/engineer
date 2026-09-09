@@ -42,6 +42,20 @@ def verify_publication(candidate_dir: Path) -> None:
         raise ValueError("PyPI response has no project metadata")
     if (info.get("name"), info.get("version")) != (manifest["name"], manifest["version"]):
         raise ValueError("PyPI project identity does not match the candidate manifest")
+    metadata = {
+        "author_email": info.get("author_email"),
+        "classifiers": sorted(info.get("classifiers", [])),
+        "description": info.get("summary"),
+        "keywords": sorted(
+            keyword.strip() for keyword in (info.get("keywords") or "").split(",") if keyword
+        ),
+        "license": info.get("license"),
+        "maintainer_email": info.get("maintainer_email"),
+        "project_urls": info.get("project_urls"),
+        "requires_python": info.get("requires_python"),
+    }
+    if metadata != manifest.get("metadata"):
+        raise ValueError("PyPI public metadata does not match the candidate manifest")
 
     published = {
         item.get("filename"): (item.get("digests", {}).get("sha256"), item.get("size"))
