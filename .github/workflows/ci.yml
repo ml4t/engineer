@@ -7,13 +7,22 @@ on:
     branches: [main]
   workflow_dispatch:
   workflow_call:
+    inputs:
+      release_version:
+        description: Exact version to embed in a release candidate
+        required: false
+        type: string
 
-env:
-  PYTHON_VERSION: "3.12"
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.10.9"
 
 jobs:
   lint:
@@ -21,43 +30,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.10.9"
-
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev
-
-      - name: Run ruff check
-        run: uv run ruff check src/ tests/
-
-      - name: Run ruff format check
-        run: uv run ruff format --check src/ tests/
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --python ${{ env.PYTHON_VERSION }} --dev
+      - name: Run Ruff lint
+        run: uv run ruff check src/ tests/ examples/ scripts/
+      - name: Run Ruff format check
+        run: uv run ruff format --check src/ tests/ examples/ scripts/
 
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.10.9"
-
+          version: ${{ env.UV_VERSION }}
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
-
       - name: Install dependencies
-        run: >-
-          uv sync --python ${{ env.PYTHON_VERSION }} --dev
-          --extra store --extra viz
-
+        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev --extra store --extra viz
       - name: Run ty check
         run: uv run --no-sync ty check
 
@@ -66,95 +60,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.10.9"
-
+          version: ${{ env.UV_VERSION }}
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
-
       - name: Export locked environments
         run: |
           uv export --locked --no-dev --no-emit-project --no-hashes \
             --output-file "${{ runner.temp }}/core.txt"
           uv export --locked --all-extras --all-groups --no-emit-project --no-hashes \
             --output-file "${{ runner.temp }}/complete.txt"
-
-      - name: Audit locked environments
+      - name: Audit runtime and contributor environments
         run: |
-          uv run pip-audit --requirement "${{ runner.temp }}/core.txt"
-          uv run pip-audit --requirement "${{ runner.temp }}/complete.txt"
-
-  test:
-    name: Qualify (${{ matrix.os }}, Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.12", "3.13", "3.14"]
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          version: "0.10.9"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: uv sync --python python --dev --extra ta --extra store --extra viz
-
-      - name: Import package
-        run: uv run --no-sync python -c "import ml4t.engineer"
-
-      - name: Run ty check
-        run: uv run --no-sync ty check --python-version ${{ matrix.python-version }}
-
-      - name: Build package
-        run: uv build --python python
-
-      - name: Export installed-wheel test environment
-        run: >-
-          uv export --locked --group dev --extra ta --extra store --extra viz
-          --no-emit-project --no-hashes
-          --output-file "${{ runner.temp }}/test-requirements.txt"
-
-      - name: Install built wheel
-        shell: bash
-        run: |
-          uv venv --python python .artifact-venv
-          artifact_wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
-          UV_CACHE_DIR="${{ runner.temp }}/fresh-wheel-cache" \
-            uv pip install --python .artifact-venv "$artifact_wheel"
-          uv pip install --python .artifact-venv --requirements "${{ runner.temp }}/test-requirements.txt"
-
-      - name: Import built wheel
-        run: uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
-
-      - name: Run tests
-        shell: bash
-        run: |
-          for iteration in {1..10}; do
-            echo "Installed-wheel suite ${iteration}/10"
-            uv run --python .artifact-venv --no-project \
-              python -m pytest tests/ -q --tb=short --no-cov
-          done
-
-      - name: Run documented workflows from built wheel
-        run: >-
-          uv run --python .artifact-venv --no-project
-          python tests/documentation_workflows.py
+          uv run --with pip-audit python -m pip_audit \
+            --requirement "${{ runner.temp }}/core.txt" --progress-spinner off
+          uv run --with pip-audit python -m pip_audit \
+            --requirement "${{ runner.temp }}/complete.txt" --progress-spinner off
 
   coverage:
     name: Coverage
@@ -162,71 +84,155 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.10.9"
-
+          version: ${{ env.UV_VERSION }}
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
-
       - name: Install dependencies
-        run: >-
-          uv sync --python ${{ env.PYTHON_VERSION }} --dev
-          --extra ta --extra store --extra viz
-
+        run: uv sync --python ${{ env.PYTHON_VERSION }} --dev --extra ta --extra store --extra viz
       - name: Measure line and branch coverage
         env:
           NUMBA_DISABLE_JIT: "1"
         run: >-
-          uv run pytest tests/ -q
-          --cov-report=
-          --cov-report=json:coverage.json
-          --cov-report=term:skip-covered
-
+          uv run pytest tests/ -q --cov-report=
+          --cov-report=json:coverage.json --cov-report=term:skip-covered
       - name: Enforce release thresholds
         run: uv run python scripts/check_coverage.py coverage.json
 
-  build:
-    name: Build Package
+  documentation:
+    name: Documentation
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, security, test, coverage]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --python ${{ env.PYTHON_VERSION }} --dev --extra docs
+      - name: Run documented workflows
+        run: uv run python tests/documentation_workflows.py
+      - name: Check every README link
+        run: uv run python scripts/ci/check_readme_links.py README.md
+      - name: Build strict documentation
+        run: uv run mkdocs build --strict
+
+  build-candidate:
+    name: Build Candidate
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, security, coverage, documentation]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.10.9"
-
-      - name: Set up Python
-        run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - name: Build package
-        run: uv build
-
-      - name: Validate package metadata
-        run: uv run twine check dist/*
-
-      - name: Validate release version
-        if: startsWith(github.ref, 'refs/tags/')
+          version: ${{ env.UV_VERSION }}
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --python ${{ env.PYTHON_VERSION }} --dev
+      - name: Set release candidate version
+        if: ${{ inputs.release_version != '' }}
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: echo "SETUPTOOLS_SCM_PRETEND_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
+      - name: Build source and wheel artifacts once
+        run: uv build --out-dir candidate/dist
+      - name: Record candidate commit, tree, version, and SHA256 digests
         run: >-
-          uv run python -c
-          "import os; from ml4t.engineer import __version__;
-          tag=os.environ['GITHUB_REF_NAME'];
-          assert tag == f'v{__version__}', f'{tag} does not match v{__version__}'"
-
-      - name: Validate wheel installation
+          uv run python scripts/ci/candidate.py create candidate
+          --commit-sha "${{ github.sha }}"
+          --git-tree "$(git rev-parse HEAD^{tree})"
+      - name: Validate artifact metadata and manifest
         run: |
-          uv venv --python ${{ env.PYTHON_VERSION }} .artifact-venv
-          uv pip install --python .artifact-venv dist/*.whl
-          uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
-
-      - name: Upload build artifacts
+          uv run twine check candidate/dist/*
+          uv run python scripts/ci/candidate.py verify candidate \
+            --expected-commit "${{ github.sha }}" \
+            --expected-tree "$(git rev-parse HEAD^{tree})"
+      - name: Upload release candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dist
-          path: dist/
+          name: release-candidate
+          path: candidate/
+          if-no-files-found: error
+
+  test:
+    name: Qualify (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    needs: build-candidate
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate
+          path: candidate
+      - name: Verify candidate identity
+        shell: bash
+        run: >-
+          python scripts/ci/candidate.py verify candidate
+          --expected-commit "${{ github.sha }}"
+          --expected-tree "$(git rev-parse HEAD^{tree})"
+      - name: Export installed-wheel test environment
+        run: >-
+          uv export --locked --group dev --extra ta --extra store --extra viz
+          --no-emit-project --no-hashes
+          --output-file "${{ runner.temp }}/test-requirements.txt"
+      - name: Install the candidate wheel in a clean environment
+        shell: bash
+        run: |
+          uv venv --python python .artifact-venv
+          wheel="$(find candidate/dist -maxdepth 1 -name '*.whl' -print -quit)"
+          UV_CACHE_DIR="${{ runner.temp }}/fresh-wheel-cache" \
+            uv pip install --python .artifact-venv "$wheel"
+          uv pip install --python .artifact-venv \
+            --requirements "${{ runner.temp }}/test-requirements.txt"
+      - name: Import the installed candidate
+        run: uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
+      - name: Run ty check
+        run: >-
+          uv run --python .artifact-venv --no-project
+          ty check --python-version ${{ matrix.python-version }}
+      - name: Run the installed-wheel suite repeatedly
+        shell: bash
+        run: |
+          for iteration in {1..10}; do
+            echo "Installed-wheel suite ${iteration}/10"
+            uv run --python .artifact-venv --no-project \
+              python -m pytest tests/ -q --tb=short --no-cov
+          done
+      - name: Run documented workflows from the installed candidate
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python tests/documentation_workflows.py
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [build-candidate, test]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate
+          path: candidate
+      - name: Verify the qualified candidate
+        run: >-
+          python scripts/ci/candidate.py verify candidate
+          --expected-commit "${{ github.sha }}"
+          --expected-tree "$(git rev-parse HEAD^{tree})"

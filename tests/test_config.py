@@ -1,5 +1,5 @@
 """
-Global test configuration for QuantLab-TA.
+Global test configuration for ML4T Engineer.
 
 This module defines strict accuracy requirements and common test utilities
 to ensure all indicators match TA-Lib output within acceptable tolerances.

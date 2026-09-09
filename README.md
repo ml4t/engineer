@@ -2,204 +2,112 @@
 
 [![Python 3.12-3.14](https://img.shields.io/badge/python-3.12--3.14-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/ml4t-engineer)](https://pypi.org/project/ml4t-engineer/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Feature engineering for financial machine learning: validated features, labeling
-methods, alternative bars, and leakage-safe dataset preparation.
+Feature engineering, labeling, alternative bars, and leakage-safe datasets for
+financial ML.
 
-## Part of the ML4T Library Ecosystem
-
-This library is one of six interconnected libraries supporting the machine
-learning for trading workflow described in
-[Machine Learning for Trading](https://www.ml4trading.io/):
-
-![ML4T Library Ecosystem](docs/images/ml4t_ecosystem_workflow_color.png)
-
-Together they cover data infrastructure, feature engineering, modeling, signal evaluation, strategy backtesting, and live deployment.
-
-## What This Library Does
-
-Transforming raw price data into predictive features is a core task in
-quantitative research. `ml4t-engineer` provides:
-
-- 120 registry features across 11 categories (momentum, volatility, trend,
-  microstructure, and more)
-- Triple-barrier, ATR-based, percentile, trend-scanning, and meta-labeling
-  methods from *Advances in Financial Machine Learning*
-- Alternative bar sampling (volume bars, dollar bars, tick imbalance bars)
-- Dataset building, preprocessing, and feature discovery for leakage-safe ML
-  workflows
-
-The library is built on Polars with Numba JIT compilation for numerical
-operations. 60 features are validated against TA-Lib at `1e-6` tolerance.
-
-![ml4t-engineer Architecture](docs/images/ml4t_engineer_architecture_print.jpeg)
+`ml4t-engineer` provides 120 registry features across 11 categories, path-dependent
+and fixed-horizon labeling, activity-based bar sampling, and train-only preprocessing.
+The core interface uses Polars DataFrames.
 
 ## Installation
+
+`ml4t-engineer` supports Python 3.12, 3.13, and 3.14 on Linux, macOS, and Windows.
 
 ```bash
 pip install ml4t-engineer
 ```
 
-Optional dependencies:
+The quick start uses only core dependencies. Optional extras provide TA-Lib validation,
+DuckDB and PyArrow storage, market calendars, visualization, statistics, and ML tools:
 
 ```bash
-pip install ml4t-engineer[ta]        # TA-Lib backend
-pip install ml4t-engineer[viz]       # Visualization
-pip install ml4t-engineer[calendars] # Trading calendars
+pip install "ml4t-engineer[ta]"
+pip install "ml4t-engineer[store]"
+pip install "ml4t-engineer[calendars]"
+pip install "ml4t-engineer[viz]"
+pip install "ml4t-engineer[stats]"
+pip install "ml4t-engineer[ml]"
 ```
+
+TA-Lib requires its native library. The core package does not require an external
+service, credentials, or special hardware. Python 3.15 is not supported while the
+active Polars compatibility exception applies.
 
 ## Quick Start
 
+<!-- ml4t-exec -->
 ```python
+from datetime import date, timedelta
+
 import polars as pl
 from ml4t.engineer import compute_features
 
-df = pl.read_parquet("ohlcv.parquet")
-
-# Compute features with default parameters
-result = compute_features(df, ["rsi", "macd", "atr", "obv"])
-
-# Or with custom parameters
-result = compute_features(df, [
-    {"name": "rsi", "params": {"period": 20}},
+close = [100.0 + i * 0.1 + (i % 7) * 0.2 for i in range(100)]
+ohlcv = pl.DataFrame(
     {
-        "name": "bollinger_bands",
-        "params": {"period": 20, "nbdevup": 2.0, "nbdevdn": 2.0},
-    },
-])
+        "timestamp": [date(2024, 1, 1) + timedelta(days=i) for i in range(100)],
+        "open": close,
+        "high": [price + 1.0 for price in close],
+        "low": [price - 1.0 for price in close],
+        "close": close,
+        "volume": [100_000 + i * 100 for i in range(100)],
+    }
+)
+
+features = compute_features(ohlcv, ["rsi", "macd", "atr"])
+
+assert {"rsi", "macd", "atr"} <= set(features.columns)
+assert features.height == ohlcv.height
 ```
 
-## Feature Registry
+`compute_features()` returns the input columns with the requested feature columns
+appended. Use the feature registry to inspect categories and parameters before building
+larger pipelines.
 
-```python
-from ml4t.engineer.core.registry import get_registry
+## Supported Workflows
 
-registry = get_registry()
-print(registry.list_all())                    # All 120 features
-print(registry.list_by_category("momentum"))  # 31 momentum indicators
-print(registry.list_ta_lib_compatible())      # 60 TA-Lib validated features
-print(registry.list_normalized())             # 37 bounded (0-100, -1 to 1)
-```
+- Technical, volatility, risk, microstructure, statistical, and ML-oriented features
+- Triple-barrier, ATR-barrier, percentile, fixed-horizon, trend-scanning, and meta-labels
+- Tick, volume, dollar, imbalance, and run bars
+- Train/test splitting with train-only scaling
+- Feature metadata search and discovery
 
-## Feature Categories
-
-| Category | Count | Examples |
-|----------|-------|----------|
-| Momentum | 31 | RSI, MACD, Stochastic, CCI, ADX, MFI |
-| Microstructure | 15 | Kyle Lambda, VPIN, Amihud, Roll spread |
-| Volatility | 15 | ATR, Bollinger, Yang-Zhang, Parkinson |
-| Statistics | 14 | Variance, Linear Regression, Correlation |
-| ML | 14 | Fractional Diff, Entropy, Lag features |
-| Trend | 10 | SMA, EMA, WMA, DEMA, TEMA, KAMA |
-| Risk | 6 | Max Drawdown, Sortino, CVaR |
-| Price Transform | 5 | Typical Price, Weighted Close |
-| Regime | 4 | Hurst Exponent, Choppiness Index |
-| Volume | 3 | OBV, AD, ADOSC |
-| Math | 3 | MAX, MIN, SUM |
-
-## Triple-Barrier Labeling
-
-```python
-from ml4t.engineer.config import LabelingConfig
-from ml4t.engineer.labeling import triple_barrier_labels, atr_triple_barrier_labels
-
-# Fixed barriers
-tb_config = LabelingConfig.triple_barrier(
-    upper_barrier=0.02,    # 2% profit target
-    lower_barrier=0.01,    # 1% stop loss
-    max_holding_period=20, # 20 bars
-)
-labels = triple_barrier_labels(
-    df,
-    config=tb_config,
-)
-
-# ATR-based dynamic barriers
-atr_config = LabelingConfig.atr_barrier(
-    atr_tp_multiple=2.0,
-    atr_sl_multiple=1.0,
-    atr_period=14,
-    max_holding_period=20,
-)
-labels = atr_triple_barrier_labels(
-    df,
-    config=atr_config,
-)
-
-# Time-based horizons
-tb_time_config = LabelingConfig.triple_barrier(
-    upper_barrier=0.02,
-    lower_barrier=0.01,
-    max_holding_period="4h",  # 4 hours
-)
-labels = triple_barrier_labels(
-    df,
-    config=tb_time_config,
-)
-```
-
-## Alternative Bars
-
-```python
-from ml4t.engineer.bars import VolumeBarSampler, DollarBarSampler, TickImbalanceBarSampler
-
-# Volume bars (equal volume per bar)
-vbars = VolumeBarSampler(volume_per_bar=1000).sample(tick_data)
-
-# Dollar bars (equal dollar volume per bar)
-dbars = DollarBarSampler(dollars_per_bar=1_000_000).sample(tick_data)
-
-# Tick imbalance bars (information-driven)
-ibars = TickImbalanceBarSampler(expected_ticks_per_bar=100).sample(tick_data)
-```
-
-## Documentation
-
-- [Docs Home](https://www.ml4trading.io/docs/engineer/) - library overview and
-  workflow map
-- [Quickstart](https://www.ml4trading.io/docs/engineer/getting-started/quickstart/) -
-  first working feature and labeling workflow
-- [Features](https://www.ml4trading.io/docs/engineer/user-guide/features/) -
-  120 features across 11 registry categories
-- [Labeling](https://www.ml4trading.io/docs/engineer/user-guide/labeling/) -
-  7 labeling methods for supervised learning
-- [Dataset Builder](https://www.ml4trading.io/docs/engineer/user-guide/dataset-builder/) -
-  leakage-safe train/test preparation
-- [Examples](https://github.com/ml4t/engineer/blob/main/examples/README.md) -
-  runnable scripts for complete workflows and focused features
-
-## Technical Characteristics
-
-- **Polars-native**: All computations use Polars expressions
-- **Numba-accelerated**: JIT compilation for numerical kernels
-- **TA-Lib validated**: 60 features validated at `1e-6` tolerance
-- **AFML-compliant**: Labeling methods verified against *Advances in Financial Machine Learning*
-- **ML-ready outputs**: 37 features produce bounded outputs (0-100, -1 to 1) for direct model input; remaining features work with standard preprocessing (returns, z-scores, robust scaling)
+See the [documentation](https://www.ml4trading.io/docs/engineer/) for tutorials,
+task-oriented guides, explanations, and the API reference. Report defects and request
+changes through [GitHub Issues](https://github.com/ml4t/engineer/issues).
 
 ## Related Libraries
 
-- **ml4t-specs**: Shared feed and artifact schema definitions across the ML4T stack
-- **ml4t-data**: Market data acquisition and storage
-- **ml4t-diagnostic**: Signal evaluation and statistical validation
-- **ml4t-backtest**: Event-driven backtesting
-- **ml4t-live**: Live trading with broker integration
+- [`ml4t-specs`](https://github.com/ml4t/specs) defines the shared market-data and
+  artifact contracts used by this package.
+- [`ml4t-data`](https://github.com/ml4t/data) supplies validated market data for feature
+  computation.
+- [`ml4t-diagnostic`](https://github.com/ml4t/diagnostic) evaluates features, labels, and
+  model signals produced from engineered datasets.
 
 ## Development
 
 ```bash
 git clone https://github.com/ml4t/engineer.git
-cd ml4t-engineer
-uv sync
-uv run pytest tests/ -q
+cd engineer
+uv sync --dev --extra docs --extra ta --extra store --extra viz
+uv run ruff check src/ tests/ examples/ scripts/
+uv run ruff format --check src/ tests/ examples/ scripts/
 uv run ty check
+uv run pytest tests/ -q
+uv build
+uv run mkdocs build --strict
 ```
 
-## References
+Pull requests must also pass the supported Python and operating-system matrix,
+dependency and vulnerability review, clean-wheel installation, documented workflow
+tests, and ecosystem qualification.
 
-- Lopez de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley.
-- Lopez de Prado, M. (2020). *Machine Learning for Asset Managers*. Cambridge.
+## Project Information
 
-## License
-
-MIT License - see [LICENSE](LICENSE) for details.
+- [Documentation](https://www.ml4trading.io/docs/engineer/)
+- [Issue tracker](https://github.com/ml4t/engineer/issues)
+- [Releases and changelog](https://github.com/ml4t/engineer/releases)
+- [License](LICENSE)

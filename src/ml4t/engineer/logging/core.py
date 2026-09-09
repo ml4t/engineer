@@ -79,7 +79,7 @@ class FeatureLogger:
         level : int
             Logging level (default: INFO)
         """
-        self.logger = logging.getLogger(f"mlquant.features.{name}")
+        self.logger = logging.getLogger(f"ml4t.engineer.{name}")
         self.logger.setLevel(level)
 
         # Add custom formatter if no handlers exist

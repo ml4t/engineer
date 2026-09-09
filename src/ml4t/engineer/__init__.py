@@ -1,8 +1,7 @@
 """ml4t-engineer - A Financial Machine Learning Feature Engineering Library.
 
-ml4t-engineer is a comprehensive FML stack designed for correctness, reproducibility,
-and performance. It provides tools for feature engineering, labeling, and preprocessing
-for financial machine learning models.
+ml4t-engineer provides features, labels, alternative bars, and leakage-safe dataset
+preparation for financial machine learning.
 
 Agent Navigation:
     This package includes AGENTS.md files for AI agent navigation.
@@ -45,12 +44,9 @@ from .preprocessing import (
 )
 
 try:
-    from ._version import version as __version__
-except Exception:
-    try:
-        __version__ = _dist_version("ml4t-engineer")
-    except _PackageNotFoundError:
-        __version__ = "0+unknown"
+    __version__ = _dist_version("ml4t-engineer")
+except _PackageNotFoundError:
+    __version__ = "0+unknown"
 
 
 def get_agent_docs() -> dict[str, _Path]:

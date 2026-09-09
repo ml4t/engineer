@@ -23,7 +23,7 @@ class TestFeatureLogger:
         """Test logger creation and basic functionality."""
         logger = FeatureLogger("test_module")
         assert logger.name == "test_module"
-        assert logger.logger.name == "mlquant.features.test_module"
+        assert logger.logger.name == "ml4t.engineer.test_module"
 
     def test_log_feature_lifecycle(self, caplog):
         """Test logging feature calculation lifecycle."""

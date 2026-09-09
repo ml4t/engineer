@@ -51,34 +51,36 @@ def test_ci_qualifies_required_python_platform_matrix() -> None:
 
 def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> None:
     steps = _load_workflow("ci.yml")["jobs"]["test"]["steps"]
-    commands = {step["name"]: step["run"] for step in steps if "run" in step}
+    commands = {step["name"]: step["run"] for step in steps if "run" in step and "name" in step}
     setup = next(
         step for step in steps if step.get("name") == "Set up Python ${{ matrix.python-version }}"
     )
 
     assert {
-        "Install dependencies",
-        "Import package",
-        "Run tests",
+        "Verify candidate identity",
         "Run ty check",
-        "Build package",
         "Export installed-wheel test environment",
-        "Install built wheel",
-        "Import built wheel",
+        "Install the candidate wheel in a clean environment",
+        "Import the installed candidate",
+        "Run the installed-wheel suite repeatedly",
+        "Run documented workflows from the installed candidate",
     } <= commands.keys()
-    assert commands["Install dependencies"] == (
-        "uv sync --python python --dev --extra ta --extra store --extra viz"
-    )
     assert setup["with"] == {"python-version": "${{ matrix.python-version }}"}
-    assert "--no-sync" in commands["Import package"]
-    assert "--python python" not in commands["Import package"]
+    identity = commands["Verify candidate identity"]
+    assert "candidate.py verify candidate" in identity
+    assert '--expected-commit "${{ github.sha }}"' in identity
+    assert '--expected-tree "$(git rev-parse HEAD^{tree})"' in identity
+    assert (
+        next(step for step in steps if step.get("name") == "Verify candidate identity")["shell"]
+        == "bash"
+    )
+
     assert "--python-version ${{ matrix.python-version }}" in commands["Run ty check"]
-    assert "--no-sync" in commands["Run ty check"]
+    assert "--python .artifact-venv --no-project" in commands["Run ty check"]
     assert "--exclude" not in commands["Run ty check"]
     assert "--extra-search-path" not in commands["Run ty check"]
-    assert "--python python" in commands["Build package"]
 
-    test_command = commands["Run tests"]
+    test_command = commands["Run the installed-wheel suite repeatedly"]
     assert "for iteration in {1..10}" in test_command
     assert "--python .artifact-venv --no-project" in test_command
     assert "python -m pytest tests/" in test_command
@@ -89,44 +91,125 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     export_command = commands["Export installed-wheel test environment"]
     assert "--group dev --extra ta --extra store --extra viz" in export_command
     assert "--no-emit-project" in export_command
-    wheel_install = commands["Install built wheel"]
+    wheel_install = commands["Install the candidate wheel in a clean environment"]
     assert 'UV_CACHE_DIR="${{ runner.temp }}/fresh-wheel-cache"' in wheel_install
-    assert 'uv pip install --python .artifact-venv "$artifact_wheel"' in wheel_install
+    assert 'uv pip install --python .artifact-venv "$wheel"' in wheel_install
     assert "--requirements" in wheel_install
-    assert wheel_install.index('"$artifact_wheel"') < wheel_install.index("--requirements")
+    assert wheel_install.index('"$wheel"') < wheel_install.index("--requirements")
 
     step_names = [step.get("name") for step in steps]
-    assert step_names.index("Install built wheel") < step_names.index("Run tests")
+    assert step_names.index(
+        "Install the candidate wheel in a clean environment"
+    ) < step_names.index("Run the installed-wheel suite repeatedly")
 
 
 def test_release_publishes_only_the_qualified_artifact() -> None:
     ci_jobs = _load_workflow("ci.yml")["jobs"]
-    build_steps = ci_jobs["build"]["steps"]
-    build_commands = {step["name"]: step["run"] for step in build_steps if "run" in step}
-    assert ci_jobs["build"]["needs"] == ["lint", "typecheck", "security", "test", "coverage"]
-    assert "twine check dist/*" in build_commands["Validate package metadata"]
-    assert "GITHUB_REF_NAME" in build_commands["Validate release version"]
-    assert "tag == f'v{__version__}'" in build_commands["Validate release version"]
-    assert "uv pip install" in build_commands["Validate wheel installation"]
-    assert 'python -c "import ml4t.engineer"' in build_commands["Validate wheel installation"]
+    candidate_steps = ci_jobs["build-candidate"]["steps"]
+    candidate_commands = {
+        step["name"]: step["run"] for step in candidate_steps if "run" in step and "name" in step
+    }
+    assert ci_jobs["build-candidate"]["needs"] == [
+        "lint",
+        "typecheck",
+        "security",
+        "coverage",
+        "documentation",
+    ]
+    assert candidate_commands["Build source and wheel artifacts once"] == (
+        "uv build --out-dir candidate/dist"
+    )
+    version_step = next(
+        step for step in candidate_steps if step.get("name") == "Set release candidate version"
+    )
+    assert version_step["if"] == "${{ inputs.release_version != '' }}"
+    assert version_step["env"] == {"RELEASE_VERSION": "${{ inputs.release_version }}"}
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION" in version_step["run"]
+    manifest = candidate_commands["Record candidate commit, tree, version, and SHA256 digests"]
+    assert "candidate.py create candidate" in manifest
+    assert "github.sha" in manifest
+    assert "git rev-parse HEAD^{tree}" in manifest
+    assert (
+        "twine check candidate/dist/*"
+        in candidate_commands["Validate artifact metadata and manifest"]
+    )
 
-    release_jobs = _load_workflow("release.yml")["jobs"]
+    upload = next(
+        step for step in candidate_steps if "actions/upload-artifact@" in step.get("uses", "")
+    )
+    assert upload["with"]["name"] == "release-candidate"
+    assert ci_jobs["build"]["needs"] == ["build-candidate", "test"]
+    assert not any("uv build" in step.get("run", "") for step in ci_jobs["build"]["steps"])
 
+    release = _load_workflow("release.yml")
+    release_jobs = release["jobs"]
+    assert set(release["on"]["workflow_dispatch"]["inputs"]) == {"version", "candidate_commit"}
+    assert release_jobs["select-candidate"]["needs"] == [
+        "validate",
+        "ecosystem-qualification",
+        "qualification",
+    ]
     assert release_jobs["qualification"]["uses"] == "./.github/workflows/ci.yml"
-    assert release_jobs["publish"]["needs"] == ["ecosystem-qualification", "qualification"]
-
-    release_step = release_jobs["github-release"]["steps"][0]
-    assert release_step["env"]["GH_REPO"] == "${{ github.repository }}"
-    assert "--verify-tag" in release_step["run"]
+    assert release_jobs["qualification"]["with"]["release_version"] == (
+        "${{ needs.validate.outputs.version }}"
+    )
+    assert release_jobs["docs"]["needs"] == ["validate", "select-candidate"]
+    assert release_jobs["publish"]["needs"] == [
+        "validate",
+        "ecosystem-qualification",
+        "select-candidate",
+        "docs",
+    ]
+    assert release_jobs["github-release"]["needs"] == ["validate", "publish"]
+    assert release_jobs["verify-release"]["needs"] == ["validate", "github-release"]
 
     publish_steps = release_jobs["publish"]["steps"]
-    download = next(step for step in publish_steps if step["name"] == "Download build artifacts")
-    assert download["with"] == {"name": "dist", "path": "dist/"}
+    publisher = next(
+        step for step in publish_steps if "pypa/gh-action-pypi-publish@" in step.get("uses", "")
+    )
+    assert publisher["with"]["packages-dir"] == "candidate/dist/"
+    assert not any(
+        "uv build" in step.get("run", "")
+        for job in release_jobs.values()
+        for step in job.get("steps", [])
+    )
+
+    release_step = next(
+        step
+        for step in release_jobs["github-release"]["steps"]
+        if step.get("name") == "Create tag and GitHub release from the candidate commit"
+    )
+    assert '--target "$CANDIDATE_COMMIT"' in release_step["run"]
+    assert "candidate/candidate.json" in release_step["run"]
+
+    verify_commands = {
+        step["name"]: step["run"]
+        for step in release_jobs["verify-release"]["steps"]
+        if "run" in step and "name" in step
+    }
+    assert (
+        "release.py verify candidate"
+        in verify_commands["Verify PyPI metadata and artifact SHA256 digests"]
+    )
+    assert (
+        "--readme-only"
+        in verify_commands["Install the published wheel and run the README quick start"]
+    )
+    assert (
+        "candidate.py verify released"
+        in verify_commands["Verify GitHub release artifacts against the manifest"]
+    )
+    assert (
+        "verify_docs_deployment.py"
+        in verify_commands["Repeat deployed documentation identity check"]
+    )
 
 
 def test_ci_enforces_independent_line_and_branch_coverage_thresholds() -> None:
     coverage_steps = _load_workflow("ci.yml")["jobs"]["coverage"]["steps"]
-    commands = {step["name"]: step["run"] for step in coverage_steps if "run" in step}
+    commands = {
+        step["name"]: step["run"] for step in coverage_steps if "run" in step and "name" in step
+    }
     measurement = next(
         step for step in coverage_steps if step.get("name") == "Measure line and branch coverage"
     )
@@ -147,14 +230,14 @@ def test_standalone_typecheck_installs_optional_type_dependencies() -> None:
 
 def test_ci_audits_core_and_complete_locked_environments() -> None:
     steps = _load_workflow("ci.yml")["jobs"]["security"]["steps"]
-    commands = {step["name"]: step["run"] for step in steps if "run" in step}
+    commands = {step["name"]: step["run"] for step in steps if "run" in step and "name" in step}
 
     export = commands["Export locked environments"]
     assert "--no-dev --no-emit-project" in export
     assert "--all-extras --all-groups --no-emit-project" in export
 
-    audit = commands["Audit locked environments"]
-    assert audit.count("pip-audit --requirement") == 2
+    audit = commands["Audit runtime and contributor environments"]
+    assert audit.count("python -m pip_audit") == 2
     assert "core.txt" in audit
     assert "complete.txt" in audit
 

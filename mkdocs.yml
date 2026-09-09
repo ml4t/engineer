@@ -2,7 +2,7 @@
 # MkDocs Material configuration with Picasso Blue palette
 
 site_name: ML4T Engineer
-site_description: High-performance feature engineering for financial machine learning
+site_description: Feature engineering, labeling, alternative bars, and leakage-safe datasets for financial ML.
 site_url: https://www.ml4trading.io/docs/engineer/
 repo_url: https://github.com/ml4t/engineer
 repo_name: ml4t/engineer
@@ -121,6 +121,8 @@ nav:
 
 # Extra configuration
 extra:
+  release_version: !ENV [ML4T_DOCS_VERSION, development]
+  release_commit: !ENV [ML4T_DOCS_COMMIT, local]
   ml4t_docs_hub_url: /docs/
   ml4t_libraries_url: /libraries/
   ml4t_chapters_url: /chapters/

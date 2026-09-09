@@ -1,4 +1,4 @@
-"""Performance benchmark tests for QuantLab-TA.
+"""Performance benchmark tests for ML4T Engineer.
 
 These tests measure performance against reference implementations
 and validate our 10-50x performance claims.

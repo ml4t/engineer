@@ -40,7 +40,10 @@
     <div class="ml4t-footer-meta__inner md-grid">
       <div>
         <strong>{{ config.site_name }}</strong>
-        <span> is part of the ML4T documentation suite.</span>
+        <span>
+          version {{ config.extra.release_version }} at
+          {{ config.extra.release_commit[:12] }}.
+        </span>
       </div>
       <div class="ml4t-footer-meta__links">
         <a href="{{ config.extra.ml4t_docs_hub_url }}">Docs Hub</a>

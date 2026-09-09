@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENTS = [
+    ROOT / "README.md",
     ROOT / "docs/index.md",
     ROOT / "docs/getting-started/quickstart.md",
     *sorted((ROOT / "docs/user-guide").glob("*.md")),
@@ -34,10 +36,12 @@ def documented_workflows() -> list[tuple[Path, int, str]]:
     return workflows
 
 
-def run_documented_workflows() -> None:
+def run_documented_workflows(*, readme_only: bool = False) -> None:
     """Run each workflow in an isolated interpreter."""
     failures: list[str] = []
     for document, line_number, source in documented_workflows():
+        if readme_only and document != ROOT / "README.md":
+            continue
         result = subprocess.run(
             [sys.executable, "-c", source],
             cwd=ROOT,
@@ -58,4 +62,6 @@ def run_documented_workflows() -> None:
 
 
 if __name__ == "__main__":
-    run_documented_workflows()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--readme-only", action="store_true")
+    run_documented_workflows(readme_only=parser.parse_args().readme_only)
