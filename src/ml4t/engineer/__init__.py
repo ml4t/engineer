@@ -44,12 +44,9 @@ from .preprocessing import (
 )
 
 try:
-    from ._version import version as __version__
-except Exception:
-    try:
-        __version__ = _dist_version("ml4t-engineer")
-    except _PackageNotFoundError:
-        __version__ = "0+unknown"
+    __version__ = _dist_version("ml4t-engineer")
+except _PackageNotFoundError:
+    __version__ = "0+unknown"
 
 
 def get_agent_docs() -> dict[str, _Path]:
