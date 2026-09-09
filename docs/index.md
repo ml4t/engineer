@@ -1,7 +1,7 @@
 # ML4T Engineer
 
-Turn OHLCV and tick data into model-ready features, labels, and sampling schemes
-without rewriting the same research code in every notebook and pipeline.
+Feature engineering, labeling, alternative bars, and leakage-safe datasets for
+financial ML.
 
 `ml4t-engineer` is the feature-engineering layer in the ML4T stack. It sits between
 `ml4t-data`, which prepares canonical datasets, and `ml4t-diagnostic`, which

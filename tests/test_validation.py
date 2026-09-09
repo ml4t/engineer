@@ -1,4 +1,4 @@
-"""Validation tests for QuantLab-TA against reference implementations.
+"""Validation tests for ML4T Engineer against reference implementations.
 
 This module tests our Polars-based technical indicators against established
 libraries like TA-Lib to ensure mathematical accuracy.

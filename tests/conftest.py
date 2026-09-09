@@ -35,7 +35,7 @@ def crypto_data():
     possible_paths = [
         Path.cwd() / "data" / "crypto" / "spot" / "BTC.parquet",
         Path.cwd().parent / "data" / "crypto" / "spot" / "BTC.parquet",
-        Path.home() / "quantlab" / "data" / "crypto" / "spot" / "BTC.parquet",
+        Path.home() / "ml4t" / "data" / "crypto" / "spot" / "BTC.parquet",
         Path("/tmp") / "test_data" / "BTC.parquet",  # CI environment
     ]
 

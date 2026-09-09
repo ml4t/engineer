@@ -234,5 +234,5 @@ if __name__ == "__main__":
     benchmarks = benchmark_with_timeit()
     for name, talib_ms, our_ms, speedup in benchmarks:
         print(
-            f"{name:<10} TA-Lib: {talib_ms:6.3f}ms  QuantLab: {our_ms:6.3f}ms  Speedup: {speedup:5.2f}x",
+            f"{name:<10} TA-Lib: {talib_ms:6.3f}ms  ML4T: {our_ms:6.3f}ms  Speedup: {speedup:5.2f}x",
         )

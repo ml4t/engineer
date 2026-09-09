@@ -1,8 +1,7 @@
 """ml4t-engineer - A Financial Machine Learning Feature Engineering Library.
 
-ml4t-engineer is a comprehensive FML stack designed for correctness, reproducibility,
-and performance. It provides tools for feature engineering, labeling, and preprocessing
-for financial machine learning models.
+ml4t-engineer provides features, labels, alternative bars, and leakage-safe dataset
+preparation for financial machine learning.
 
 Agent Navigation:
     This package includes AGENTS.md files for AI agent navigation.

@@ -1,1 +1,1 @@
-"""Test suite for QuantLab-TA."""
+"""Test suite for ML4T Engineer."""

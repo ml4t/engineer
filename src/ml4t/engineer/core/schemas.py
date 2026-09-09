@@ -79,7 +79,7 @@ def validate_ohlcv_schema(
     require_asset_id: bool = True,
     allow_flexible_time: bool = True,
 ) -> None:
-    """Validate OHLCV schema compatibility with qdata.
+    """Validate OHLCV schema compatibility with market data inputs.
 
     This validator ensures that input data conforms to the expected OHLCV
     format for ml4t-engineer. It's more flexible than strict schema validation,
