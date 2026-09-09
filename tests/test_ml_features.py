@@ -213,8 +213,10 @@ class TestMLFeatures:
 
     def test_fourier_features(self, sample_data):
         """Test Fourier feature extraction."""
-        # Test with default period
-        fourier_default = fourier_features("close", n_components=3)
+        # Test with default period. `close` is deprecated and unused; the warning is the
+        # point of the separate test below.
+        with pytest.warns((DeprecationWarning, UserWarning)):
+            fourier_default = fourier_features("close", n_components=3)
 
         result = sample_data.with_columns(
             [fourier_default[key].alias(key) for key in fourier_default],
@@ -231,9 +233,55 @@ class TestMLFeatures:
             assert (result[col] <= 1).all()
 
         # Test with custom period
-        fourier_custom = fourier_features("close", n_components=2, period=100)
+        with pytest.warns(DeprecationWarning):
+            fourier_custom = fourier_features("close", n_components=2, period=100)
 
         assert len(fourier_custom) == 4  # 2 components * 2 (sin, cos)
+
+    def test_fourier_features_do_not_depend_on_any_series(self, sample_data):
+        """The basis is a function of row position and period only.
+
+        This is what the previous test could not see. It checked names and the [-1, 1]
+        bound, both of which hold for a basis that ignores its input - and the
+        implementation did ignore it, evaluating `pl.col(close) if isinstance(close, str)
+        else close` as a bare statement and discarding it. Naming the property directly
+        means the docstring and the code now have to agree.
+        """
+        basis = fourier_features(n_components=2, period=64)
+        scrambled = sample_data.with_columns(
+            pl.col("close").reverse().alias("close"),
+            (pl.col("feature1") * -100.0).alias("feature1"),
+        )
+        original = sample_data.with_columns([basis[k].alias(k) for k in basis])
+        altered = scrambled.with_columns([basis[k].alias(k) for k in basis])
+        for col in basis:
+            assert original[col].to_list() == altered[col].to_list()
+
+    def test_fourier_features_period_is_measured_in_rows(self, sample_data):
+        """Component k completes exactly k cycles per `period` rows.
+
+        Pinning the period to rows is what makes the 390 default legible as a trap: it is
+        one US equity session in one-minute bars, and 390 sessions on daily bars.
+        """
+        import numpy as np
+
+        period = 64
+        basis = fourier_features(n_components=1, period=period)
+        got = sample_data.select(basis["fourier_sin_1"].alias("s"))["s"].to_list()
+        t = np.arange(len(got), dtype=float)
+        expected = np.sin(2 * np.pi * t / period)
+        assert np.allclose(got, expected)
+        # One full cycle later, the basis repeats.
+        assert got[0] == pytest.approx(got[period], abs=1e-9)
+
+    def test_fourier_features_warns_when_the_period_is_defaulted(self):
+        """390 is one US equity session in minute bars and wrong at any other bar size."""
+        with pytest.warns(UserWarning, match="390 rows"):
+            fourier_features(n_components=1)
+
+    def test_fourier_features_warns_when_handed_a_series(self):
+        with pytest.warns(DeprecationWarning, match="does not read"):
+            fourier_features("close", n_components=1, period=64)
 
     def test_interaction_features(self, sample_data):
         """Test polynomial interaction feature creation."""
