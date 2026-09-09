@@ -210,7 +210,7 @@ def test_pypi_install_verification_retries_index_propagation(
         "--with",
         "ml4t-engineer==0.1.4",
         "python",
-        "tests/documentation_workflows.py",
+        str(Path("tests/documentation_workflows.py")),
         "--readme-only",
     ]
     assert sleeps == [7, 7]
