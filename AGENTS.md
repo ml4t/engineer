@@ -1,84 +1,63 @@
 # ml4t-engineer
 
-Feature engineering for financial ML: compute indicators, create labels, sample
-alternative bars, and prepare leakage-safe datasets for model training.
+`ml4t-engineer` provides Polars-first feature engineering, labeling, alternative
+bars, and leakage-safe dataset preparation for financial machine learning.
 
-## Quick Start
+## Source orientation
 
-```python
-from ml4t.engineer import compute_features, create_dataset_builder
-from ml4t.engineer.config import LabelingConfig
-from ml4t.engineer.labeling import triple_barrier_labels
+Runtime code lives under `src/ml4t/engineer/`.
 
-features = compute_features(df, ["rsi", "macd", "atr"])
-labels = triple_barrier_labels(
-    features,
-    config=LabelingConfig.triple_barrier(
-        upper_barrier=0.02, lower_barrier=0.01, max_holding_period=20,
-    ),
-)
-builder = create_dataset_builder(
-    features=labels.select(["rsi", "macd", "atr"]),
-    labels=labels["label"],
-    dates=labels["timestamp"],
-    scaler="robust",
-)
+- `api.py`, `features/`, and `discovery/` implement registry-backed feature
+  computation and discovery.
+- `labeling/` implements path-dependent, fixed-horizon, percentile, meta-label,
+  and sample-weighting workflows.
+- `bars/` converts trade data into tick, volume, dollar, imbalance, and run bars.
+- `dataset.py` and `preprocessing.py` implement train/test preparation and
+  train-only transformations.
+- `core/` and `config/` contain registry metadata, validation, schemas, and
+  reusable configuration models.
+- `artifacts/`, `relationships/`, `store/`, `logging/`, and `utils/` provide
+  supporting services.
+
+Tests are under `tests/`. Executable examples and repository checks are under
+`examples/` and `scripts/`.
+
+## Public workflows
+
+Stable entry points include:
+
+- `ml4t.engineer.compute_features`
+- `ml4t.engineer.feature_catalog`
+- `ml4t.engineer.create_dataset_builder`
+- labeling functions under `ml4t.engineer.labeling`
+- bar samplers under `ml4t.engineer.bars`
+
+Start with `README.md` and `docs/getting-started/`. Detailed workflow guidance
+is under `docs/user-guide/`, and the generated API reference is under
+`docs/api/`.
+
+## Engineering constraints
+
+- Python 3.12, 3.13, and 3.14 are supported.
+- Feature computation must preserve the documented DataFrame or LazyFrame
+  return behavior.
+- Changes to registered features must keep implementation, registry metadata,
+  dependencies, normalization metadata, and lookback behavior consistent.
+- Fit preprocessing state only on training data.
+- Keep optional dependencies isolated from the base import.
+- Shared data-contract changes originate in `ml4t-specs`.
+
+## Quality commands
+
+Run from the repository root:
+
+```bash
+uv sync --dev --extra docs --extra ta --extra store --extra viz
+uv run ruff check src/ tests/ examples/ scripts/
+uv run ruff format --check src/ tests/ examples/ scripts/
+uv run ty check
+uv run pytest tests/ -q
+uv build
+uv run python -c "import ml4t.engineer"
+uv run mkdocs build --strict
 ```
-
-## Directory Map
-
-| Path | Purpose | Key Surfaces |
-|------|---------|--------------|
-| `src/ml4t/engineer/features/` | Feature computation and discovery metadata | `compute_features()`, `feature_catalog`, `FeatureCatalog` |
-| `src/ml4t/engineer/labeling/` | Supervised label generation and sample weighting | `triple_barrier_labels()`, `atr_triple_barrier_labels()`, `rolling_percentile_binary_labels()` |
-| `src/ml4t/engineer/bars/` | Tick, volume, dollar, imbalance, and run bars | `TickBarSampler`, `VolumeBarSampler`, `DollarBarSampler` |
-| `src/ml4t/engineer/dataset.py` | Leakage-safe dataset preparation | `MLDatasetBuilder`, `create_dataset_builder()` |
-| `src/ml4t/engineer/preprocessing.py` | Train-only scalers and pipelines | `StandardScaler`, `RobustScaler`, `PreprocessingPipeline` |
-| `src/ml4t/engineer/config/` | Reusable config objects | `LabelingConfig`, `PreprocessingConfig`, `DataContractConfig` |
-
-## Public Entry Points
-
-```python
-from ml4t.engineer import (
-    compute_features,
-    create_dataset_builder,
-    feature_catalog,
-    FeatureCatalog,
-    StandardScaler,
-    RobustScaler,
-)
-from ml4t.engineer.config import LabelingConfig
-from ml4t.engineer.labeling import (
-    triple_barrier_labels,
-    atr_triple_barrier_labels,
-    rolling_percentile_binary_labels,
-    fixed_time_horizon_labels,
-    trend_scanning_labels,
-)
-from ml4t.engineer.bars import (
-    TickBarSampler,
-    VolumeBarSampler,
-    DollarBarSampler,
-    FixedTickImbalanceBarSampler,
-    FixedVolumeImbalanceBarSampler,
-)
-```
-
-## Core Workflows
-
-- `compute_features()` appends indicator columns to an OHLCV DataFrame or LazyFrame
-- `LabelingConfig` plus labeling functions create reusable supervised targets
-- `MLDatasetBuilder` handles train/test splitting and train-only scaling
-- sampler classes in `bars/` turn trade data into non-time bars for downstream use
-
-## Trust Signals
-
-- 120 features across 11 categories
-- 60 TA-Lib validated indicators at `1e-6` tolerance
-- ~50,000 labels/second for triple-barrier workflows
-- shared book integration via `docs/book-guide/index.md`
-
-## Navigation
-
-See [src/ml4t/engineer/AGENTS.md](src/ml4t/engineer/AGENTS.md) for package-level
-module orientation and subdirectory entry points.

@@ -326,14 +326,6 @@ def _calendar_session_ids(
     return sorted_data, session_ids
 
 
-# ExchangeCalendar adapter removed - use pandas_market_calendars directly
-# See .claude/reference/calendar_libraries.md for rationale:
-# - pandas_market_calendars includes ALL exchange_calendars features as dependency
-# - Adds critical product-specific calendars (CME_Equity, CME_Agriculture, etc.)
-# - Correctly handles CME futures maintenance breaks (4-5 PM CT)
-# - Better maintenance, more features, zero downside
-
-
 def calendar_aware_labels(
     data: pl.DataFrame,
     config: LabelingConfig,
