@@ -40,6 +40,7 @@ jobs:
           CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.version }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           if [[ ! "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
             echo "candidate_commit must be a full lowercase commit SHA" >&2
@@ -52,7 +53,7 @@ jobs:
           git fetch origin main --no-tags
           if [[ "$(git rev-parse HEAD)" != "$CANDIDATE_COMMIT" ]] || \
              [[ "$(git rev-parse origin/main)" != "$CANDIDATE_COMMIT" ]] || \
-             [[ "${{ github.sha }}" != "$CANDIDATE_COMMIT" ]]; then
+             [[ "$WORKFLOW_SHA" != "$CANDIDATE_COMMIT" ]]; then
             echo "dispatch the workflow from candidate_commit at the current main revision" >&2
             exit 1
           fi
@@ -62,16 +63,18 @@ jobs:
             exit 1
           fi
           python scripts/ci/release.py require-absent ml4t-engineer "$RELEASE_VERSION"
-          echo "commit=$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
-          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
-          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "commit=$CANDIDATE_COMMIT"
+            echo "tree=$(git rev-parse 'HEAD^{tree}')"
+            echo "version=$RELEASE_VERSION"
+          } >> "$GITHUB_OUTPUT"
 
   ecosystem-qualification:
     name: Ecosystem Qualification
     needs: validate
     permissions:
       contents: read
-    uses: ml4t/ecosystem/.github/workflows/qualify-library.yml@457678d8860d0c816b1dc376e7e2691daa93af4d # v0.1.0
+    uses: ml4t/ecosystem/.github/workflows/qualify-library.yml@da2cbb9a9d0b4d2f166ad630470ff7d7a1aa2643 # 2026-09-19 policy snapshot
     with:
       import-package: ml4t.engineer
       prerelease-exception: python-315-polars
