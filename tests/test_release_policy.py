@@ -69,7 +69,7 @@ def test_each_matrix_cell_runs_all_release_checks_without_masking_failures() -> 
     identity = commands["Verify candidate identity"]
     assert "candidate.py verify candidate" in identity
     assert '--expected-commit "${{ github.sha }}"' in identity
-    assert '--expected-tree "$(git rev-parse HEAD^{tree})"' in identity
+    assert "--expected-tree \"$(git rev-parse 'HEAD^{tree}')\"" in identity
     assert (
         next(step for step in steps if step.get("name") == "Verify candidate identity")["shell"]
         == "bash"
@@ -128,7 +128,7 @@ def test_release_publishes_only_the_qualified_artifact() -> None:
     manifest = candidate_commands["Record candidate commit, tree, version, and SHA256 digests"]
     assert "candidate.py create candidate" in manifest
     assert "github.sha" in manifest
-    assert "git rev-parse HEAD^{tree}" in manifest
+    assert "git rev-parse 'HEAD^{tree}'" in manifest
     assert (
         "twine check candidate/dist/*"
         in candidate_commands["Validate artifact metadata and manifest"]
