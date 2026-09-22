@@ -95,7 +95,7 @@ dependencies = [
 [project.optional-dependencies]
 # Technical analysis libraries
 ta = [
-    "ta-lib>=0.4.0",
+    "ta-lib>=0.4.0,<0.8",
 ]
 
 # Feature store with DuckDB
@@ -142,7 +142,7 @@ dev = [
     "pre-commit>=3.3.0",
     "duckdb>=0.9.0",
     "pandas-market-calendars>=4.0.0",
-    "ta-lib>=0.4.0",
+    "ta-lib>=0.4.0,<0.8",
     "yfinance>=0.2.0",
     "lightgbm>=4.0.0",
     "shap>=0.44.0",
@@ -160,7 +160,7 @@ docs = [
 
 # Complete installation
 all = [
-    "ta-lib>=0.4.0",
+    "ta-lib>=0.4.0,<0.8",
     "duckdb>=0.9.0",
     "pandas-market-calendars>=4.0.0",
     "plotly>=5.15.0",
