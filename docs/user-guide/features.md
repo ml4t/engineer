@@ -227,6 +227,11 @@ Risk and risk-adjusted return metrics.
 | `risk_adjusted_returns` | Sharpe, Sortino, Calmar, Omega | No |
 | `ulcer_index` | Ulcer Index (drawdown-based risk) | No |
 
+`risk_adjusted_returns` accepts `trading_periods` to match the annualization
+frequency to the data, such as `252` for daily observations or `52` for weekly
+observations. Its annual `risk_free_rate` is converted to a per-period threshold
+using the same value.
+
 ### Cross-Asset (10 functions)
 
 Multi-asset relationship features. These are standalone functions in `ml4t.engineer.features.cross_asset` rather than registry entries, since they require two or more price series as input.
