@@ -8,6 +8,7 @@ Tests cover:
 5. Edge cases (tolerance, irregular data, session boundaries)
 """
 
+import warnings
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -15,6 +16,7 @@ import polars as pl
 import pytest
 
 from ml4t.engineer.config import DataContractConfig, LabelingConfig
+from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling.horizon_labels import fixed_time_horizon_labels
 from ml4t.engineer.labeling.percentile_labels import rolling_percentile_binary_labels
 from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
@@ -106,6 +108,26 @@ def multi_session_data() -> pl.DataFrame:
             pl.col("timestamp").cast(pl.Datetime("us")),
             pl.col("session_date").cast(pl.Date),
         ]
+    )
+
+
+@pytest.fixture
+def grouped_irregular_data() -> pl.DataFrame:
+    """Create sorted irregular observations for two independent assets."""
+    base = datetime(2024, 1, 1, 9, 30)
+    return pl.DataFrame(
+        {
+            "timestamp": [
+                base,
+                base + timedelta(seconds=70),
+                base + timedelta(seconds=190),
+                base,
+                base + timedelta(seconds=130),
+                base + timedelta(seconds=250),
+            ],
+            "symbol": ["A", "A", "A", "B", "B", "B"],
+            "close": [100.0, 110.0, 130.0, 1000.0, 900.0, 800.0],
+        }
     )
 
 
@@ -279,6 +301,35 @@ class TestFixedTimeHorizonLabels:
         )
 
         assert "label_log_return_30m" in result.columns
+
+    def test_grouped_irregular_horizon_is_warning_free_and_group_isolated(
+        self,
+        grouped_irregular_data: pl.DataFrame,
+    ):
+        """Grouped as-of labels should use only sorted observations in each group."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = fixed_time_horizon_labels(
+                grouped_irregular_data,
+                horizon="2m",
+                method="returns",
+                group_col="symbol",
+                timestamp_col="timestamp",
+            )
+
+        assert not [
+            warning
+            for warning in caught
+            if "Sortedness of columns cannot be checked" in str(warning.message)
+        ]
+        assert result.select("symbol", "timestamp").equals(
+            grouped_irregular_data.sort("symbol", "timestamp").select("symbol", "timestamp")
+        )
+        values = result["label_return_2m"].to_list()
+        assert values[:2] == pytest.approx([0.3, 2 / 11])
+        assert values[2] is None
+        assert values[3:5] == pytest.approx([-0.1, -1 / 9])
+        assert values[5] is None
 
     def test_invalid_horizon_string(self, regular_5min_data: pl.DataFrame):
         """Test that invalid horizon strings raise error."""
@@ -532,15 +583,69 @@ class TestGetFuturePriceAtTime:
 
     def test_regular_data(self, regular_5min_data: pl.DataFrame):
         """Test future price retrieval on regular data."""
-        future_prices, valid_mask = get_future_price_at_time(
-            regular_5min_data,
-            time_horizon="15m",
-            price_col="close",
-            timestamp_col="timestamp",
-        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            future_prices, valid_mask = get_future_price_at_time(
+                regular_5min_data,
+                time_horizon="15m",
+                price_col="close",
+                timestamp_col="timestamp",
+            )
+
+        assert not [
+            warning
+            for warning in caught
+            if "Sortedness of columns cannot be checked" in str(warning.message)
+        ]
 
         # Should have mostly valid prices except at end
         assert valid_mask.sum() > len(regular_5min_data) * 0.9
+
+    def test_grouped_irregular_data_is_warning_free(
+        self,
+        grouped_irregular_data: pl.DataFrame,
+    ):
+        """A sorted grouped lookup should not emit Polars' unverifiable warning."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            future_prices, valid_mask = get_future_price_at_time(
+                grouped_irregular_data,
+                time_horizon="2m",
+                price_col="close",
+                timestamp_col="timestamp",
+                tolerance="30s",
+                group_cols=["symbol"],
+            )
+
+        assert not [
+            warning
+            for warning in caught
+            if "Sortedness of columns cannot be checked" in str(warning.message)
+        ]
+        assert future_prices.to_list() == [None, 130.0, None, 900.0, 800.0, None]
+        assert valid_mask.to_list() == [False, True, False, True, True, False]
+
+    def test_grouped_unsorted_timestamps_are_rejected(
+        self,
+        grouped_irregular_data: pl.DataFrame,
+    ):
+        """Disabling Polars' grouped check must not accept unordered group data."""
+        unsorted = pl.concat(
+            [
+                grouped_irregular_data.slice(1, 1),
+                grouped_irregular_data.slice(0, 1),
+                grouped_irregular_data.slice(2),
+            ]
+        )
+
+        with pytest.raises(DataValidationError, match="sorted within each group"):
+            get_future_price_at_time(
+                unsorted,
+                time_horizon="2m",
+                price_col="close",
+                timestamp_col="timestamp",
+                group_cols=["symbol"],
+            )
 
     def test_with_tolerance(self, irregular_trade_data: pl.DataFrame):
         """Test future price retrieval with tolerance for irregular data."""
@@ -640,6 +745,7 @@ class TestEdgeCases:
             percentile=90,
             direction="long",
             lookback_window=50,
+            timestamp_col="timestamp",
             session_col="session_date",
         )
 
