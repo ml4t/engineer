@@ -342,7 +342,16 @@ def _get_future_price_lookup(
         join_kwargs["tolerance"] = tolerance
 
     if group_cols:
+        group_sort_state = data.group_by(group_cols, maintain_order=True).agg(
+            pl.col(ts_col).is_sorted().alias("_is_sorted")
+        )
+        if not group_sort_state["_is_sorted"].all():
+            raise DataValidationError(
+                f"Timestamp column '{ts_col}' must be sorted within each group "
+                "before a grouped future-price lookup."
+            )
         join_kwargs["by"] = group_cols
+        join_kwargs["check_sortedness"] = False
 
     # Perform asof join
     return data_with_target.join_asof(lookup, **join_kwargs)
