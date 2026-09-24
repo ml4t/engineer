@@ -1,117 +1,68 @@
 # Quickstart
 
-Get up and running with ML4T Engineer in 5 minutes.
+Use synthetic OHLCV data to compute three features with the released package. This
+workflow needs no credentials, external service, optional dependency, or special
+hardware.
 
-If you are coming from *Machine Learning for Trading, Third Edition*, pair this page
-with the [Book Guide](../book-guide/index.md) to jump from notebook examples to the
-matching reusable library workflows.
+## Install
 
-## Basic Feature Computation
+Install `ml4t-engineer` in a Python 3.12, 3.13, or 3.14 environment:
+
+```bash
+pip install ml4t-engineer
+```
+
+## Compute a feature matrix
 
 <!-- ml4t-exec -->
 ```python
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 
 import polars as pl
 from ml4t.engineer import compute_features
 
-# Create sample OHLCV data
-df = pl.DataFrame({
-    "timestamp": [datetime(2024, 1, 1) + timedelta(days=i) for i in range(100)],
-    "open": [100.0, 101.0, 102.0, 103.0, 104.0] * 20,
-    "high": [102.0, 103.0, 104.0, 105.0, 106.0] * 20,
-    "low": [99.0, 100.0, 101.0, 102.0, 103.0] * 20,
-    "close": [101.0, 102.0, 103.0, 104.0, 105.0] * 20,
-    "volume": [1000, 1100, 1200, 1300, 1400] * 20,
-})
-
-# Compute features
-result = compute_features(df, ["rsi", "macd", "atr"])
-print(result.columns)
-```
-
-## Custom Parameters
-
-```python
-# Use dict format for custom parameters
-result = compute_features(df, [
-    {"name": "rsi", "params": {"period": 20}},
-    {"name": "sma", "params": {"period": 50}},
+close = [100.0 + i * 0.1 + (i % 7) * 0.2 for i in range(100)]
+ohlcv = pl.DataFrame(
     {
-        "name": "bollinger_bands",
-        "params": {"period": 20, "nbdevup": 2.5, "nbdevdn": 2.5},
-    },
-])
-```
-
-## YAML Configuration
-
-Create a `features.yaml` file:
-
-```yaml
-features:
-  - name: rsi
-    params:
-      period: 14
-  - name: macd
-    params:
-      fast_period: 12
-      slow_period: 26
-  - name: atr
-    params:
-      period: 14
-```
-
-Then use it:
-
-```python
-result = compute_features(df, "features.yaml")
-```
-
-## Triple-Barrier Labeling
-
-```python
-from ml4t.engineer.config import LabelingConfig
-from ml4t.engineer.labeling import triple_barrier_labels
-
-config = LabelingConfig.triple_barrier(
-    upper_barrier=0.02,  # 2% profit target
-    lower_barrier=0.01,  # 1% stop loss
-    max_holding_period=20,  # 20 bar maximum holding
+        "timestamp": [date(2024, 1, 1) + timedelta(days=i) for i in range(100)],
+        "open": close,
+        "high": [price + 1.0 for price in close],
+        "low": [price - 1.0 for price in close],
+        "close": close,
+        "volume": [100_000 + i * 100 for i in range(100)],
+    }
 )
 
-labels = triple_barrier_labels(
-    df,
-    config=config,
-)
+features = compute_features(ohlcv, ["rsi", "macd", "atr"])
+
+added = [name for name in features.columns if name not in ohlcv.columns]
+print(f"rows={features.height}")
+print(f"added={added}")
+
+assert features.height == 100
+assert added == ["rsi", "macd", "atr"]
+assert features.select(added).drop_nulls().height > 0
 ```
 
-## Explore Available Features
+Expected result:
 
-```python
-from ml4t.engineer import feature_catalog
-
-# List all categories
-print(feature_catalog.categories())
-# ['momentum', 'trend', 'volatility', ...]
-
-# List features in a category
-print(feature_catalog.list(category="momentum"))
-# ['rsi', 'macd', 'stoch', 'cci', ...]
-
-# Get feature details
-info = feature_catalog.describe("rsi")
-print(info)
-# {'name': 'rsi', 'category': 'momentum', 'normalized': True, ...}
+```text
+rows=100
+added=['rsi', 'macd', 'atr']
 ```
 
-## Next Steps
+`compute_features()` preserves the input rows and columns, then appends the requested
+features. Rolling features contain null values during their warmup windows. The final
+assertion verifies that the three features produce values after warmup.
 
-- [Features Guide](../user-guide/features.md) - 120 features across 11 categories
-- [Labeling Guide](../user-guide/labeling.md) - 7 labeling methods for supervised learning
-- [Alternative Bars](../user-guide/bars.md) - Information-driven bar sampling
-- [Feature Discovery](../user-guide/discovery.md) - Registry, catalog, and search API
-- [Fractional Differencing](../user-guide/fractional-differencing.md) - Memory-preserving stationarity
-- [Dataset Builder](../user-guide/dataset-builder.md) - Leakage-safe train/test preparation
-- [Book Guide](../book-guide/index.md) - Chapter and case-study map for the book
-- [API Reference](../api/index.md) - Complete API documentation
+## Continue with your task
+
+- [Compute and configure features](../user-guide/features.md)
+- [Inspect available features](../user-guide/discovery.md)
+- [Create supervised labels](../user-guide/labeling.md)
+- [Sample alternative bars](../user-guide/bars.md)
+- [Build leakage-safe train/test data](../user-guide/dataset-builder.md)
+- [Apply train-only preprocessing](../user-guide/preprocessing.md)
+- [Apply fractional differencing](../user-guide/fractional-differencing.md)
+- [Look up exact signatures](../api/index.md)
+- [Open matching book notebooks](../book-guide/index.md)

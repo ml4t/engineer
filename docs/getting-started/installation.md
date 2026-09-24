@@ -44,6 +44,17 @@ pip install TA-Lib
 pip install TA-Lib
 ```
 
+### Statistical diagnostics
+
+`find_optimal_d()` and `fdiff_diagnostics()` use Statsmodels for the augmented
+Dickey-Fuller test:
+
+```bash
+pip install "ml4t-engineer[stats]"
+```
+
+The core `ffdiff()` transform does not require this extra.
+
 ## Verify Installation
 
 ```python
@@ -63,7 +74,7 @@ Categories: ['math', 'microstructure', 'ml', 'momentum', 'price_transform', 'reg
 
 ## Next Steps
 
-- Read [Quickstart](quickstart.md) for a first working feature and labeling example.
+- Read [Quickstart](quickstart.md) for the first feature-computation workflow.
 - Read the [Book Guide](../book-guide/index.md) if you are coming from the book or
   case studies.
 - Use the [API Reference](../api/index.md) once you need exact object locations.

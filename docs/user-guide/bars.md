@@ -5,10 +5,7 @@ Transform tick data into information-driven bars instead of time-based bars.
 Use this page when you want to replace time bars with sampling schemes that better
 match market activity and microstructure dynamics.
 
-> **Book**: *ML for Trading, 3rd ed.* — Ch3 `08_itch_bar_sampling.py` constructs tick, volume, and dollar bars from ITCH trade data. `10_itch_information_bars.py` builds imbalance bars with threshold analysis. `13_databento_bar_sampling.py` demonstrates bar sampling on Databento data.
-
-Use the [Book Guide](../book-guide/index.md) for the chapter-level map from the
-microstructure notebooks to the production sampler classes.
+The book notebooks [ITCH Bar Sampling](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/03_market_microstructure/14_itch_bar_sampling.ipynb), [Information-Bar Formulas and Parameters](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/03_market_microstructure/16_itch_information_bars.ipynb), and [Databento Bar Calibration](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/03_market_microstructure/17_databento_bar_sampling.ipynb) call these sampler classes. The last notebook requires vendor data. The [Book Guide](../book-guide/index.md) records the checked revision and verification limits.
 
 ## Why Alternative Bars?
 
@@ -18,8 +15,9 @@ Time bars (1min, 1h, daily) have problems:
 - Autocorrelation in returns
 - Poor statistical properties (non-normal, heteroskedastic)
 
-Alternative bars sample based on market activity, producing bars with more uniform
-information content and better statistical properties for ML models.
+Alternative bars sample on market activity rather than elapsed time. Compare their
+return distribution, duration, and autocorrelation on your own trade data before choosing
+a sampler and threshold.
 
 ## Quick Start
 
@@ -425,10 +423,10 @@ inner loops for optimal performance. For very large datasets, consider:
 
 ## See It In The Book
 
-- Ch3 `08_itch_bar_sampling.py` for tick, volume, and dollar bars
-- Ch3 `10_itch_information_bars.py` for imbalance-bar intuition and diagnostics
-- Ch3 `13_databento_bar_sampling.py` for a modern market-data workflow
-- [Book Guide](../book-guide/index.md) for the full chapter-to-API map
+- [ITCH Bar Sampling](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/03_market_microstructure/14_itch_bar_sampling.ipynb) calls the standard and run-bar samplers.
+- [Information-Bar Formulas and Parameters](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/03_market_microstructure/16_itch_information_bars.ipynb) compares manual formulas with Engineer's imbalance samplers.
+- [Databento Bar Calibration](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/03_market_microstructure/17_databento_bar_sampling.ipynb) calls the samplers in a vendor-data workflow.
+- [Book Guide](../book-guide/index.md) records the pinned revision and requirements.
 
 ## Next Steps
 

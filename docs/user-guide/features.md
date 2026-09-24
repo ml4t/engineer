@@ -24,10 +24,7 @@ Standalone cross-asset utilities such as beta, rolling correlation, and
 cointegration are documented below, but they are not part of the 120-feature
 registry count.
 
-> **Book**: *ML for Trading, 3rd ed.* — Ch8 notebooks (`01_price_volume_features.py` through `04_fundamentals_macro_calendar.py`) build features manually to explain the economics. Case studies (ETFs, US Equities Panel, CME Futures) then use `compute_features()` in production pipelines.
-
-Use the [Book Guide](../book-guide/index.md) for the full notebook-to-API map
-across Chapters 7-9 and the case studies.
+The pinned book notebooks combine direct Engineer calls with manual teaching implementations. Start with [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) for `compute_features()`, then use the [Book Guide](../book-guide/index.md) to check each notebook's exact relationship to the API.
 
 ## Computation API
 
@@ -85,7 +82,7 @@ result = compute_features(df, [
 Unknown parameters, repeated output names, and output names that replace input columns
 raise `ValueError` before feature execution.
 
-> **Book**: Ch7 `10_ml4t_library_ecosystem.py` demonstrates all three input formats on SPY data, including a comparison between library and manual RSI implementations.
+> **Book**: [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls `compute_features()` with names and parameter dictionaries, and compares the library RSI with a manual implementation.
 
 ## Category Reference
 
@@ -114,7 +111,7 @@ Price momentum and oscillator indicators. Most produce bounded (normalized) outp
 | `trix` | Triple Exponential Average | Yes | No | 30 |
 | `cmo` | Chande Momentum Oscillator | Yes | -100 to 100 | 14 |
 | `ultosc` | Ultimate Oscillator | Yes | 0-100 | 7/14/28 |
-| `bop` | Balance of Power | Yes | -1 to 1 | — |
+| `bop` | Balance of Power | Yes | -1 to 1 | - |
 | `imi` | Intraday Momentum Index | No | 0-100 | 14 |
 | `aroon` | Aroon (up/down) | Yes | 0-100 | 14 |
 | `aroonosc` | Aroon Oscillator | Yes | -100 to 100 | 14 |
@@ -122,7 +119,7 @@ Price momentum and oscillator indicators. Most produce bounded (normalized) outp
 | `ppo` | Percentage Price Oscillator | Yes | No | 12/26 |
 | `sar` | Parabolic SAR | Yes | No | 0.02/0.2 |
 
-> **Book**: Ch8 `01_price_volume_features.py` constructs momentum indicators on ETF data, explaining the economic rationale for each. ETFs and US Equities Panel case studies use these in `03_features.py`.
+> **Book**: [Price and Volume Feature Families](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/01_price_volume_features.ipynb) calls Engineer for selected indicators and derives others manually. [ETFs: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/03_financial_features.ipynb) calls individual Engineer feature functions in a case-study pipeline.
 
 ### Trend (10 indicators)
 
@@ -165,7 +162,7 @@ Volatility estimators ranging from simple (ATR) to advanced (GARCH). Includes ra
 
 **Efficiency ranking**: Yang-Zhang > Garman-Klass ~ Rogers-Satchell > Parkinson > Close-to-Close. See Molnar (2012) for theoretical efficiency ratios.
 
-> **Book**: Ch9 `08_garch_volatility.py` and `09_har_rough_volatility.py` compare volatility estimators on real data. Ch8 `01_price_volume_features.py` covers range-based estimators with efficiency analysis.
+> **Book**: [Price and Volume Feature Families](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/01_price_volume_features.ipynb) calls Engineer's volatility functions and compares selected estimators on ETF data.
 
 ### Microstructure (15 indicators)
 
@@ -189,7 +186,7 @@ Market microstructure features from De Prado (2018) and empirical market microst
 | `volume_synchronicity` | Volume synchronicity |
 | `weighted_mid_price` | Weighted mid price |
 
-> **Book**: Ch8 `02_microstructure_features.py` builds microstructure features from tick and minute data. The NASDAQ-100 Microstructure case study (`03_features.py`) implements Kyle's Lambda, Amihud, and VPIN manually for pedagogical purposes — the ml4t-engineer implementations are production-ready equivalents.
+> **Book**: [Microstructure Features](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/02_microstructure_features.ipynb) calls Engineer's tick-rule and liquidity functions while teaching the wider workflow. [NASDAQ-100 Microstructure: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/nasdaq100_microstructure/03_financial_features.ipynb) calls `amihud_illiquidity` and implements other case-study features separately.
 
 ### ML Features (14 indicators)
 
@@ -212,7 +209,7 @@ Features designed specifically for machine learning pipelines.
 | `time_decay_weights` | Exponential time decay | No |
 | `ffdiff` | Fractional differencing | No |
 
-> **Book**: Ch8 `04_fundamentals_macro_calendar.py` covers feature construction patterns including lag features and calendar encodings.
+> **Book**: [Slow Features and Context](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/04_fundamentals_macro_calendar.ipynb) calls Engineer's `cyclical_encode` and teaches the point-in-time data joins manually.
 
 ### Risk (6 indicators)
 
@@ -251,7 +248,7 @@ Multi-asset relationship features. These are standalone functions in `ml4t.engin
 
 These are called directly (not via `compute_features`) since they require multi-asset DataFrames.
 
-> **Book**: Ch8 `03_structural_cross_instrument_features.py` constructs cross-asset features. Ch9 `14_panel_features.py` applies cross-sectional features to equity panels.
+> **Book**: [Structural and Cross-Instrument Features](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/03_structural_cross_instrument_features.ipynb) calls `beta_to_market`. [Panel Features](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/09_model_based_features/14_panel_features.ipynb) calls several cross-asset functions and combines them with manual analysis.
 
 ### Regime (4 indicators)
 
@@ -264,7 +261,6 @@ Market regime detection features. All produce bounded outputs suitable for direc
 | `fractal_efficiency` | Price path efficiency | 0-1 |
 | `trend_intensity_index` | Trend strength | 0-100 |
 
-> **Book**: Ch9 `11_hmm_regimes.py` and `13_regime_as_feature.py` apply regime detection to equity indices.
 
 ### Statistics (14 indicators)
 
@@ -305,7 +301,7 @@ Statistical features including TA-Lib standard and rolling distribution metrics.
 | `ad` | Accumulation/Distribution | Yes |
 | `adosc` | A/D Oscillator | Yes |
 
-> **Book**: ETFs case study `03_features.py` uses volume features in a multi-asset pipeline alongside momentum and volatility.
+> **Book**: [ETFs: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/03_financial_features.ipynb) calls Engineer's volume, momentum, trend, volatility, and regime feature functions.
 
 ### Math (3 indicators)
 
@@ -352,7 +348,7 @@ print(feature_catalog.tags())
 
 See the dedicated [Feature Discovery guide](discovery.md) for complete examples.
 
-> **Book**: Ch7 `10_ml4t_library_ecosystem.py` explores the registry metadata for RSI, ATR, and Garman-Klass, then demonstrates `feature_catalog.search()` and filtered listing.
+> **Book**: [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) inspects registry metadata for RSI, ATR, and Garman-Klass before computing features.
 
 ## YAML Configuration
 
@@ -428,17 +424,16 @@ Invalid parameters raise `ValueError` with the valid parameter names.
 
 - **Polars-native**: All computations use Polars expressions for automatic parallelism
 - **Numba JIT**: Numerical kernels (volatility estimators, microstructure) are Numba-accelerated
-- **Throughput**: ~480K indicator calculations/second, 11M rows/second streaming
-- **TA-Lib parity**: RSI computed at ~1x TA-Lib speed via Polars native implementation
-- **Dependency ordering**: `compute_features` resolves feature dependencies via topological sort
+- `compute_features` resolves feature dependencies before execution.
+- LazyFrame input remains lazy until you collect the result.
+- Measure throughput with your feature set, row count, grouping columns, and hardware.
 
 ## See It In The Book
 
-- Ch8 `01_price_volume_features.py` through `04_fundamentals_macro_calendar.py` for
-  the main feature-engineering concepts
-- Ch7 `10_ml4t_library_ecosystem.py` for the config-driven `compute_features` API
-- Case-study `03_features.py` workflows for production usage
-- [Book Guide](../book-guide/index.md) for the full chapter and case-study map
+- [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls the registry and `compute_features()`.
+- [Price and Volume Feature Families](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/01_price_volume_features.ipynb) combines Engineer calls with manual teaching implementations.
+- [ETFs: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/03_financial_features.ipynb) calls individual Engineer functions in a case-study pipeline.
+- [Book Guide](../book-guide/index.md) records the pinned revision and relationship for every selected notebook.
 
 ## Next Steps
 
