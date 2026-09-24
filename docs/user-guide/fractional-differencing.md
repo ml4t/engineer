@@ -1,6 +1,6 @@
 # Fractional Differencing
 
-Fractional differencing (FFD) produces stationary time series while preserving long-range memory — the key insight from De Prado (2018, Chapter 5). Standard first-differencing (d=1) achieves stationarity but destroys predictive signal; fractional differencing finds the minimum d that passes stationarity tests.
+Fractional differencing (FFD) seeks a stationary series while retaining more long-range dependence than first differencing. `find_optimal_d()` searches for the minimum tested order that passes the configured stationarity threshold.
 
 Use the [Book Guide](../book-guide/index.md) for the surrounding Chapter 9 workflow
 and the case-study files that use FFD in production pipelines.
@@ -21,7 +21,7 @@ The goal: find the smallest d where the ADF test rejects the null hypothesis of 
 
 ## Core Functions
 
-### `ffdiff` — Apply Fractional Differencing
+### `ffdiff` - Apply Fractional Differencing
 
 <!-- ml4t-exec -->
 ```python
@@ -55,7 +55,7 @@ assert len(result) == len(ffd_series) == len(df)
 
 **How it works**: FFD applies a weighted sum of lagged values where weights are derived from the fractional binomial expansion. Weights decay geometrically, and the `threshold` parameter truncates negligibly small weights for efficiency. Weights are cached via `@lru_cache` and the inner loop is Numba-accelerated.
 
-### `find_optimal_d` — Find Minimum Stationary d
+### `find_optimal_d` - Find Minimum Stationary d
 
 ```python
 from ml4t.engineer.features.fdiff import find_optimal_d
@@ -81,7 +81,7 @@ print(result)
 
 A high correlation (>0.90) means most of the predictive information is preserved.
 
-### `fdiff_diagnostics` — Full Diagnostic Report
+### `fdiff_diagnostics` - Full Diagnostic Report
 
 ```python
 from ml4t.engineer.features.fdiff import fdiff_diagnostics
@@ -169,7 +169,7 @@ result = df.with_columns(
 
 ## Asset-Class Guidelines
 
-Typical optimal d values (these are starting points — always validate on your data):
+Typical optimal d values (these are starting points - always validate on your data):
 
 | Asset Class | Typical d Range | Notes |
 |-------------|----------------|-------|
@@ -199,9 +199,9 @@ for symbol in ["SPY", "QQQ", "IWM"]:
 
 ## See It In The Book
 
-- Ch9 `03_fractional_differencing.py` for the memory-stationarity tradeoff
-- ETFs and US Equities Panel `04_temporal.py` workflows for production usage
-- [Book Guide](../book-guide/index.md) for the full chapter and case-study map
+- [Fractional Differencing](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/09_model_based_features/03_fractional_differencing.ipynb) calls all three documented helpers while teaching the statistical method.
+- [ETFs: Model-Based Features](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/04_model_based_features.ipynb) calls `ffdiff` inside a walk-forward workflow.
+- [Book Guide](../book-guide/index.md) records the pinned revision and task mapping.
 
 ## Next Steps
 

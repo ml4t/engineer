@@ -187,9 +187,9 @@ X_train, X_test, y_train, y_test = builder.train_test_split(train_size=0.8)
 
 ## See It In The Book
 
-- Ch7 `02_preprocessing_pipeline.py` for split-aware preprocessing
-- [ML Readiness](ml-readiness.md) for deciding which features need scaling first
-- [Book Guide](../book-guide/index.md) for the full Chapter 7 workflow map
+- [Preprocessing Pipeline](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/02_preprocessing_pipeline.ipynb) calls Engineer's `StandardScaler` and teaches the wider cleaning workflow.
+- [ML Readiness](ml-readiness.md) explains which features need scaling.
+- [Book Guide](../book-guide/index.md) records the pinned revision and task mapping.
 
 ## Next Steps
 

@@ -4,48 +4,39 @@ Feature engineering, labeling, alternative bars, and leakage-safe datasets for
 financial ML.
 
 `ml4t-engineer` is the feature-engineering layer in the ML4T stack. It sits between
-`ml4t-data`, which prepares canonical datasets, and `ml4t-diagnostic`, which
-evaluates signals and models. Start here if you want a working workflow quickly, use
-the [Book Guide](book-guide/index.md) to map notebooks to production APIs, and use the
-[API Reference](api/index.md) when you need exact interfaces.
-
-Chapters 7-10 of *Machine Learning for Trading, Third Edition* develop many of these
-methods manually in notebooks. This library packages those computations as tested,
-reusable functions. See the [Book Guide](book-guide/index.md) to map notebook code to
-library calls.
+`ml4t-data`, which prepares canonical datasets, and `ml4t-diagnostic`, which evaluates
+signals and models.
 
 <div class="grid cards" markdown>
 
--   :material-chart-line:{ .lg .middle } __120 Features, One Call__
+-   :material-chart-line:{ .lg .middle } __First successful workflow__
 
     ---
 
-    Momentum, volatility, microstructure, trend, and other feature families through
-    `compute_features(df, indicators)`.
-    [:octicons-arrow-right-24: Features](user-guide/features.md)
-
--   :material-check-decagram:{ .lg .middle } __60 TA-Lib Validated__
-
-    ---
-
-    Indicators tested against TA-Lib to `1e-6` tolerance so notebook and pipeline
-    outputs stay aligned.
+    Install the released package, compute three features from synthetic data, and
+    verify the result.
     [:octicons-arrow-right-24: Quickstart](getting-started/quickstart.md)
 
--   :material-label:{ .lg .middle } __Labels, Bars, and Leakage Control__
+-   :material-check-decagram:{ .lg .middle } __Task guides__
 
     ---
 
-    Triple-barrier labels, alternative bars, preprocessing, and dataset splitting in
-    the same workflow.
-    [:octicons-arrow-right-24: Labeling](user-guide/labeling.md)
+    Compute features, create labels, sample bars, and build leakage-safe datasets.
+    [:octicons-arrow-right-24: Features](user-guide/features.md)
 
--   :material-book-open-variant:{ .lg .middle } __Book to Production__
+-   :material-label:{ .lg .middle } __Exact API reference__
 
     ---
 
-    The book teaches the methods step by step. This library turns them into reusable
-    calls for research and scheduled pipelines.
+    Look up released functions, classes, signatures, and supported options.
+    [:octicons-arrow-right-24: API Reference](api/index.md)
+
+-   :material-book-open-variant:{ .lg .middle } __Checked book notebooks__
+
+    ---
+
+    Open commit-pinned notebooks and see whether each one calls Engineer, teaches the
+    method manually, or illustrates a related workflow.
     [:octicons-arrow-right-24: Book Guide](book-guide/index.md)
 
 </div>
@@ -73,10 +64,11 @@ df = pl.DataFrame({
 features = compute_features(df, ["rsi", "macd", "atr"])
 
 assert {"rsi", "macd", "atr"} <= set(features.columns)
+assert features.select(["rsi", "macd", "atr"]).drop_nulls().height > 0
 ```
 
-That single call appends validated indicator columns to the same DataFrame you will
-pass downstream into labeling, preprocessing, and model training.
+The call appends three indicator columns to the input DataFrame. The assertions check
+that the columns exist and contain values after their rolling warmup windows.
 
 ## Core Workflows
 
@@ -141,12 +133,11 @@ result = find_optimal_d(df["close"])
 ffd_close = ffdiff(df["close"], d=result["optimal_d"])
 ```
 
-This is the standard bridge from Chapter 9’s fractional differencing workflow to a
-reusable production transform.
+The parameter search requires the `stats` extra. The [Fractional Differencing guide](user-guide/fractional-differencing.md) explains the statistical check and the core-only `ffdiff()` transform.
 
 ## Documentation Entry Points
 
-- [Quickstart](getting-started/quickstart.md) for a working feature and labeling run
+- [Quickstart](getting-started/quickstart.md) for the first feature-computation workflow
 - [Features](user-guide/features.md) for the core computation API
 - [Labeling](user-guide/labeling.md) for supervised targets and sample weighting
 - [Book Guide](book-guide/index.md) for chapter, notebook, and case-study mapping

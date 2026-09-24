@@ -14,12 +14,9 @@ ML4T Engineer provides 7 labeling methods for supervised learning in finance, im
 | Meta-labeling | `meta_labels()` + `compute_bet_size()` | Bet sizing for primary model |
 | Calendar-aware | `calendar_aware_labels()` | Session-break handling for futures |
 
-All methods return a Polars DataFrame with standardized output columns. Performance is ~50,000 labels/second via Numba-accelerated kernels.
+All methods return a Polars DataFrame with standardized output columns.
 
-> **Book**: *ML for Trading, 3rd ed.* — Ch7 `03_label_methods.py` walks through all 7 methods on real ETF data with visualizations. All case study `02_labels.py` notebooks apply these methods in production pipelines.
-
-Use the [Book Guide](../book-guide/index.md) for the broader mapping from Chapter 7
-and case-study `02_labels.py` files to the production labeling APIs.
+[Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls Engineer's labeling APIs on ETF data. The ETF case-study label notebook builds labels without Engineer, so the [Book Guide](../book-guide/index.md) classifies it as a related workflow rather than a library example.
 
 ## Choosing a Method
 
@@ -196,7 +193,7 @@ config = LabelingConfig.triple_barrier(
 
 With `trailing_stop=True`, the lower barrier moves up as the trade moves in favor. This reduces the time spent in losing positions.
 
-> **Book**: Ch7 `03_label_methods.py` applies triple-barrier labeling to SPY with visualization of barrier touches.
+> **Book**: [Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls `triple_barrier_labels` and visualizes barrier touches.
 
 ## ATR-Based Dynamic Barriers
 
@@ -242,7 +239,7 @@ null labels. High and low prices determine intrabar touches.
 | Regime changes (calm → volatile) | ATR barriers avoid premature stops |
 | Futures with varying contract sizes | ATR normalizes across contracts |
 
-> **Book**: CME Futures case study `02_labels.py` applies ATR barriers on ES, NQ, and CL futures with session-aware horizons.
+> **Book**: [Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls Engineer's ATR-barrier labeling API.
 
 ## Rolling Percentile Labels
 
@@ -294,7 +291,7 @@ result = rolling_percentile_multi_labels(
 # Produces: label_long_p90_h5, label_long_p95_h5, label_long_p90_h10, ...
 ```
 
-> **Book**: Ch7 `03_label_methods.py` compares rolling percentile labels against triple-barrier on SPY. ETFs case study `02_labels.py` uses percentile labels in its production pipeline.
+> **Book**: [Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls Engineer's percentile and triple-barrier functions. [ETFs: Label Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/02_labels.ipynb) constructs its case-study labels without calling Engineer.
 
 ## Fixed Time Horizon
 
@@ -350,7 +347,7 @@ remain available. A supplied trend-scanning config controls all four numerical s
 Constant windows have null outputs. Exact nonconstant linear fits use the largest
 finite float as the signed `t_value`.
 
-> **Book**: Ch7 `03_label_methods.py` demonstrates trend scanning alongside triple-barrier and percentile methods, showing how the optimal horizon varies with market conditions.
+> **Book**: [Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls `trend_scanning_labels` alongside the barrier and percentile methods.
 
 ## Meta-Labeling & Bet Sizing
 
@@ -411,7 +408,7 @@ result = apply_meta_model(
 | `"sigmoid"` | `2 / (1 + exp(-scale * (p - 0.5))) - 1` | Smooth, differentiable |
 | `"discrete"` | `1 if p >= threshold else 0` | Binary position sizing |
 
-> **Book**: Ch7 `03_label_methods.py` implements the complete meta-labeling workflow: primary model signals → meta-labels → bet sizing on SPY.
+> **Book**: [Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls the meta-labeling and bet-sizing APIs on SPY.
 
 ## Calendar-Aware Labels
 
@@ -511,7 +508,7 @@ stats = compute_label_statistics(df, label_col="label")
 #           "positive_ratio", "negative_ratio", "neutral_ratio"}
 ```
 
-> **Book**: Ch7 `03_label_methods.py` demonstrates sequential bootstrap applied to triple-barrier labels, showing how it reduces effective sample size while improving independence.
+> **Book**: [Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls the sample-weighting and sequential-bootstrap APIs.
 
 ## Time-Based Durations
 
@@ -549,11 +546,10 @@ from ml4t.engineer.labeling.utils import (
 
 Time-based horizons require a `timestamp_col` in the input DataFrame.
 
-## Performance
+## Runtime behavior
 
-- **Speed**: ~50,000 labels/second (Numba-accelerated)
-- **Memory**: Efficient vectorized implementation via Polars
-- **Accuracy**: Exact match with AFML reference (validated at 1e-10 tolerance against mlfinpy)
+Benchmark with your row count, horizon, labeling method, and hardware. Runtime and
+memory use depend on those inputs.
 
 ## Best Practices
 
@@ -569,10 +565,9 @@ Time-based horizons require a `timestamp_col` in the input DataFrame.
 
 ## See It In The Book
 
-- Ch7 `03_label_methods.py` for the full comparison of labeling methods
-- Ch7 `04_minimum_favorable_adverse_excursion.py` for barrier behavior analysis
-- Case-study `02_labels.py` workflows, especially CME Futures for ATR barriers
-- [Book Guide](../book-guide/index.md) for the full chapter and case-study map
+- [Label Engineering Methods](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/03_label_methods.ipynb) calls Engineer's labeling APIs.
+- [ETFs: Label Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/02_labels.ipynb) is a related workflow that does not call Engineer.
+- [Book Guide](../book-guide/index.md) records the pinned revision and task mapping.
 
 ## Next Steps
 

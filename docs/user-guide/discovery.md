@@ -2,9 +2,7 @@
 
 ML4T Engineer provides two complementary discovery APIs: the **Feature Registry** for programmatic metadata access, and the **Feature Catalog** for interactive exploration with filtering and search.
 
-If you are arriving from Ch7 `10_ml4t_library_ecosystem.py`, the
-[Book Guide](../book-guide/index.md) shows where discovery fits relative to feature
-computation, labeling, and dataset preparation.
+[The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls Engineer's registry to inspect feature metadata. The [Book Guide](../book-guide/index.md) distinguishes that direct use from related workflows.
 
 Use this page when you are choosing features, validating metadata, or building
 registry-driven workflows instead of hardcoding indicator names.
@@ -182,9 +180,8 @@ feature_catalog.lookback("sma", period=50)
 
 ## See It In The Book
 
-- Ch7 `10_ml4t_library_ecosystem.py` for registry inspection and catalog search
-- [Book Guide](../book-guide/index.md) for how discovery connects to feature
-  computation, labeling, and dataset preparation
+- [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls the registry and computes selected features.
+- [Book Guide](../book-guide/index.md) records the pinned revision and task mapping.
 
 ## Next Steps
 

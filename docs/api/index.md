@@ -87,6 +87,18 @@ start with the [User Guide](../index.md) or the [Book Guide](../book-guide/index
     options:
       show_root_heading: true
 
+## Fractional Differencing
+
+::: ml4t.engineer.features.fdiff
+    options:
+      show_root_heading: true
+      signature_crossrefs: false
+      members:
+        - get_ffd_weights
+        - ffdiff
+        - find_optimal_d
+        - fdiff_diagnostics
+
 ## Next Steps
 
 - Read [Features](../user-guide/features.md) for the main computation workflow.

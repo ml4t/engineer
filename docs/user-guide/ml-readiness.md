@@ -2,7 +2,7 @@
 
 This guide explains the `normalized` field in feature metadata and how to prepare features for machine learning models.
 
-> **Book**: *ML for Trading, 3rd ed.* — Ch8 `01_price_volume_features.py` compares normalized vs non-normalized features on real ETF data, including preprocessing strategies for each type.
+[Price and Volume Feature Families](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/01_price_volume_features.ipynb) calls Engineer's registry and selected feature functions, then combines them with manual teaching implementations. The [Book Guide](../book-guide/index.md) records the pinned revision and relationship.
 
 Use this page when you need to decide which features can go straight into a model and
 which ones should pass through a preprocessing step first.
