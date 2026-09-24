@@ -541,6 +541,7 @@ def risk_adjusted_returns(
     risk_free_rate: float = 0.0,
     window: int = 252,
     close: pl.Expr | str | None = None,
+    trading_periods: int = 252,
 ) -> dict[str, pl.Expr]:
     """Calculate various risk-adjusted return metrics.
 
@@ -557,6 +558,8 @@ def risk_adjusted_returns(
     close : pl.Expr | str, optional
         Price series for more accurate Calmar ratio calculation.
         If None, close are approximated from returns using cumulative product.
+    trading_periods : int, default 252
+        Number of return observations per year. Must be a positive, non-boolean integer.
 
     Returns
     -------
@@ -567,9 +570,20 @@ def risk_adjusted_returns(
         - calmar_ratio: Return per unit of max drawdown risk
         - omega_ratio: Probability-weighted ratio of gains vs losses
 
+    Raises
+    ------
+    TypeError
+        If trading_periods is not a non-boolean integer.
+    ValueError
+        If trading_periods is not positive.
+
     Notes
     -----
-    All ratios are annualized assuming 252 trading days.
+    The annual risk-free rate is divided by trading_periods. Sharpe and Sortino
+    ratios are multiplied by its square root, and the Calmar numerator is multiplied
+    by trading_periods. Omega is not annualized, but uses the period risk-free rate
+    as its gain/loss threshold. Rolling calculations start after half of window is
+    available, and ratio denominators add 1e-10 for numerical stability.
 
     The Calmar ratio calculation is more accurate when actual price data is provided
     via the `close` parameter, as it avoids potential numerical precision issues
@@ -584,11 +598,17 @@ def risk_adjusted_returns(
     >>> metrics = risk_adjusted_returns("returns", close="close")
     """
     validate_window(window, min_window=20)
+    if isinstance(trading_periods, bool) or not isinstance(trading_periods, int):
+        raise TypeError(
+            f"trading_periods must be a non-boolean integer, got {type(trading_periods).__name__}"
+        )
+    if trading_periods <= 0:
+        raise ValueError(f"trading_periods must be positive, got {trading_periods}")
 
     returns = pl.col(returns) if isinstance(returns, str) else returns
 
     # Convert risk-free rate to period rate
-    period_rf = risk_free_rate / 252
+    period_rf = risk_free_rate / trading_periods
 
     # Calculate components
     mean_return = returns.rolling_mean(window, min_samples=window // 2)
@@ -632,9 +652,9 @@ def risk_adjusted_returns(
     )
 
     return {
-        "sharpe_ratio": (excess_return / (volatility + 1e-10)) * np.sqrt(252),
-        "sortino_ratio": (excess_return / (downside_dev + 1e-10)) * np.sqrt(252),
-        "calmar_ratio": (mean_return * 252) / max_dd,
+        "sharpe_ratio": (excess_return / (volatility + 1e-10)) * np.sqrt(trading_periods),
+        "sortino_ratio": (excess_return / (downside_dev + 1e-10)) * np.sqrt(trading_periods),
+        "calmar_ratio": (mean_return * trading_periods) / max_dd,
         "omega_ratio": omega,
     }
 

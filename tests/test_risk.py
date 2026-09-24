@@ -375,6 +375,107 @@ class TestRiskFeatures:
         # Omega should be positive for positive returns
         assert omega.mean() > 0
 
+    @pytest.mark.parametrize("trading_periods", [52, 252])
+    @pytest.mark.parametrize("close", ["prices", None])
+    def test_risk_adjusted_returns_respect_trading_periods(self, trading_periods, close):
+        """Annualization and the risk-free threshold use the requested frequency."""
+        returns = np.array(
+            [
+                0.012,
+                -0.008,
+                0.006,
+                -0.003,
+                0.015,
+                -0.011,
+                0.004,
+                0.009,
+                -0.005,
+                0.007,
+                -0.002,
+                0.013,
+                -0.009,
+                0.005,
+                0.011,
+                -0.006,
+                0.008,
+                -0.004,
+                0.014,
+                -0.007,
+            ]
+        )
+        prices = 100.0 * np.cumprod(1.0 + returns)
+        frame = pl.DataFrame({"returns": returns, "prices": prices})
+        annual_risk_free_rate = 0.052
+        metrics = risk.risk_adjusted_returns(
+            "returns",
+            risk_free_rate=annual_risk_free_rate,
+            window=len(returns),
+            close=close,
+            trading_periods=trading_periods,
+        )
+
+        actual = frame.select([expr.alias(name) for name, expr in metrics.items()]).row(-1)
+        period_risk_free_rate = annual_risk_free_rate / trading_periods
+        mean_return = returns.mean()
+        volatility = returns.std(ddof=1)
+        downside = np.minimum(returns - period_risk_free_rate, 0.0)
+        downside_deviation = np.sqrt(np.mean(downside**2))
+        peaks = np.maximum.accumulate(prices)
+        max_drawdown = abs(np.min((prices - peaks) / peaks))
+        gains = returns[returns > period_risk_free_rate] - period_risk_free_rate
+        losses = period_risk_free_rate - returns[returns <= period_risk_free_rate]
+        expected = (
+            (mean_return - period_risk_free_rate) / (volatility + 1e-10) * np.sqrt(trading_periods),
+            (mean_return - period_risk_free_rate)
+            / (downside_deviation + 1e-10)
+            * np.sqrt(trading_periods),
+            mean_return * trading_periods / (max_drawdown + 1e-10),
+            gains.sum() / losses.sum(),
+        )
+
+        assert actual == pytest.approx(expected)
+
+    def test_risk_adjusted_returns_default_matches_252_periods(self):
+        """The new parameter preserves the established daily-data default."""
+        default = risk.risk_adjusted_returns("normal_returns", risk_free_rate=0.02, window=100)
+        explicit = risk.risk_adjusted_returns(
+            "normal_returns",
+            risk_free_rate=0.02,
+            window=100,
+            trading_periods=252,
+        )
+
+        result = self.df.select(
+            [
+                *(expr.alias(f"default_{name}") for name, expr in default.items()),
+                *(expr.alias(f"explicit_{name}") for name, expr in explicit.items()),
+            ]
+        )
+
+        for name in default:
+            np.testing.assert_allclose(
+                result[f"default_{name}"].to_numpy(),
+                result[f"explicit_{name}"].to_numpy(),
+                equal_nan=True,
+            )
+
+    @pytest.mark.parametrize(
+        ("trading_periods", "error"),
+        [
+            (True, TypeError),
+            (False, TypeError),
+            (1.5, TypeError),
+            ("252", TypeError),
+            (None, TypeError),
+            (0, ValueError),
+            (-1, ValueError),
+        ],
+    )
+    def test_risk_adjusted_returns_reject_invalid_trading_periods(self, trading_periods, error):
+        """Annualization frequency must be a positive, non-boolean integer."""
+        with pytest.raises(error, match="trading_periods"):
+            risk.risk_adjusted_returns("normal_returns", trading_periods=trading_periods)
+
     def test_ulcer_index(self):
         """Test Ulcer Index calculation."""
         result = self.dd_df.with_columns(
