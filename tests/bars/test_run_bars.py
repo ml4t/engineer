@@ -328,6 +328,56 @@ class TestTickRunBarSampler:
         assert list(empty_df.columns) == expected_cols
 
 
+class TestVolumeRunBarExpectationUnits:
+    """Volume and dollar thresholds must stay in value units after EWMA updates."""
+
+    def test_volume_run_expectation_does_not_collapse_to_tick_counts(self):
+        n = 200
+        timestamps = [datetime(2024, 1, 1, 9, 30, i // 60, (i % 60) * 1000) for i in range(n)]
+        data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "price": [100.0] * n,
+                "volume": [10.0] * n,
+                "side": [1.0 if i % 2 == 0 else -1.0 for i in range(n)],
+            }
+        )
+        bars = VolumeRunBarSampler(
+            expected_ticks_per_bar=20,
+            alpha=1.0,
+            initial_p_buy=0.5,
+            min_bars_warmup=0,
+        ).sample(data)
+
+        # Balanced flow at p=0.5 reaches the threshold in about 20 ticks.
+        # A tick-count EWMA would shrink the threshold to one tick after warmup.
+        assert bars.height >= 3
+        assert int(bars["tick_count"][1]) >= 10
+        assert float(bars["expected_t"][1]) >= 100.0
+
+    def test_dollar_run_expectation_stays_in_dollar_units(self):
+        n = 200
+        timestamps = [datetime(2024, 1, 1, 9, 30, i // 60, (i % 60) * 1000) for i in range(n)]
+        data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "price": [50.0] * n,
+                "volume": [10.0] * n,
+                "side": [1.0 if i % 2 == 0 else -1.0 for i in range(n)],
+            }
+        )
+        bars = DollarRunBarSampler(
+            expected_ticks_per_bar=20,
+            alpha=1.0,
+            initial_p_buy=0.5,
+            min_bars_warmup=0,
+        ).sample(data)
+
+        assert bars.height >= 3
+        assert int(bars["tick_count"][1]) >= 10
+        assert float(bars["expected_t"][1]) >= 5_000.0
+
+
 class TestVolumeRunBarSampler:
     """Tests for VolumeRunBarSampler."""
 
