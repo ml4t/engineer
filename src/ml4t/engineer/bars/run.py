@@ -137,10 +137,13 @@ def _calculate_run_bars_nb(
 
             n_bars += 1
 
-            # Update EWMAs after warmup period
+            # Update EWMAs after warmup period.
+            # expected_t is denominated in the same units as `values`: ticks when
+            # every value is 1, and volume or dollars when those series are passed.
+            # Updating it with the tick count collapses a value-scaled threshold.
             if n_bars > min_bars_warmup:
-                # Update E[T] - expected ticks per bar
-                expected_t = alpha * bar_tick_count + (1 - alpha) * expected_t
+                bar_value = cumulative_buys + cumulative_sells
+                expected_t = alpha * bar_value + (1 - alpha) * expected_t
 
                 # Update P[b=1] - buy probability
                 bar_p_buy = bar_buy_count / bar_tick_count if bar_tick_count > 0 else 0.5
