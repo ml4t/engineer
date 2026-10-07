@@ -401,6 +401,37 @@ def test_roll_spread_non_negative(sample_microstructure_data):
 # =============================================================================
 
 
+def test_roll_spread_matches_window_covariance():
+    """Roll's spread uses the serial covariance of the current window."""
+    close = [100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 102.0, 101.0]
+    period = 4
+    result = (
+        pl.DataFrame({"close": close})
+        .select(roll_spread_estimator("close", period=period).alias("spread"))["spread"]
+        .to_numpy()
+    )
+
+    changes = np.diff(close, prepend=np.nan)
+    lagged = np.roll(changes, 1)
+    lagged[0] = np.nan
+    for index in range(len(close)):
+        start = index - period + 1
+        if start < 0:
+            assert np.isnan(result[index])
+            continue
+        window_changes = changes[start : index + 1]
+        window_lagged = lagged[start : index + 1]
+        if np.isnan(window_changes).any() or np.isnan(window_lagged).any():
+            assert np.isnan(result[index])
+            continue
+        covariance = float(
+            np.mean(window_changes * window_lagged)
+            - np.mean(window_changes) * np.mean(window_lagged)
+        )
+        expected = 2.0 * np.sqrt(max(-covariance, 0.0))
+        assert result[index] == pytest.approx(expected)
+
+
 def test_tick_rule_basic_functionality(sample_microstructure_data):
     """Test effective tick rule basic calculation."""
     result = sample_microstructure_data.with_columns(
