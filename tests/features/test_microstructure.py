@@ -485,6 +485,25 @@ def test_tick_rule_values(sample_microstructure_data):
     assert np.all(np.isin(valid_values, [-1, 0, 1]))
 
 
+def test_effective_tick_rule_carries_previous_sign():
+    """A zero price change keeps the previous trade sign."""
+    prices = pl.DataFrame({"close": [100.0, 101.0, 101.0, 101.0, 99.0, 99.0, None]})
+    ticks = prices.select(effective_tick_rule("close").alias("tick"))["tick"].to_list()
+
+    assert ticks == [0, 1, 1, 1, -1, -1, 0]
+
+    imbalance = (
+        prices.with_columns(volume=pl.lit(5.0))
+        .select(
+            order_flow_imbalance("volume", "close").alias("ofi"),
+        )["ofi"]
+        .to_list()
+    )
+    assert imbalance[2] == 1.0
+    assert imbalance[5] == -1.0
+    assert imbalance[6] == 0.0
+
+
 def test_tick_rule_logic(small_microstructure_data):
     """Test tick rule classification logic."""
     result = small_microstructure_data.with_columns(effective_tick_rule("close").alias("tick_rule"))
