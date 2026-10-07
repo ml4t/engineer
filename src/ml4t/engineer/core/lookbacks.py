@@ -153,7 +153,7 @@ FEATURE_LOOKBACKS: dict[str, LookbackCalculator] = {
     "price_impact_ratio": _parameter("period", -1),
     "quote_stuffing_indicator": _scaled_parameter("period", 4, -1),
     "realized_spread": _parameter("period", -1),
-    "roll_spread_estimator": _scaled_parameter("period", 2),
+    "roll_spread_estimator": _parameter("period", 1),
     "trade_intensity": _parameter("period", -1),
     "volume_at_price_ratio": _parameter("period", -1),
     "volume_synchronicity": _scaled_parameter("period", 2, -1),
