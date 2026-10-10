@@ -89,6 +89,8 @@ changes through [GitHub Issues](https://github.com/ml4t/engineer/issues).
 
 ## Development
 
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
+
 ```bash
 git clone https://github.com/ml4t/engineer.git
 cd engineer
@@ -98,6 +100,7 @@ uv run ruff format --check src/ tests/ examples/ scripts/
 uv run ty check
 uv run pytest tests/ -q
 uv build
+uv run python -c "import ml4t.engineer"
 uv run mkdocs build --strict
 ```
 
@@ -108,6 +111,7 @@ tests, and ecosystem qualification.
 ## Project Information
 
 - [Documentation](https://www.ml4trading.io/docs/engineer/)
+- [Contributing](CONTRIBUTING.md)
 - [Issue tracker](https://github.com/ml4t/engineer/issues)
 - [Releases and changelog](https://github.com/ml4t/engineer/releases)
 - [License](LICENSE)

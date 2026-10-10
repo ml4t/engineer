@@ -7,6 +7,11 @@ labels:
   - "status: needs-triage"
   - "compatibility: none"
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. Report one documentation problem or coherent change per
+        issue and use separate issues for unrelated problems.
   - type: dropdown
     id: library
     attributes:

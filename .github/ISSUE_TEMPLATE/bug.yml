@@ -10,7 +10,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Search existing issues first. Do not disclose suspected vulnerabilities here.
+        Search existing issues first. Report one problem per issue and use separate issues for
+        unrelated problems. Do not disclose suspected vulnerabilities here.
   - type: dropdown
     id: library
     attributes:

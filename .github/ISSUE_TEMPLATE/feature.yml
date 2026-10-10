@@ -7,6 +7,11 @@ labels:
   - "status: needs-triage"
   - "compatibility: affected"
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. Describe one coherent change per issue; separate unrelated
+        requests. Discuss the intended behavior here before opening a pull request.
   - type: dropdown
     id: library
     attributes:
