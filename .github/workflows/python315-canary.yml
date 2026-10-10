@@ -47,5 +47,5 @@ jobs:
           PYTHONPATH: src
         run: >-
           uv run --isolated --no-project --python 3.15
-          --with-requirements python315-core.txt --with pytest
+          --with-requirements python315-core.txt --with pytest --with pytest-cov
           pytest tests/test_api.py tests/test_bars.py tests/bars -q
