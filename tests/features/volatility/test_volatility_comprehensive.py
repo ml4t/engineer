@@ -500,16 +500,18 @@ class TestGARCHForecast:
 
     def test_forecast_ignores_future_returns(self):
         """A later shock must not change forecasts made before it is observed."""
-        from ml4t.engineer.features.volatility.garch_forecast import garch_volatility_forecast_nb
+        from ml4t.engineer.features.volatility.garch_forecast import garch_forecast
 
         calm = np.zeros(30)
         shocked = calm.copy()
-        shocked[20] = 4.0
-        calm_forecast = garch_volatility_forecast_nb(calm, 1e-6, 0.1, 0.85, 1)
-        shocked_forecast = garch_volatility_forecast_nb(shocked, 1e-6, 0.1, 0.85, 1)
+        shocked[10] = 4.0
+        calm_forecast = pl.DataFrame({"returns": calm}).select(garch_forecast("returns"))["returns"]
+        shocked_forecast = pl.DataFrame({"returns": shocked}).select(garch_forecast("returns"))[
+            "returns"
+        ]
 
-        np.testing.assert_allclose(shocked_forecast[:20], calm_forecast[:20])
-        assert shocked_forecast[20] > shocked_forecast[19]
+        np.testing.assert_allclose(shocked_forecast[:10], calm_forecast[:10])
+        assert shocked_forecast[10] > shocked_forecast[9]
 
     def test_responds_to_shocks(self, ohlcv_df):
         """Conditional vol should increase after large returns."""
