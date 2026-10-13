@@ -24,6 +24,7 @@ For a bug fix, record the regression command and its result on both revisions:
 
 For other changes, state the relevant commands and results.
 
+- [ ] Numerical changes state the intended definition and use independent correctness evidence
 - [ ] Verification exercises the affected public API or user workflow
 - [ ] Ruff lint and format checks pass
 - [ ] `ty` passes
