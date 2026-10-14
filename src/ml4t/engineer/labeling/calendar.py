@@ -180,7 +180,7 @@ class PandasMarketCalendar:
             )
             start = session[start_col]
             end = session.get(end_col)
-            if not pd.isna(start) and not pd.isna(end):
+            if not pd.isna(start) and not pd.isna(end) and start < end:
                 intervals.append((start, end))
         return intervals
 

@@ -94,7 +94,8 @@ class BarSampler(ABC):
                 raise DataValidationError("Side values must not be null")
             if not data["side"].dtype.is_numeric():
                 raise DataValidationError("Side column must be numeric")
-            if not data["side"].is_in([-1, 1]).all():
+            side = data["side"]
+            if not ((side == -1) | (side == 1)).all():
                 raise DataValidationError("Side values must be either -1 or 1")
 
     @staticmethod
