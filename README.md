@@ -56,15 +56,16 @@ ohlcv = pl.DataFrame(
     }
 )
 
-features = compute_features(ohlcv, ["rsi", "macd", "atr"])
+features = compute_features(ohlcv, ["rsi", "macd", "atr"], calendar=None)
 
 assert {"rsi", "macd", "atr"} <= set(features.columns)
 assert features.height == ohlcv.height
 ```
 
 `compute_features()` returns the input columns with the requested feature columns
-appended. Use the feature registry to inspect categories and parameters before building
-larger pipelines.
+appended. This example explicitly uses observation-row mode with `calendar=None`;
+periods count rows, not scheduled sessions or elapsed days. Use the feature registry
+to inspect categories and parameters before building larger pipelines.
 
 ## Supported Workflows
 

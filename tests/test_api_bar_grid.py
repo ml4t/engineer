@@ -363,3 +363,20 @@ def test_declared_event_bar_side_and_partial_policy_do_not_guess_from_midnight(l
         partial_bar_policy="exclude",
     )
     assert run(data, False, feed_spec=contract).height == 3
+
+
+@pytest.mark.parametrize(
+    "field", ["open_col", "high_col", "low_col", "close_col", "volume_col", "price_col"]
+)
+def test_unsupported_price_column_mapping_is_rejected_instead_of_using_other_prices(field):
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
+    contract = replace(feed("24/7"), **{field: "other_prices"})
+    with pytest.raises(ValueError, match="canonical|price_col"):
+        run(data, False, feed_spec=contract)
+
+
+def test_shared_single_entity_sequence_is_not_flattened_into_a_column_name():
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
+    assert run(data, False, feed_spec=replace(feed("24/7"), entity_col=["symbol"])).height == 8

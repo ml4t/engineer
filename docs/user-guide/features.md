@@ -86,7 +86,8 @@ raise `ValueError` before feature execution.
 
 ### Calendar and bar grid
 
-The issue 76 API migration is separate from the 0.1.7 patch. In this API, calendar selection
+The calendar-aware default is a breaking API migration, separate from the 0.1.7 patch.
+Calendar selection
 uses the explicit `calendar` argument, then declared feed metadata, then NYSE. Explicit
 `calendar=None` disables schedule interpretation. A named `"24/7"` calendar instead defines
 expected bars and detects outages, including on weekends.
@@ -451,7 +452,8 @@ features:
   - name: yang_zhang_volatility
 ```
 
-Load with `compute_features(df, "features.yaml")`. The YAML format supports version comments and parameter documentation inline.
+Load row-based features with `compute_features(df, "features.yaml", calendar=None)`.
+The YAML format supports version comments and parameter documentation inline.
 
 ## Input Requirements
 
