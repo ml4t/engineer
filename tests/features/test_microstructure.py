@@ -10,6 +10,7 @@ Tests cover:
 - Academic formula correctness
 """
 
+from decimal import Decimal
 from io import StringIO
 
 import numpy as np
@@ -567,6 +568,44 @@ def test_integer_prices_keep_tick_rule_compatibility(lazy):
     selected = source.select(effective_tick_rule("close"))
     result = selected.collect() if lazy else selected
     assert result.to_series().to_list() == [0, -1, -1, 1, 1]
+
+
+@pytest.mark.parametrize(
+    "prices,expected",
+    [
+        pytest.param(
+            ["100.00", "99.00", "99.00", "99.01", None, "99.01", "99.01"],
+            [0, -1, -1, 1, 0, 0, 1],
+            id="decimal-with-missing-price",
+        ),
+        pytest.param(
+            [
+                "1000000000000000.00000000000001",
+                "1000000000000000.00000000000002",
+                "1000000000000000.00000000000002",
+                "1000000000000000.00000000000001",
+            ],
+            [0, 1, 1, -1],
+            id="decimal-moves-below-float-price-resolution",
+        ),
+    ],
+)
+@pytest.mark.parametrize("lazy", [False, True])
+def test_decimal_prices_keep_exact_tick_direction_and_order_flow(prices, expected, lazy):
+    frame = pl.DataFrame(
+        {
+            "close": [Decimal(value) if value is not None else None for value in prices],
+            "volume": [1.0] * len(prices),
+        }
+    )
+    source = frame.lazy() if lazy else frame
+    selected = source.select(
+        effective_tick_rule("close").alias("tick"),
+        order_flow_imbalance("volume", "close").alias("ofi"),
+    )
+    result = selected.collect() if lazy else selected
+    assert result["tick"].to_list() == expected
+    assert result["ofi"].to_list() == expected
 
 
 def test_tick_rule_logic(small_microstructure_data):
