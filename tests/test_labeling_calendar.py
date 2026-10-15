@@ -225,20 +225,21 @@ class TestPandasMarketCalendar:
             2024, 7, 3, 17, 0, tzinfo=UTC
         )
 
-    def test_cme_maintenance_break(self):
-        """Test that product-specific intraday breaks are represented."""
+    @pytest.mark.parametrize("year,month,day,hour", [(2019, 1, 2, 21), (2021, 6, 25, 20)])
+    def test_cme_historical_intraday_pause(self, year, month, day, hour):
+        """The pre-2021 pause remains a genuine non-trading interval."""
         pytest.importorskip("pandas_market_calendars")
         cal = PandasMarketCalendar("CME_Equity")
 
-        before = datetime(2024, 1, 2, 21, 10, tzinfo=UTC)
-        during = datetime(2024, 1, 2, 21, 20, tzinfo=UTC)
-        after = datetime(2024, 1, 2, 21, 35, tzinfo=UTC)
+        before = datetime(year, month, day, hour, 10, tzinfo=UTC)
+        during = datetime(year, month, day, hour, 20, tzinfo=UTC)
+        after = datetime(year, month, day, hour, 35, tzinfo=UTC)
 
         assert cal.is_trading_time(before)
         assert not cal.is_trading_time(during)
         assert cal.is_trading_time(after)
-        assert cal.next_session_break(before) == datetime(2024, 1, 2, 21, 15, tzinfo=UTC)
-        assert cal.next_session_break(after) == datetime(2024, 1, 2, 22, 0, tzinfo=UTC)
+        assert cal.next_session_break(before) == datetime(year, month, day, hour, 15, tzinfo=UTC)
+        assert cal.next_session_break(after) == datetime(year, month, day, hour + 1, 0, tzinfo=UTC)
 
     def test_naive_datetimes_are_interpreted_as_utc(self):
         """Test the adapter's explicit naive timestamp policy."""
@@ -259,6 +260,43 @@ class TestPandasMarketCalendar:
 
 class TestCalendarAwareLabels:
     """Tests for calendar_aware_labels function."""
+
+    @pytest.mark.parametrize(
+        "year,month,day,hour",
+        [(2021, 6, 28, 20), (2024, 1, 2, 21), (2024, 7, 2, 20)],
+    )
+    def test_cme_modern_labels_do_not_split_at_the_removed_pause(self, year, month, day, hour):
+        """The real calendar's retired pause must not truncate a label path."""
+        pytest.importorskip("pandas_market_calendars")
+        data = pl.DataFrame(
+            {
+                "timestamp": [
+                    datetime(year, month, day, hour, minute, tzinfo=UTC)
+                    for minute in (10, 15, 20, 25)
+                ],
+                "close": [4800.0, 4810.0, 4820.0, 4830.0],
+            }
+        )
+        config = LabelingConfig.triple_barrier(
+            upper_barrier=0.001,
+            lower_barrier=0.001,
+            max_holding_period=2,
+        )
+
+        result = calendar_aware_labels(
+            data,
+            config,
+            calendar="CME_Equity",
+            price_col="close",
+            timestamp_col="timestamp",
+        )
+
+        assert result["label"].to_list() == [1, 1, 1, 0]
+        calendar = PandasMarketCalendar("CME_Equity")
+        assert all(calendar.is_trading_time(timestamp) for timestamp in data["timestamp"])
+        assert calendar.next_session_break(data["timestamp"][0]) == datetime(
+            year, month, day, hour + 1, 0, tzinfo=UTC
+        )
 
     def test_basic_functionality_auto_calendar(self, sample_daily_data):
         """Test basic labeling with auto calendar detection."""

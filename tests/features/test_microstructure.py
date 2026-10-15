@@ -10,6 +10,8 @@ Tests cover:
 - Academic formula correctness
 """
 
+from io import StringIO
+
 import numpy as np
 import polars as pl
 import pytest
@@ -399,6 +401,64 @@ def test_roll_spread_non_negative(sample_microstructure_data):
 # =============================================================================
 # Tick Rule Tests
 # =============================================================================
+
+
+def test_roll_spread_matches_window_covariance():
+    """Roll's spread uses the serial covariance of the current window."""
+    close = [100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 102.0, 101.0]
+    period = 4
+    result = (
+        pl.DataFrame({"close": close})
+        .select(roll_spread_estimator("close", period=period).alias("spread"))["spread"]
+        .to_numpy()
+    )
+
+    changes = np.diff(close, prepend=np.nan)
+    lagged = np.roll(changes, 1)
+    lagged[0] = np.nan
+    for index in range(len(close)):
+        start = index - period + 1
+        if start < 0:
+            assert np.isnan(result[index])
+            continue
+        window_changes = changes[start : index + 1]
+        window_lagged = lagged[start : index + 1]
+        if np.isnan(window_changes).any() or np.isnan(window_lagged).any():
+            assert np.isnan(result[index])
+            continue
+        covariance = float(np.cov(window_changes, window_lagged, ddof=0)[0, 1])
+        expected = 2.0 * np.sqrt(max(-covariance, 0.0))
+        assert result[index] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("missing", ["", "NaN"])
+@pytest.mark.parametrize("period", [1, 2, 4, 7])
+@pytest.mark.parametrize("lazy", [False, True])
+def test_roll_spread_missing_csv_prices_do_not_report_zero(missing, period, lazy):
+    prices = [100.0 + i % 2 if i < 20 else 100.0 + (i - 19) ** 2 / 16 for i in range(30)]
+    rows = [f"2024-01-02T14:{30 + i:02d}:00Z,{price}" for i, price in enumerate(prices)]
+    rows[8] = f"2024-01-02T14:38:00Z,{missing}"
+    frame = pl.read_csv(
+        StringIO("timestamp,close\n" + "\n".join(rows)),
+        schema_overrides={"close": pl.Float64},
+        try_parse_dates=True,
+    )
+    changes = np.diff(frame["close"].to_numpy(), prepend=np.nan)
+    lagged = np.roll(changes, 1)
+    lagged[0] = np.nan
+    expected = np.full(frame.height, np.nan)
+    for index in range(period + 1, frame.height):
+        current = changes[index - period + 1 : index + 1]
+        previous = lagged[index - period + 1 : index + 1]
+        if np.isfinite(current).all() and np.isfinite(previous).all():
+            covariance = np.cov(current, previous, ddof=0)[0, 1]
+            expected[index] = 2 * np.sqrt(max(-covariance, 0))
+    source = frame.lazy() if lazy else frame
+    selected = source.select(roll_spread_estimator("close", period=period))
+    result = selected.collect() if lazy else selected
+    np.testing.assert_allclose(
+        result.to_series().to_numpy(), expected, equal_nan=True, rtol=1e-12, atol=1e-12
+    )
 
 
 def test_tick_rule_basic_functionality(sample_microstructure_data):
