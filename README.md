@@ -2,7 +2,7 @@
 
 [![Python 3.12-3.14](https://img.shields.io/badge/python-3.12--3.14-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/ml4t-engineer)](https://pypi.org/project/ml4t-engineer/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ml4t/engineer/blob/main/LICENSE)
 
 Feature engineering, labeling, alternative bars, and leakage-safe datasets for
 financial ML.
@@ -89,7 +89,8 @@ changes through [GitHub Issues](https://github.com/ml4t/engineer/issues).
 
 ## Development
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
+Read [CONTRIBUTING.md](https://github.com/ml4t/engineer/blob/main/CONTRIBUTING.md) before opening
+an issue or pull request.
 
 ```bash
 git clone https://github.com/ml4t/engineer.git
@@ -111,7 +112,7 @@ tests, and ecosystem qualification.
 ## Project Information
 
 - [Documentation](https://www.ml4trading.io/docs/engineer/)
-- [Contributing](CONTRIBUTING.md)
+- [Contributing](https://github.com/ml4t/engineer/blob/main/CONTRIBUTING.md)
 - [Issue tracker](https://github.com/ml4t/engineer/issues)
 - [Releases and changelog](https://github.com/ml4t/engineer/releases)
-- [License](LICENSE)
+- [License](https://github.com/ml4t/engineer/blob/main/LICENSE)
