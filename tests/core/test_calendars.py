@@ -3,8 +3,12 @@
 Tests market hours, holidays, session detection, and DST transitions.
 """
 
-from datetime import datetime, timedelta
+import sys
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+import polars as pl
+import pytest
 
 from ml4t.engineer.core.calendars.equity import EquityCalendar
 
@@ -134,6 +138,85 @@ class TestSessionDetection:
 
         # Should be in session (10:00 AM ET)
         assert calendar.is_session(dt_utc) is True
+
+
+@pytest.fixture
+def equity_session_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2024, 1, 2, 14, 29, tzinfo=UTC),
+                datetime(2024, 1, 2, 14, 30, tzinfo=UTC),
+                datetime(2024, 1, 2, 20, tzinfo=UTC),
+                datetime(2024, 1, 2, 21, tzinfo=UTC),
+                datetime(2024, 1, 2, 21, 1, tzinfo=UTC),
+                datetime(2024, 7, 2, 13, 29, tzinfo=UTC),
+                datetime(2024, 7, 2, 13, 30, tzinfo=UTC),
+                datetime(2024, 7, 2, 19, tzinfo=UTC),
+                datetime(2024, 7, 2, 20, tzinfo=UTC),
+                datetime(2024, 7, 2, 20, 1, tzinfo=UTC),
+                datetime(2024, 7, 3, 16, tzinfo=UTC),
+                datetime(2024, 7, 3, 17, tzinfo=UTC),
+                datetime(2024, 7, 3, 17, 1, tzinfo=UTC),
+                datetime(2024, 7, 4, 19, tzinfo=UTC),
+            ],
+            "row": range(14),
+        }
+    )
+
+
+@pytest.mark.parametrize("calendar_zone", [None, "Asia/Tokyo"])
+@pytest.mark.parametrize(
+    "input_zone", ["UTC", "America/New_York", "Asia/Tokyo", "Australia/Sydney"]
+)
+def test_filter_sessions_keeps_exchange_rows_across_timestamp_midnight(
+    equity_session_frame: pl.DataFrame, calendar_zone: str | None, input_zone: str
+) -> None:
+    pytest.importorskip("pandas_market_calendars")
+    calendar = EquityCalendar("NYSE", timezone=calendar_zone)
+    represented = equity_session_frame.with_columns(
+        pl.col("timestamp").dt.convert_time_zone(input_zone)
+    )
+    expected_rows = [1, 2, 3, 6, 7, 8, 10, 11]
+    assert calendar.filter_sessions(represented)["row"].to_list() == expected_rows
+    assert [calendar.is_session(dt) for dt in represented["timestamp"]] == [
+        i in expected_rows for i in range(14)
+    ]
+
+
+@pytest.mark.parametrize("calendar_zone", [None, "Asia/Tokyo"])
+def test_naive_timestamps_use_configured_timezone_before_selecting_exchange_date(
+    equity_session_frame: pl.DataFrame, calendar_zone: str | None
+) -> None:
+    pytest.importorskip("pandas_market_calendars")
+    calendar = EquityCalendar("NYSE", timezone=calendar_zone)
+    naive = equity_session_frame.with_columns(
+        pl.col("timestamp")
+        .dt.convert_time_zone(calendar_zone or "America/New_York")
+        .dt.replace_time_zone(None)
+    )
+    assert calendar.filter_sessions(naive)["row"].to_list() == [1, 2, 3, 6, 7, 8, 10, 11]
+
+
+@pytest.mark.parametrize(
+    "input_zone", ["UTC", "America/New_York", "Asia/Tokyo", "Australia/Sydney"]
+)
+def test_missing_calendar_provider_keeps_basic_weekday_filtering(
+    monkeypatch: pytest.MonkeyPatch, input_zone: str
+) -> None:
+    monkeypatch.setitem(sys.modules, "pandas_market_calendars", None)
+    calendar = EquityCalendar("NYSE")
+    frame = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2024, 7, 2, 19, tzinfo=UTC),
+                datetime(2024, 7, 2, 23, tzinfo=UTC),
+                datetime(2024, 7, 6, 19, tzinfo=UTC),
+            ],
+            "row": ["open", "after_close", "weekend"],
+        }
+    ).with_columns(pl.col("timestamp").dt.convert_time_zone(input_zone))
+    assert calendar.filter_sessions(frame)["row"].to_list() == ["open"]
 
 
 # =============================================================================
