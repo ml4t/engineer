@@ -16,8 +16,8 @@ def effective_tick_rule(close: pl.Expr | str) -> pl.Expr:
 
     Classifies trades as buyer or seller initiated based on price movements.
     An uptick is +1 and a downtick is -1. A zero price change keeps the previous
-    nonzero sign. The value is 0 when no earlier price change exists or the price
-    itself is missing.
+    nonzero sign. The value is 0 when no earlier price change exists or an
+    adjacent price is missing.
 
     Parameters
     ----------
@@ -31,7 +31,7 @@ def effective_tick_rule(close: pl.Expr | str) -> pl.Expr:
     """
     close = pl.col(close) if isinstance(close, str) else close
 
-    price_change = close.diff()
+    price_change = close.diff().fill_nan(None)
     # A zero change is null here so forward-fill can recover the previous sign.
     # A missing price has a null change too, and stays unclassified (0).
     direction = pl.when(price_change > 0).then(1).when(price_change < 0).then(-1).otherwise(None)

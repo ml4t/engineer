@@ -504,6 +504,71 @@ def test_effective_tick_rule_carries_previous_sign():
     assert imbalance[6] == 0.0
 
 
+@pytest.mark.parametrize("missing", ["", "NaN"])
+@pytest.mark.parametrize("move", [-1.0, 1.0])
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("expression_input", [False, True])
+def test_missing_csv_prices_do_not_overwrite_tick_direction(missing, move, lazy, expression_input):
+    moved = 100.0 + move
+    payload = f"row,close\n0,100.0\n1,{moved}\n2,{moved}\n3,{missing}\n4,{moved}\n5,{moved}\n"
+    frame = pl.read_csv(StringIO(payload), schema_overrides={"close": pl.Float64}).with_columns(
+        volume=pl.lit(5.0)
+    )
+    source = frame.lazy() if lazy else frame
+    close = pl.col("close") if expression_input else "close"
+    selected = source.select(
+        effective_tick_rule(close).alias("tick"),
+        order_flow_imbalance("volume", close).alias("ofi"),
+    )
+    result = selected.collect() if lazy else selected
+    expected = [0, int(move), int(move), 0, 0, int(move)]
+    assert result["tick"].to_list() == expected
+    assert result["ofi"].to_list() == expected
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_groups_keep_tick_state_separate_across_missing_prices(lazy):
+    frame = pl.DataFrame(
+        {
+            "symbol": ["A", "B"] * 5,
+            "close": [100.0, 100.0, 99.0, 101.0, float("nan"), 101.0, 99.0, 101.0, 99.0, 101.0],
+        }
+    )
+    source = frame.lazy() if lazy else frame
+    selected = source.select(effective_tick_rule("close").over("symbol"))
+    result = selected.collect() if lazy else selected
+    assert result.to_series().to_list() == [0, 0, -1, 1, 0, 1, 0, 1, -1, 1]
+
+
+@pytest.mark.parametrize(
+    "prices,expected",
+    [
+        ([], []),
+        ([100], [0]),
+        ([100, 100, 100], [0, 0, 0]),
+        ([100, 100, 99, 99, 100, 100], [0, 0, -1, -1, 1, 1]),
+        ([None, None], [0, 0]),
+        ([100, None, None, 101, 101], [0, 0, 0, 0, 0]),
+    ],
+)
+@pytest.mark.parametrize("lazy", [False, True])
+def test_tick_direction_stays_unknown_until_a_real_price_change(prices, expected, lazy):
+    frame = pl.DataFrame({"close": pl.Series(prices, dtype=pl.Float64)})
+    source = frame.lazy() if lazy else frame
+    selected = source.select(effective_tick_rule("close"))
+    result = selected.collect() if lazy else selected
+    assert result.to_series().to_list() == expected
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_integer_prices_keep_tick_rule_compatibility(lazy):
+    frame = pl.DataFrame({"close": pl.Series([100, 99, 99, 100, 100], dtype=pl.Int64)})
+    source = frame.lazy() if lazy else frame
+    selected = source.select(effective_tick_rule("close"))
+    result = selected.collect() if lazy else selected
+    assert result.to_series().to_list() == [0, -1, -1, 1, 1]
+
+
 def test_tick_rule_logic(small_microstructure_data):
     """Test tick rule classification logic."""
     result = small_microstructure_data.with_columns(effective_tick_rule("close").alias("tick_rule"))
