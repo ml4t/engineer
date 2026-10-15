@@ -426,7 +426,12 @@ result = calendar_aware_labels(
 )
 ```
 
-The calendar prevents forward returns from crossing session breaks (e.g., CME overnight gap from 4:00 PM to 5:00 PM CT).
+The calendar prevents forward returns from crossing genuine session breaks, such as the
+`CME_Equity` daily maintenance period from 4:00 PM to 5:00 PM CT. Its historical 3:15 PM to
+3:30 PM pause applies only before trade date June 28, 2021. Modern labels can cross that
+former pause because trading is continuous until 4:00 PM.
+See the [CME exchange notice](https://www.cmegroup.com/notices/electronic-trading/2021/06/20210621.html)
+for the affected equity-index contracts.
 
 ## Sample Weighting
 

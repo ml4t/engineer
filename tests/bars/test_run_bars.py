@@ -4,7 +4,7 @@ Tests for TickRunBarSampler, VolumeRunBarSampler, and DollarRunBarSampler.
 AFML-compliant: uses CUMULATIVE counts, NOT consecutive runs.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import polars as pl
@@ -102,6 +102,7 @@ class TestCalculateRunBarsNb:
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            *_,
         ) = _calculate_run_bars_nb(
             values,
             sides,
@@ -133,6 +134,7 @@ class TestCalculateRunBarsNb:
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            *_,
         ) = _calculate_run_bars_nb(
             values,
             sides,
@@ -183,6 +185,7 @@ class TestCalculateRunBarsNb:
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            *_,
         ) = _calculate_run_bars_nb(
             values,
             sides,
@@ -326,6 +329,141 @@ class TestTickRunBarSampler:
             "cumulative_sells",
         ]
         assert list(empty_df.columns) == expected_cols
+
+
+class TestVolumeRunBarExpectationUnits:
+    """Volume and dollar thresholds must stay in value units after EWMA updates."""
+
+    def test_volume_run_expectation_does_not_collapse_to_tick_counts(self):
+        n = 200
+        timestamps = [datetime(2024, 1, 1, 9, 30, i // 60, (i % 60) * 1000) for i in range(n)]
+        data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "price": [100.0] * n,
+                "volume": [10.0] * n,
+                "side": [1.0 if i % 2 == 0 else -1.0 for i in range(n)],
+            }
+        )
+        bars = VolumeRunBarSampler(
+            expected_ticks_per_bar=20,
+            alpha=1.0,
+            initial_p_buy=0.5,
+            min_bars_warmup=0,
+        ).sample(data)
+
+        # Balanced flow at p=0.5 reaches the threshold in about 20 ticks.
+        # A tick-count EWMA would shrink the threshold to one tick after warmup.
+        assert bars.height >= 3
+        assert int(bars["tick_count"][1]) >= 10
+        assert float(bars["expected_t"][1]) >= 100.0
+
+    def test_dollar_run_expectation_stays_in_dollar_units(self):
+        n = 200
+        timestamps = [datetime(2024, 1, 1, 9, 30, i // 60, (i % 60) * 1000) for i in range(n)]
+        data = pl.DataFrame(
+            {
+                "timestamp": timestamps,
+                "price": [50.0] * n,
+                "volume": [10.0] * n,
+                "side": [1.0 if i % 2 == 0 else -1.0 for i in range(n)],
+            }
+        )
+        bars = DollarRunBarSampler(
+            expected_ticks_per_bar=20,
+            alpha=1.0,
+            initial_p_buy=0.5,
+            min_bars_warmup=0,
+        ).sample(data)
+
+        assert bars.height >= 3
+        assert int(bars["tick_count"][1]) >= 10
+        assert float(bars["expected_t"][1]) >= 5_000.0
+
+
+@pytest.fixture(scope="module")
+def run_unit_scaling_trades():
+    return pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2024, 1, 2, 14, 30, tzinfo=UTC) + timedelta(seconds=i) for i in range(512)
+            ],
+            "price": [(100 + (i * 7) % 13) / 4 for i in range(512)],
+            "volume": [float(10 + i % 7) for i in range(512)],
+            "side": [float([1, -1, 1, 1, -1][i % 5]) for i in range(512)],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "sampler_type,column,scale",
+    [
+        (TickRunBarSampler, "volume", 16),
+        (VolumeRunBarSampler, "volume", 16),
+        (DollarRunBarSampler, "volume", 16),
+        (DollarRunBarSampler, "price", 8),
+    ],
+)
+@pytest.mark.parametrize("alpha", [0.1, 0.25, 0.5, 1.0])
+@pytest.mark.parametrize("warmup", [0, 2, 10])
+@pytest.mark.parametrize("incomplete", [False, True])
+def test_unit_rescaling_does_not_change_run_bar_boundaries(
+    run_unit_scaling_trades, sampler_type, column, scale, alpha, warmup, incomplete
+):
+    sampler = sampler_type(
+        expected_ticks_per_bar=16, alpha=alpha, initial_p_buy=0.6, min_bars_warmup=warmup
+    )
+    original = sampler.sample(run_unit_scaling_trades, include_incomplete=incomplete)
+    rescaled = sampler.sample(
+        run_unit_scaling_trades.with_columns(pl.col(column) * scale), include_incomplete=incomplete
+    )
+    assert original.select("timestamp", "tick_count").equals(
+        rescaled.select("timestamp", "tick_count")
+    )
+
+
+@pytest.mark.parametrize(
+    "sampler_type", [TickRunBarSampler, VolumeRunBarSampler, DollarRunBarSampler]
+)
+@pytest.mark.parametrize("alpha", [0.1, 0.25, 0.5, 1.0])
+@pytest.mark.parametrize("warmup", [0, 1, 10])
+@pytest.mark.parametrize("update", [False, True])
+@pytest.mark.parametrize("initial_side", [1.0, -1.0])
+def test_incomplete_diagnostics_use_final_adaptive_state(
+    sampler_type, alpha, warmup, update, initial_side
+):
+    complete_bars = warmup + int(update)
+    size = complete_bars * 4 + 2
+    trades = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2024, 1, 2, 14, 30, tzinfo=UTC) + timedelta(seconds=i) for i in range(size)
+            ],
+            "price": [100.0] * (size - 1) + [99.75],
+            "volume": [10.0] * size,
+            "side": [initial_side] * (size - 2) + [1.0, -1.0],
+        }
+    )
+    if sampler_type is TickRunBarSampler:
+        values = np.ones(size)
+    elif sampler_type is VolumeRunBarSampler:
+        values = np.full(size, 10.0)
+    else:
+        values = trades["price"].to_numpy() * 10.0
+    expected_t = 8 * np.mean(values)
+    expected_p_buy = 0.5
+    if update:
+        expected_t = (1 - alpha) * expected_t + alpha * np.sum(values[:4])
+        expected_p_buy = (1 - alpha) * 0.5 + alpha * (initial_side > 0)
+    bars = sampler_type(
+        expected_ticks_per_bar=8, alpha=alpha, initial_p_buy=0.5, min_bars_warmup=warmup
+    ).sample(trades, include_incomplete=True)
+    assert bars["tick_count"].to_list() == [4] * complete_bars + [2]
+    assert bars["expected_t"][-1] == pytest.approx(expected_t)
+    assert bars["p_buy"][-1] == pytest.approx(expected_p_buy)
+    expected_theta = expected_t * max(expected_p_buy, 1 - expected_p_buy)
+    assert bars["expected_theta"][-1] == pytest.approx(expected_theta)
+    assert bars["expected_run"][-1] == pytest.approx(expected_theta)
 
 
 class TestVolumeRunBarSampler:
@@ -599,6 +737,7 @@ class TestAFMLRunBarCompliance:
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            *_,
         ) = _calculate_run_bars_nb(
             values,
             sides,
@@ -662,6 +801,7 @@ class TestAFMLRunBarCompliance:
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            *_,
         ) = _calculate_run_bars_nb(
             values,
             sides,

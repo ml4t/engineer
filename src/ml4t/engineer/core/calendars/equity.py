@@ -50,11 +50,13 @@ class EquityCalendar(ExchangeCalendar):
         return self._timezone
 
     def is_session(self, dt: datetime) -> bool:
-        """Check if datetime is during trading session."""
+        """Check trading hours, interpreting naive values in the configured timezone."""
         if self._calendar:
-            # pandas_market_calendars expects date + time check
-            # First check if the date is a valid trading day
-            date_only = dt.date()
+            dt_in_market_tz = (
+                dt.replace(tzinfo=self._tz) if dt.tzinfo is None else dt.astimezone(self._tz)
+            )
+            # The provider's exchange date can differ from the configured display timezone.
+            date_only = dt_in_market_tz.astimezone(self._calendar.tz).date()
 
             # Get trading schedule for this date
             schedule = self._calendar.schedule(start_date=date_only, end_date=date_only)
@@ -65,14 +67,6 @@ class EquityCalendar(ExchangeCalendar):
             # Check if time is within trading hours
             market_open = schedule.iloc[0]["market_open"]
             market_close = schedule.iloc[0]["market_close"]
-
-            # Convert dt to timezone-aware if needed
-            if dt.tzinfo is None:
-                # Assume datetime is in market timezone
-                dt_in_market_tz = dt.replace(tzinfo=self._tz)
-            else:
-                # Convert to market timezone
-                dt_in_market_tz = dt.astimezone(self._tz)
 
             return market_open <= dt_in_market_tz <= market_close
 
