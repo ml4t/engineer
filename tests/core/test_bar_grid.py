@@ -50,6 +50,7 @@ def test_validated_hourly_prices_reach_public_returns_and_feature_pipeline_uncha
     result = compute_features(
         returns,
         [{"name": "realized_volatility", "params": {"period": 3, "annualize": False}}],
+        calendar=None,
     )
     result = result.collect() if isinstance(result, pl.LazyFrame) else result
     assert result.height == prices.height

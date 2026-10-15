@@ -42,7 +42,7 @@ def sample_ohlcv_data():
 def test_compute_single_feature_with_defaults(sample_ohlcv_data):
     """Test computing a single feature using registry default parameters."""
     # RSI has parameters={"period": 14} in its @feature() registration
-    result = compute_features(sample_ohlcv_data, ["rsi"])
+    result = compute_features(sample_ohlcv_data, ["rsi"], calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     assert "rsi" in result.columns
@@ -54,7 +54,7 @@ def test_compute_multiple_features(sample_ohlcv_data):
         {"name": "sma", "params": {"period": 20}},
         {"name": "ema", "params": {"period": 10}},
     ]
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     # Check that new columns were added
@@ -66,7 +66,7 @@ def test_compute_feature_with_custom_params(sample_ohlcv_data):
     features = [
         {"name": "sma", "params": {"period": 10}},
     ]
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     # Result should have additional columns
@@ -79,7 +79,7 @@ def test_compute_mixed_format(sample_ohlcv_data):
         "rsi",  # Has parameters={"period": 14} in registration
         {"name": "ema", "params": {"period": 15}},  # Custom parameters
     ]
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     assert len(result.columns) > len(sample_ohlcv_data.columns)
@@ -91,7 +91,7 @@ def test_compute_mixed_format(sample_ohlcv_data):
 def test_compute_with_lazyframe(sample_ohlcv_data):
     """Test that API works with LazyFrame input."""
     lazy_data = sample_ohlcv_data.lazy()
-    result = compute_features(lazy_data, [{"name": "sma", "params": {"period": 20}}])
+    result = compute_features(lazy_data, [{"name": "sma", "params": {"period": 20}}], calendar=None)
 
     assert isinstance(result, pl.LazyFrame)
     # Collect to verify computation works
@@ -104,9 +104,9 @@ def test_compute_with_lazyframe(sample_ohlcv_data):
 
 def test_empty_feature_list(sample_ohlcv_data):
     """Test that empty feature list returns original data."""
-    result = compute_features(sample_ohlcv_data, [])
+    result = compute_features(sample_ohlcv_data, [], calendar=None)
     no_time_data = sample_ohlcv_data.drop("timestamp")
-    no_time_result = compute_features(no_time_data, [])
+    no_time_result = compute_features(no_time_data, [], calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     assert result.equals(sample_ohlcv_data)
@@ -119,13 +119,13 @@ def test_empty_feature_list(sample_ohlcv_data):
 def test_nonexistent_feature_raises_error(sample_ohlcv_data):
     """Test that requesting nonexistent feature raises ValueError."""
     with pytest.raises(ValueError, match="not found in registry"):
-        compute_features(sample_ohlcv_data, ["nonexistent_feature"])
+        compute_features(sample_ohlcv_data, ["nonexistent_feature"], calendar=None)
 
 
 def test_invalid_feature_format_raises_error(sample_ohlcv_data):
     """Test that invalid feature format raises ValueError."""
     with pytest.raises(ValueError, match="Invalid features format"):
-        compute_features(sample_ohlcv_data, 123)  # type: ignore
+        compute_features(sample_ohlcv_data, 123, calendar=None)  # type: ignore
 
 
 def test_feature_dict_missing_name_raises_error(sample_ohlcv_data):
@@ -135,7 +135,7 @@ def test_feature_dict_missing_name_raises_error(sample_ohlcv_data):
     ]
 
     with pytest.raises(ValueError, match="missing 'name' field"):
-        compute_features(sample_ohlcv_data, features)
+        compute_features(sample_ohlcv_data, features, calendar=None)
 
 
 # YAML config tests
@@ -158,7 +158,7 @@ features:
         config_path = f.name
 
     try:
-        result = compute_features(sample_ohlcv_data, config_path)
+        result = compute_features(sample_ohlcv_data, config_path, calendar=None)
         assert isinstance(result, pl.DataFrame)
         assert len(result.columns) > len(sample_ohlcv_data.columns)
     finally:
@@ -178,7 +178,7 @@ def test_compute_from_yaml_config_simple_list(sample_ohlcv_data):
         config_path = f.name
 
     try:
-        result = compute_features(sample_ohlcv_data, config_path)
+        result = compute_features(sample_ohlcv_data, config_path, calendar=None)
         assert isinstance(result, pl.DataFrame)
         assert len(result.columns) > len(sample_ohlcv_data.columns)
     finally:
@@ -188,7 +188,7 @@ def test_compute_from_yaml_config_simple_list(sample_ohlcv_data):
 def test_missing_yaml_file_raises_error(sample_ohlcv_data):
     """Test that missing YAML file raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError):
-        compute_features(sample_ohlcv_data, "nonexistent_config.yaml")
+        compute_features(sample_ohlcv_data, "nonexistent_config.yaml", calendar=None)
 
 
 def test_yaml_without_pyyaml_raises_error(sample_ohlcv_data, monkeypatch):
@@ -199,7 +199,7 @@ def test_yaml_without_pyyaml_raises_error(sample_ohlcv_data, monkeypatch):
     monkeypatch.setattr(ml4t.engineer.api, "YAML_AVAILABLE", False)
 
     with pytest.raises(ImportError, match="PyYAML is required"):
-        compute_features(sample_ohlcv_data, "config.yaml")
+        compute_features(sample_ohlcv_data, "config.yaml", calendar=None)
 
 
 # Integration tests with real features
@@ -208,7 +208,7 @@ def test_yaml_without_pyyaml_raises_error(sample_ohlcv_data, monkeypatch):
 def test_compute_momentum_features(sample_ohlcv_data):
     """Test computing real momentum features."""
     features = ["rsi", "macd"]
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     assert len(result.columns) > len(sample_ohlcv_data.columns)
@@ -217,7 +217,7 @@ def test_compute_momentum_features(sample_ohlcv_data):
 def test_compute_volatility_features(sample_ohlcv_data):
     """Test computing real volatility features."""
     features = ["atr", "natr"]
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     assert len(result.columns) > len(sample_ohlcv_data.columns)
@@ -232,7 +232,7 @@ def test_compute_with_registry_integration(sample_ohlcv_data):
     available = registry.list_all()[:4]  # First 4 features: ad, adosc, adx, adxr
 
     # Compute them
-    result = compute_features(sample_ohlcv_data, available)
+    result = compute_features(sample_ohlcv_data, available, calendar=None)
 
     assert isinstance(result, pl.DataFrame)
     assert len(result.columns) > len(sample_ohlcv_data.columns)
@@ -248,7 +248,7 @@ def test_parameter_override_from_config(sample_ohlcv_data):
         {"name": "sma", "params": {"period": 50}},
     ]
 
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
     assert isinstance(result, pl.DataFrame)
 
 
@@ -259,7 +259,7 @@ def test_partial_parameter_override(sample_ohlcv_data):
         {"name": "macd", "params": {"fast_period": 8}},
     ]
 
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
     assert isinstance(result, pl.DataFrame)
 
 
@@ -274,7 +274,7 @@ def test_duplicate_feature_names(sample_ohlcv_data):
     ]
 
     with pytest.raises(ValueError, match="Duplicate feature output 'sma'"):
-        compute_features(sample_ohlcv_data, features)
+        compute_features(sample_ohlcv_data, features, calendar=None)
 
 
 def test_duplicate_features_require_explicit_distinct_outputs(sample_ohlcv_data):
@@ -285,6 +285,7 @@ def test_duplicate_features_require_explicit_distinct_outputs(sample_ohlcv_data)
             {"name": "sma", "params": {"period": 10}, "output": "sma_10"},
             {"name": "sma", "params": {"period": 20}, "output": "sma_20"},
         ],
+        calendar=None,
     )
 
     expected_10 = sample_ohlcv_data.select(pl.col("close").rolling_mean(10)).to_series()
@@ -302,6 +303,7 @@ def test_unknown_feature_parameter_fails_before_execution(sample_ohlcv_data):
                 {"name": "ema", "params": {"period": 5}},
                 {"name": "sma", "params": {"perod": 2}},
             ],
+            calendar=None,
         )
 
 
@@ -311,6 +313,7 @@ def test_output_cannot_replace_input_column(sample_ohlcv_data):
         compute_features(
             sample_ohlcv_data,
             [{"name": "sma", "params": {"period": 2}, "output": "close"}],
+            calendar=None,
         )
 
 
@@ -319,18 +322,16 @@ def test_compute_requires_time_or_explicit_order_assumption(sample_ohlcv_data):
     data = sample_ohlcv_data.drop("timestamp")
 
     with pytest.raises(DataSchemaError, match="No time column found"):
-        compute_features(data, [{"name": "sma", "params": {"period": 2}}])
+        compute_features(data, [{"name": "sma", "params": {"period": 2}}], calendar=None)
 
     result = compute_features(
-        data,
-        [{"name": "sma", "params": {"period": 2}}],
-        assume_sorted=True,
+        data, [{"name": "sma", "params": {"period": 2}}], assume_sorted=True, calendar=None
     )
     assert "sma" in result.columns
 
 
-def test_compute_isolates_assets_and_sorts_each_history():
-    """Interleaved, unsorted panel rows match independent per-asset calculations."""
+def test_row_mode_isolates_assets_without_reordering_observations():
+    """Interleaved rows retain input order and independent per-asset state."""
     start = datetime(2024, 1, 1)
     data = pl.DataFrame(
         {
@@ -349,15 +350,10 @@ def test_compute_isolates_assets_and_sorts_each_history():
         }
     )
 
-    result = compute_features(data, [{"name": "sma", "params": {"period": 2}}])
+    result = compute_features(data, [{"name": "sma", "params": {"period": 2}}], calendar=None)
 
-    assert result.select("asset_id", "timestamp").rows() == [
-        ("A", start),
-        ("A", start + timedelta(days=1)),
-        ("B", start),
-        ("B", start + timedelta(days=1)),
-    ]
-    assert result["sma"].to_list() == [None, 11.0, None, 105.0]
+    assert result.select("asset_id", "timestamp").equals(data.select("asset_id", "timestamp"))
+    assert result["sma"].to_list() == [None, None, 11.0, 105.0]
 
 
 def test_compute_cannot_disable_detected_asset_grouping():
@@ -376,7 +372,7 @@ def test_compute_cannot_disable_detected_asset_grouping():
     )
 
     with pytest.raises(DataSchemaError, match="Grouping cannot be disabled"):
-        compute_features(data, ["sma"], group_col=[])
+        compute_features(data, ["sma"], group_col=[], calendar=None)
 
 
 def test_lazy_panel_matches_eager_panel():
@@ -398,8 +394,8 @@ def test_lazy_panel_matches_eager_panel():
         {"name": "roc", "params": {"period": 1}},
     ]
 
-    eager = compute_features(data, features)
-    lazy = compute_features(data.lazy(), features)
+    eager = compute_features(data, features, calendar=None)
+    lazy = compute_features(data.lazy(), features, calendar=None)
 
     assert isinstance(lazy, pl.LazyFrame)
     assert lazy.collect().equals(eager)
@@ -412,14 +408,14 @@ def test_features_with_empty_params(sample_ohlcv_data):
         {"name": "rsi", "params": {}},
     ]
 
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
     assert isinstance(result, pl.DataFrame)
 
 
 def test_features_without_params_raises_clear_error(sample_ohlcv_data):
     """Test that unregistered features raise a clear error."""
     with pytest.raises(ValueError, match="not found in registry"):
-        compute_features(sample_ohlcv_data, ["nonexistent_feature_xyz"])
+        compute_features(sample_ohlcv_data, ["nonexistent_feature_xyz"], calendar=None)
 
 
 @pytest.mark.parametrize(
@@ -438,7 +434,7 @@ def test_malformed_feature_specs_are_rejected_before_execution(
     match: str,
 ) -> None:
     with pytest.raises(ValueError, match=match):
-        compute_features(sample_ohlcv_data, feature_spec)  # type: ignore[arg-type]
+        compute_features(sample_ohlcv_data, feature_spec, calendar=None)  # type: ignore[arg-type]
 
 
 def test_yaml_document_requires_a_feature_list(
@@ -449,7 +445,7 @@ def test_yaml_document_requires_a_feature_list(
     path.write_text("metadata: {}\n")
 
     with pytest.raises(ValueError, match="Invalid YAML format"):
-        compute_features(sample_ohlcv_data, path)
+        compute_features(sample_ohlcv_data, path, calendar=None)
 
 
 @pytest.mark.parametrize(
@@ -465,7 +461,7 @@ def test_explicit_ordering_columns_must_exist(
     match: str,
 ) -> None:
     with pytest.raises(DataSchemaError, match=match):
-        compute_features(sample_ohlcv_data, ["sma"], **kwargs)  # type: ignore[arg-type]
+        compute_features(sample_ohlcv_data, ["sma"], **kwargs, calendar=None)  # type: ignore[arg-type]
 
 
 def test_explicit_group_and_timestamp_columns_are_honored() -> None:
@@ -486,9 +482,10 @@ def test_explicit_group_and_timestamp_columns_are_honored() -> None:
         [{"name": "sma", "params": {"period": 2}}],
         group_col="instrument",
         timestamp_col="event_time",
+        calendar=None,
     )
 
-    assert result["event_time"].to_list() == sorted(data["event_time"].to_list())
+    assert result["event_time"].equals(data["event_time"])
     assert result["sma"].to_list() == [None, 1.5]
 
 
@@ -497,13 +494,13 @@ def test_ordering_columns_require_temporal_dtype_and_non_null_values(
 ) -> None:
     invalid_dtype = sample_ohlcv_data.with_columns(pl.col("timestamp").cast(pl.String))
     with pytest.raises(DataSchemaError, match="must be .*Date"):
-        compute_features(invalid_dtype, ["sma"])
+        compute_features(invalid_dtype, ["sma"], calendar=None)
 
     null_group = sample_ohlcv_data.with_columns(
         pl.when(pl.int_range(pl.len()) == 0).then(None).otherwise(pl.lit("A")).alias("asset_id")
     )
     with pytest.raises(DataSchemaError, match="cannot contain nulls"):
-        compute_features(null_group, ["sma"])
+        compute_features(null_group, ["sma"], calendar=None)
 
 
 def _registry_with_feature(

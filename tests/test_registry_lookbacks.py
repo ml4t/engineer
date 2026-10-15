@@ -65,7 +65,7 @@ def _first_usable_row(
         spec = feature_name
     else:
         spec = {"name": feature_name, "params": params}
-    result = compute_features(data, [spec])
+    result = compute_features(data, [spec], calendar=None)
     output_columns = [name for name in result.columns if name not in data.columns]
     return next(
         (

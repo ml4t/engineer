@@ -45,6 +45,7 @@ def main() -> None:
                 "output": "bollinger_20",
             },
         ],
+        calendar=None,
     )
     labels = triple_barrier_labels(
         engineered,

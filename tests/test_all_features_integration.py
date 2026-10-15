@@ -62,7 +62,7 @@ def test_all_features_compute_individually(sample_ohlcv_data):
 
     for feature_name in sorted(all_features):
         try:
-            result = compute_features(sample_ohlcv_data, [feature_name])
+            result = compute_features(sample_ohlcv_data, [feature_name], calendar=None)
 
             # Verify result is valid
             assert result is not None, f"{feature_name} returned None"
@@ -83,7 +83,7 @@ def test_all_features_compute_together(sample_ohlcv_data):
     all_features = registry.list_all()
 
     # Compute all features at once
-    result = compute_features(sample_ohlcv_data, all_features)
+    result = compute_features(sample_ohlcv_data, all_features, calendar=None)
 
     # Verify result
     assert result is not None
@@ -135,11 +135,13 @@ def test_all_features_isolate_panel_assets():
     failures = []
 
     for feature_name in get_registry().list_all():
-        panel_result = compute_features(panel, [feature_name])
+        panel_result = compute_features(panel, [feature_name], calendar=None)
         independent_result = pl.concat(
-            [compute_features(frame, [feature_name]) for frame in frames]
+            [compute_features(frame, [feature_name], calendar=None) for frame in frames]
         )
-        if not panel_result.equals(independent_result):
+        if not panel_result.sort("asset_id", "timestamp").equals(
+            independent_result.sort("asset_id", "timestamp")
+        ):
             failures.append(feature_name)
 
     assert not failures, f"Panel isolation failed for: {failures}"
@@ -154,7 +156,7 @@ def test_compute_features_with_parameters(sample_ohlcv_data):
         {"name": "ema", "params": {"period": 30}},
     ]
 
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
 
     assert result is not None
     assert len(result) == len(sample_ohlcv_data)
@@ -165,7 +167,7 @@ def test_compute_features_with_dependencies(sample_ohlcv_data):
     # These features might have dependencies on each other
     features = ["rsi", "macd", "bollinger_bands", "atr"]
 
-    result = compute_features(sample_ohlcv_data, features)
+    result = compute_features(sample_ohlcv_data, features, calendar=None)
 
     assert result is not None
     assert len(result) == len(sample_ohlcv_data)
@@ -197,7 +199,7 @@ def test_features_by_category(sample_ohlcv_data, category):
 
     for feature_name in features:
         try:
-            result = compute_features(sample_ohlcv_data, [feature_name])
+            result = compute_features(sample_ohlcv_data, [feature_name], calendar=None)
             assert result is not None
         except Exception as e:
             failures.append((feature_name, str(e)))
@@ -275,7 +277,7 @@ if __name__ == "__main__":
 
     for feature_name in sorted(all_features):
         try:
-            result = compute_features(df, [feature_name])
+            result = compute_features(df, [feature_name], calendar=None)
             working.append(feature_name)
             print(f"✓ {feature_name}")
         except Exception as e:
