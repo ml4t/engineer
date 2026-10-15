@@ -142,7 +142,7 @@ print(f"p-value: {adf_result[1]:.6f}")
 # Use alongside other features
 from ml4t.engineer import compute_features
 
-features = compute_features(df, ["rsi", "macd", "atr"])
+features = compute_features(df, ["rsi", "macd", "atr"], calendar=None)
 features = features.with_columns(
     ffdiff("close", d=optimal_d).alias("close_ffd")
 )
@@ -155,7 +155,7 @@ Fractional differencing is also available through the standard `compute_features
 ```python
 result = compute_features(df, [
     {"name": "ffdiff", "params": {"d": 0.4}, "output": "close_ffd"},
-])
+], calendar=None)
 ```
 
 Optimal-d search is data-dependent, so it remains a direct two-step operation:

@@ -1,5 +1,6 @@
 """Internal declared-grid checks; shared FeedSpec binding is owned by Specs."""
 
+import warnings
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, cast
 from zoneinfo import ZoneInfo
@@ -54,8 +55,11 @@ def validate_feature_grid(
         import pandas as pd
 
         try:
-            parsed = pd.Timedelta(frequency)
-        except (ValueError, TypeError) as exc:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", FutureWarning)
+                warnings.simplefilter("error", DeprecationWarning)
+                parsed = pd.Timedelta(frequency)
+        except (ValueError, TypeError, FutureWarning, DeprecationWarning) as exc:
             raise ValueError("declared grid data_frequency must be a fixed duration") from exc
         if not isinstance(parsed, pd.Timedelta) or parsed.value % 1000:
             raise ValueError("declared grid data_frequency requires finite microsecond precision")

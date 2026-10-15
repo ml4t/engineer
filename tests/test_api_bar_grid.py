@@ -17,6 +17,7 @@ from ml4t.specs import (
 )
 
 from ml4t.engineer import compute_features
+from ml4t.engineer.core.exceptions import DataSchemaError
 
 
 def prices(times):
@@ -291,3 +292,74 @@ def test_legacy_v1_metadata_is_not_silently_reinterpreted_as_explicit_disable():
     with pytest.raises(ValueError, match="time_contract_version=2"):
         run(data, False, feed_spec=legacy)
     assert run(data, False, feed_spec=legacy, calendar=None).height == 8
+
+
+@pytest.mark.parametrize("frequency", ["NaT", "1ns", "1d", "1month", 3600, "0h"])
+def test_unsupported_frequency_is_not_inferred_from_observation_spacing(frequency):
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
+    with pytest.raises(ValueError, match="frequency"):
+        run(data, False, feed_spec=replace(feed("24/7"), data_frequency=frequency))
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_metadata_column_names_and_calendar_sorting_apply_before_features(lazy):
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start + timedelta(hours=h) for h in range(8)])).rename(
+        {"timestamp": "when", "symbol": "instrument"}
+    )
+    contract = replace(feed("24/7"), timestamp_col="when", entity_col="instrument")
+    output = run(data.reverse(), lazy, feed_spec=contract)
+    assert output["when"].equals(data["when"])
+    assert output["realized_volatility"][3] is not None
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_missing_group_identifier_fails_before_feature_evaluation(lazy):
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start + timedelta(hours=h) for h in range(8)])).with_columns(
+        pl.when(pl.col("timestamp") == start).then(None).otherwise(pl.col("symbol")).alias("symbol")
+    )
+    with pytest.raises(DataSchemaError, match="null"):
+        run(data, lazy, feed_spec=feed("24/7"))
+
+
+@pytest.mark.parametrize("count", [0, 1])
+@pytest.mark.parametrize("lazy", [False, True])
+def test_empty_and_singleton_declared_grids_keep_the_input_shape(count, lazy):
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start])).head(count)
+    output = run(data, lazy, feed_spec=feed("24/7"))
+    assert output.height == count
+    assert output.select(data.columns).equals(data)
+
+
+def test_row_mode_does_not_load_optional_schedule_provider(monkeypatch):
+    import builtins
+
+    original = builtins.__import__
+
+    def no_provider(name, *args, **kwargs):
+        if name == "pandas_market_calendars":
+            raise ImportError("Provider unavailable")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_provider)
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
+    assert run(data, False, calendar=None).height == 8
+    with pytest.raises(ImportError, match="required"):
+        run(data, False, feed_spec=feed("24/7"))
+
+
+@pytest.mark.parametrize("label, expected", [("left", [9, 10, 11]), ("right", [10, 11, 12])])
+def test_declared_event_bar_side_and_partial_policy_do_not_guess_from_midnight(label, expected):
+    zone = ZoneInfo("America/New_York")
+    data = returns(prices([datetime(2025, 7, 3, h, 30, tzinfo=zone) for h in expected]))
+    contract = replace(
+        feed("NYSE"),
+        timestamp_semantics="event_time",
+        bar_label=label,
+        partial_bar_policy="exclude",
+    )
+    assert run(data, False, feed_spec=contract).height == 3

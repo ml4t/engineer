@@ -459,15 +459,14 @@ def _resolve_ordering_columns(
                 f"Timestamp column '{resolved_timestamp_col}' must be Date or Datetime, got {dtype}"
             )
 
-    if isinstance(data, pl.DataFrame):
-        checked_columns = [*group_cols]
-        if resolved_timestamp_col is not None:
-            checked_columns.append(resolved_timestamp_col)
-        null_columns = [name for name in checked_columns if data[name].null_count() > 0]
-        if null_columns:
-            raise DataSchemaError(
-                f"Grouping and ordering columns cannot contain nulls: {null_columns}"
-            )
+    checked_columns = [*group_cols]
+    if resolved_timestamp_col is not None:
+        checked_columns.append(resolved_timestamp_col)
+    projection = data.select(checked_columns)
+    checked = projection.collect() if isinstance(projection, pl.LazyFrame) else projection
+    null_columns = [name for name in checked_columns if checked[name].null_count() > 0]
+    if null_columns:
+        raise DataSchemaError(f"Grouping and ordering columns cannot contain nulls: {null_columns}")
 
     return group_cols, resolved_timestamp_col
 
