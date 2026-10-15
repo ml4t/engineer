@@ -96,6 +96,106 @@ def test_readme_link_checker_validates_local_and_http_targets(
     assert requests[0].get_header("User-agent") == check_readme_links.USER_AGENT
 
 
+@pytest.fixture
+def unavailable_http(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    requests: list[str] = []
+
+    def open_url(request: Request, *, timeout: int) -> BytesIO:
+        requests.append(request.full_url)
+        assert timeout == 20
+        raise HTTPError(request.full_url, 404, "Not Found", None, None)
+
+    monkeypatch.setattr(check_readme_links, "urlopen", open_url)
+    monkeypatch.setattr(check_readme_links.time, "sleep", lambda _: None)
+    return requests
+
+
+@pytest.fixture
+def published_http(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    requests: list[str] = []
+
+    def open_url(request: Request, *, timeout: int) -> BytesIO:
+        requests.append(request.full_url)
+        assert timeout == 20
+        response = BytesIO(b"published file")
+        response.status = 200  # type: ignore[attr-defined]
+        return response
+
+    monkeypatch.setattr(check_readme_links, "urlopen", open_url)
+    return requests
+
+
+@pytest.mark.parametrize(
+    "path,target",
+    [
+        ("CONTRIBUTING.md", "https://github.com/ml4t/engineer/blob/main/CONTRIBUTING.md"),
+        (
+            "docs/new guide.md",
+            "https://github.com/ml4t/engineer/blob/main/docs/new%20guide.md#intro",
+        ),
+    ],
+)
+def test_readme_canonical_main_links_validate_proposed_files(
+    tmp_path: Path, unavailable_http: list[str], path: str, target: str
+) -> None:
+    proposed = tmp_path / path
+    proposed.parent.mkdir(parents=True, exist_ok=True)
+    proposed.write_text("# Intro\n", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text(f"[New guide]({target})\n", encoding="utf-8")
+    check_readme_links.check(readme)
+    assert unavailable_http == []
+
+
+@pytest.mark.parametrize("check_http", [False, True])
+def test_readme_canonical_main_links_reject_missing_candidate_files(
+    tmp_path: Path, published_http: list[str], check_http: bool
+) -> None:
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "[License](https://github.com/ml4t/engineer/blob/main/LICENSE)\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="does not exist"):
+        check_readme_links.check(readme, check_http=check_http)
+    assert published_http == []
+
+
+@pytest.mark.parametrize("path", ["../outside.md", "%2e%2e/outside.md"])
+def test_readme_canonical_main_links_reject_repository_escape(
+    tmp_path: Path, published_http: list[str], path: str
+) -> None:
+    root = tmp_path / "repository"
+    root.mkdir()
+    (tmp_path / "outside.md").write_text("outside\n", encoding="utf-8")
+    readme = root / "README.md"
+    readme.write_text(
+        f"[Outside](https://github.com/ml4t/engineer/blob/main/{path})\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="escapes the repository"):
+        check_readme_links.check(readme)
+    assert published_http == []
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://github.com/other/engineer/blob/main/CONTRIBUTING.md",
+        "https://github.com/ml4t/other/blob/main/CONTRIBUTING.md",
+        "https://github.com/ml4t/engineer/blob/feature/CONTRIBUTING.md",
+        "https://github.com.evil.test/ml4t/engineer/blob/main/CONTRIBUTING.md",
+    ],
+)
+def test_readme_other_repository_urls_still_require_http_success(
+    tmp_path: Path, unavailable_http: list[str], target: str
+) -> None:
+    (tmp_path / "CONTRIBUTING.md").write_text("# Contributing\n", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text(f"[Guide]({target})\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="README link failed"):
+        check_readme_links.check(readme)
+    assert unavailable_http == [target] * 3
+
+
 def test_docs_verifier_checks_release_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     expected = {"commit": "a" * 40, "library": "engineer", "version": "0.1.4"}
     responses = iter(({**expected, "commit": "old"}, expected))

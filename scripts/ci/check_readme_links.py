@@ -1,4 +1,4 @@
-"""Validate every local and HTTP link in the root README."""
+"""Validate README repository files against the candidate tree and external HTTP links."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 LINK = re.compile(r"(?<!!)\[[^]]+\]\((?P<target>[^)]+)\)")
 USER_AGENT = "ml4t-engineer-readme-check/1.0"
+REPOSITORY_FILE_PREFIX = "https://github.com/ml4t/engineer/blob/main/"
 
 
 def targets(readme: Path) -> tuple[str, ...]:
@@ -50,11 +51,13 @@ def validate_http(target: str, *, attempts: int = 3, retry_seconds: float = 1.0)
 
 
 def check(readme: Path, *, check_http: bool = True) -> None:
-    """Validate every Markdown link in *readme*."""
+    """Validate candidate file links locally and other HTTP links remotely."""
     root = readme.resolve().parent
     for target in targets(readme):
         scheme = urlparse(target).scheme
-        if scheme in {"http", "https"}:
+        if target.startswith(REPOSITORY_FILE_PREFIX):
+            validate_local(root, target.removeprefix(REPOSITORY_FILE_PREFIX))
+        elif scheme in {"http", "https"}:
             if check_http:
                 validate_http(target)
         elif not scheme:
