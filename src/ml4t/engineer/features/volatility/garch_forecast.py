@@ -38,19 +38,22 @@ def garch_volatility_forecast_nb(
     n_valid = len(valid_returns)
     sigma2 = np.zeros(n_valid)
 
-    # Initialize with sample variance of valid returns
-    sigma2[0] = np.var(valid_returns[: min(20, n_valid)])
+    # Initialize from the first observed return. A sample variance over the
+    # following returns would leak those future shocks into earlier forecasts.
+    sigma2[0] = valid_returns[0] * valid_returns[0]
 
-    # GARCH recursion
+    # sigma2[t] is the conditional variance of return t given information through t-1.
     for t in range(1, n_valid):
         sigma2[t] = omega + alpha * valid_returns[t - 1] ** 2 + beta * sigma2[t - 1]
 
-    # Multi-step conditional expectation forecast (no lookahead)
+    # Forecast from information available at t. The first step uses return t;
+    # later steps replace the unknown shock with its conditional expectation.
     forecast = np.zeros(n_valid)
+    persistence = alpha + beta
     for t in range(n_valid):
-        h_ahead = sigma2[t]
-        for _h in range(horizon):
-            h_ahead = omega + (alpha + beta) * h_ahead
+        h_ahead = omega + alpha * valid_returns[t] * valid_returns[t] + beta * sigma2[t]
+        for _step in range(1, horizon):
+            h_ahead = omega + persistence * h_ahead
         forecast[t] = h_ahead
 
     # Map back to original positions

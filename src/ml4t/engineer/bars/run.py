@@ -1,13 +1,16 @@
 """Run bar sampler implementations.
 
-AFML-compliant run bars per López de Prado Chapter 2.3.
+Run bars based on López de Prado's cumulative run definition.
 
-Run bar threshold formula:
+Tick-run threshold formula:
     E[θ_T] = E[T] × max{P[b=1], 1-P[b=1]}
 
 Where:
     E[T] = EWMA of bar lengths (ticks per bar)
     P[b=1] = buy probability
+
+Volume and dollar variants use cumulative volume/value as the adaptive size
+in the same threshold calculation, rather than mixing value units with tick counts.
 
 CRITICAL: θ_T = max{Σ(all buys in bar), Σ(all sells in bar)}
     - NOT consecutive same-sided trades
@@ -51,8 +54,10 @@ def _calculate_run_bars_nb(
     npt.NDArray[np.float64],
     npt.NDArray[np.float64],
     npt.NDArray[np.float64],
+    float,
+    float,
 ]:
-    """Calculate AFML-compliant run bar indices.
+    """Calculate cumulative weighted run bar indices.
 
     AFML Chapter 2.3 formula:
         θ_T = max{Σ(all buys in bar), Σ(all sells in bar)}
@@ -68,7 +73,7 @@ def _calculate_run_bars_nb(
     sides : ndarray
         Array of trade signs (+1 for buy, -1 for sell)
     initial_expected_t : float
-        Initial expected ticks per bar (E[T])
+        Initial expected total value per bar, in the same units as values
     initial_p_buy : float
         Initial buy probability P[b=1]
     alpha : float
@@ -78,9 +83,9 @@ def _calculate_run_bars_nb(
 
     Returns
     -------
-    tuple of arrays
+    tuple
         (bar_indices, thetas, expected_thetas, expected_ts, p_buys,
-         cumulative_buys, cumulative_sells)
+         cumulative_buys, cumulative_sells, current_expected_t, current_p_buy)
     """
     n = len(values)
 
@@ -137,10 +142,13 @@ def _calculate_run_bars_nb(
 
             n_bars += 1
 
-            # Update EWMAs after warmup period
+            # Update EWMAs after warmup period.
+            # expected_t is denominated in the same units as `values`: ticks when
+            # every value is 1, and volume or dollars when those series are passed.
+            # Updating it with the tick count collapses a value-scaled threshold.
             if n_bars > min_bars_warmup:
-                # Update E[T] - expected ticks per bar
-                expected_t = alpha * bar_tick_count + (1 - alpha) * expected_t
+                bar_value = cumulative_buys + cumulative_sells
+                expected_t = alpha * bar_value + (1 - alpha) * expected_t
 
                 # Update P[b=1] - buy probability
                 bar_p_buy = bar_buy_count / bar_tick_count if bar_tick_count > 0 else 0.5
@@ -160,6 +168,8 @@ def _calculate_run_bars_nb(
         np.array(p_buys, dtype=np.float64),
         np.array(cumulative_buys_out, dtype=np.float64),
         np.array(cumulative_sells_out, dtype=np.float64),
+        float(expected_t),
+        float(p_buy),
     )
 
 
@@ -258,6 +268,8 @@ class TickRunBarSampler(BarSampler):
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            current_expected_t,
+            current_p_buy,
         ) = _calculate_run_bars_nb(
             values,
             sides,
@@ -315,11 +327,7 @@ class TickRunBarSampler(BarSampler):
                 cum_sells = float(np.sum(bar_sides < 0))
                 current_theta = max(cum_buys, cum_sells)
 
-                last_expected_t = (
-                    expected_ts[-1] if len(expected_ts) > 0 else float(self.expected_ticks_per_bar)
-                )
-                last_p_buy = p_buys[-1] if len(p_buys) > 0 else self.initial_p_buy
-                expected_theta = last_expected_t * max(last_p_buy, 1 - last_p_buy)
+                expected_theta = current_expected_t * max(current_p_buy, 1 - current_p_buy)
 
                 bar = self._create_ohlcv_bar(
                     bar_ticks,
@@ -330,8 +338,8 @@ class TickRunBarSampler(BarSampler):
                         "expected_run": float(expected_theta),
                         "theta": float(current_theta),
                         "expected_theta": float(expected_theta),
-                        "expected_t": float(last_expected_t),
-                        "p_buy": float(last_p_buy),
+                        "expected_t": current_expected_t,
+                        "p_buy": current_p_buy,
                         "cumulative_buys": float(cum_buys),
                         "cumulative_sells": float(cum_sells),
                     },
@@ -369,7 +377,7 @@ class TickRunBarSampler(BarSampler):
 
 
 class VolumeRunBarSampler(BarSampler):
-    """Sample bars based on cumulative volume runs (AFML-compliant).
+    """Sample bars based on cumulative volume runs.
 
     AFML Chapter 2.3 formula with volume weighting:
         θ_T = max{Σ(buy volumes in bar), Σ(sell volumes in bar)}
@@ -448,6 +456,8 @@ class VolumeRunBarSampler(BarSampler):
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            current_expected_t,
+            current_p_buy,
         ) = _calculate_run_bars_nb(
             volumes,  # Use volumes as values
             sides,
@@ -503,11 +513,7 @@ class VolumeRunBarSampler(BarSampler):
                 # Calculate current theta (cumulative volumes)
                 current_theta = max(buy_vol, sell_vol)
 
-                last_expected_t = (
-                    expected_ts[-1] if len(expected_ts) > 0 else initial_expected_t_scaled
-                )
-                last_p_buy = p_buys[-1] if len(p_buys) > 0 else self.initial_p_buy
-                expected_theta = last_expected_t * max(last_p_buy, 1 - last_p_buy)
+                expected_theta = current_expected_t * max(current_p_buy, 1 - current_p_buy)
 
                 bar = self._create_ohlcv_bar(
                     bar_ticks,
@@ -518,8 +524,8 @@ class VolumeRunBarSampler(BarSampler):
                         "expected_run": float(expected_theta),
                         "theta": float(current_theta),
                         "expected_theta": float(expected_theta),
-                        "expected_t": float(last_expected_t),
-                        "p_buy": float(last_p_buy),
+                        "expected_t": current_expected_t,
+                        "p_buy": current_p_buy,
                         "cumulative_buys": float(buy_vol),
                         "cumulative_sells": float(sell_vol),
                     },
@@ -557,7 +563,7 @@ class VolumeRunBarSampler(BarSampler):
 
 
 class DollarRunBarSampler(BarSampler):
-    """Sample bars based on cumulative dollar value runs (AFML-compliant).
+    """Sample bars based on cumulative dollar value runs.
 
     AFML Chapter 2.3 formula with dollar weighting:
         θ_T = max{Σ(buy dollars in bar), Σ(sell dollars in bar)}
@@ -635,6 +641,8 @@ class DollarRunBarSampler(BarSampler):
             p_buys,
             cumulative_buys,
             cumulative_sells,
+            current_expected_t,
+            current_p_buy,
         ) = _calculate_run_bars_nb(
             dollar_volumes,  # Use dollar volumes as values
             sides,
@@ -702,11 +710,7 @@ class DollarRunBarSampler(BarSampler):
                 sell_dollars = float(np.sum(bar_dollars[bar_sides < 0]))
                 current_theta = max(buy_dollars, sell_dollars)
 
-                last_expected_t = (
-                    expected_ts[-1] if len(expected_ts) > 0 else initial_expected_t_scaled
-                )
-                last_p_buy = p_buys[-1] if len(p_buys) > 0 else self.initial_p_buy
-                expected_theta = last_expected_t * max(last_p_buy, 1 - last_p_buy)
+                expected_theta = current_expected_t * max(current_p_buy, 1 - current_p_buy)
 
                 bar = self._create_ohlcv_bar(
                     bar_ticks,
@@ -719,8 +723,8 @@ class DollarRunBarSampler(BarSampler):
                         "expected_run": float(expected_theta),
                         "theta": float(current_theta),
                         "expected_theta": float(expected_theta),
-                        "expected_t": float(last_expected_t),
-                        "p_buy": float(last_p_buy),
+                        "expected_t": current_expected_t,
+                        "p_buy": current_p_buy,
                         "cumulative_buys": float(buy_dollars),
                         "cumulative_sells": float(sell_dollars),
                     },

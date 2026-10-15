@@ -32,7 +32,7 @@ def roll_spread_estimator(close: pl.Expr | str, period: int = 20) -> pl.Expr:
     Returns
     -------
     pl.Expr
-        Estimated bid-ask spread
+        Estimated bid-ask spread, null for an unobserved covariance window
 
     Raises
     ------
@@ -46,23 +46,18 @@ def roll_spread_estimator(close: pl.Expr | str, period: int = 20) -> pl.Expr:
 
     close = pl.col(close) if isinstance(close, str) else close
 
-    # Calculate price changes
+    # Serial covariance of price changes. Demeaning each point by its own
+    # trailing mean and then averaging those products is not the covariance of
+    # the window; cov = E[xy] - E[x]E[y] over the same window is.
     price_changes = close.diff()
-
-    # Calculate rolling covariance of price changes with lagged changes
-    # Note: Polars doesn't have rolling covariance, so we approximate
     lag_changes = price_changes.shift(1)
-
-    # Calculate components for covariance
     mean_change = price_changes.rolling_mean(period)
     mean_lag = lag_changes.rolling_mean(period)
-
-    # Approximate covariance
-    cov_approx = ((price_changes - mean_change) * (lag_changes - mean_lag)).rolling_mean(period)
+    cov_approx = (price_changes * lag_changes).rolling_mean(period) - mean_change * mean_lag
 
     # Roll spread = 2 * sqrt(max(-cov, 0))
-    spread = 2 * pl.when(cov_approx.is_null()).then(None).when(cov_approx < 0).then(
-        (-cov_approx).sqrt()
-    ).otherwise(0)
+    spread = 2 * pl.when(cov_approx.is_null() | cov_approx.is_nan()).then(None).when(
+        cov_approx < 0
+    ).then((-cov_approx).sqrt()).otherwise(0)
 
     return spread

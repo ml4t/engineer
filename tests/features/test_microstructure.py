@@ -10,6 +10,9 @@ Tests cover:
 - Academic formula correctness
 """
 
+from decimal import Decimal
+from io import StringIO
+
 import numpy as np
 import polars as pl
 import pytest
@@ -401,6 +404,64 @@ def test_roll_spread_non_negative(sample_microstructure_data):
 # =============================================================================
 
 
+def test_roll_spread_matches_window_covariance():
+    """Roll's spread uses the serial covariance of the current window."""
+    close = [100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 102.0, 101.0]
+    period = 4
+    result = (
+        pl.DataFrame({"close": close})
+        .select(roll_spread_estimator("close", period=period).alias("spread"))["spread"]
+        .to_numpy()
+    )
+
+    changes = np.diff(close, prepend=np.nan)
+    lagged = np.roll(changes, 1)
+    lagged[0] = np.nan
+    for index in range(len(close)):
+        start = index - period + 1
+        if start < 0:
+            assert np.isnan(result[index])
+            continue
+        window_changes = changes[start : index + 1]
+        window_lagged = lagged[start : index + 1]
+        if np.isnan(window_changes).any() or np.isnan(window_lagged).any():
+            assert np.isnan(result[index])
+            continue
+        covariance = float(np.cov(window_changes, window_lagged, ddof=0)[0, 1])
+        expected = 2.0 * np.sqrt(max(-covariance, 0.0))
+        assert result[index] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("missing", ["", "NaN"])
+@pytest.mark.parametrize("period", [1, 2, 4, 7])
+@pytest.mark.parametrize("lazy", [False, True])
+def test_roll_spread_missing_csv_prices_do_not_report_zero(missing, period, lazy):
+    prices = [100.0 + i % 2 if i < 20 else 100.0 + (i - 19) ** 2 / 16 for i in range(30)]
+    rows = [f"2024-01-02T14:{30 + i:02d}:00Z,{price}" for i, price in enumerate(prices)]
+    rows[8] = f"2024-01-02T14:38:00Z,{missing}"
+    frame = pl.read_csv(
+        StringIO("timestamp,close\n" + "\n".join(rows)),
+        schema_overrides={"close": pl.Float64},
+        try_parse_dates=True,
+    )
+    changes = np.diff(frame["close"].to_numpy(), prepend=np.nan)
+    lagged = np.roll(changes, 1)
+    lagged[0] = np.nan
+    expected = np.full(frame.height, np.nan)
+    for index in range(period + 1, frame.height):
+        current = changes[index - period + 1 : index + 1]
+        previous = lagged[index - period + 1 : index + 1]
+        if np.isfinite(current).all() and np.isfinite(previous).all():
+            covariance = np.cov(current, previous, ddof=0)[0, 1]
+            expected[index] = 2 * np.sqrt(max(-covariance, 0))
+    source = frame.lazy() if lazy else frame
+    selected = source.select(roll_spread_estimator("close", period=period))
+    result = selected.collect() if lazy else selected
+    np.testing.assert_allclose(
+        result.to_series().to_numpy(), expected, equal_nan=True, rtol=1e-12, atol=1e-12
+    )
+
+
 def test_tick_rule_basic_functionality(sample_microstructure_data):
     """Test effective tick rule basic calculation."""
     result = sample_microstructure_data.with_columns(
@@ -423,6 +484,128 @@ def test_tick_rule_values(sample_microstructure_data):
     # Should only contain -1, 0, or 1 (after dropping NaNs)
     valid_values = tick_values[~np.isnan(tick_values)]
     assert np.all(np.isin(valid_values, [-1, 0, 1]))
+
+
+def test_effective_tick_rule_carries_previous_sign():
+    """A zero price change keeps the previous trade sign."""
+    prices = pl.DataFrame({"close": [100.0, 101.0, 101.0, 101.0, 99.0, 99.0, None]})
+    ticks = prices.select(effective_tick_rule("close").alias("tick"))["tick"].to_list()
+
+    assert ticks == [0, 1, 1, 1, -1, -1, 0]
+
+    imbalance = (
+        prices.with_columns(volume=pl.lit(5.0))
+        .select(
+            order_flow_imbalance("volume", "close").alias("ofi"),
+        )["ofi"]
+        .to_list()
+    )
+    assert imbalance[2] == 1.0
+    assert imbalance[5] == -1.0
+    assert imbalance[6] == 0.0
+
+
+@pytest.mark.parametrize("missing", ["", "NaN"])
+@pytest.mark.parametrize("move", [-1.0, 1.0])
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("expression_input", [False, True])
+def test_missing_csv_prices_do_not_overwrite_tick_direction(missing, move, lazy, expression_input):
+    moved = 100.0 + move
+    payload = f"row,close\n0,100.0\n1,{moved}\n2,{moved}\n3,{missing}\n4,{moved}\n5,{moved}\n"
+    frame = pl.read_csv(StringIO(payload), schema_overrides={"close": pl.Float64}).with_columns(
+        volume=pl.lit(5.0)
+    )
+    source = frame.lazy() if lazy else frame
+    close = pl.col("close") if expression_input else "close"
+    selected = source.select(
+        effective_tick_rule(close).alias("tick"),
+        order_flow_imbalance("volume", close).alias("ofi"),
+    )
+    result = selected.collect() if lazy else selected
+    expected = [0, int(move), int(move), 0, 0, int(move)]
+    assert result["tick"].to_list() == expected
+    assert result["ofi"].to_list() == expected
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_groups_keep_tick_state_separate_across_missing_prices(lazy):
+    frame = pl.DataFrame(
+        {
+            "symbol": ["A", "B"] * 5,
+            "close": [100.0, 100.0, 99.0, 101.0, float("nan"), 101.0, 99.0, 101.0, 99.0, 101.0],
+        }
+    )
+    source = frame.lazy() if lazy else frame
+    selected = source.select(effective_tick_rule("close").over("symbol"))
+    result = selected.collect() if lazy else selected
+    assert result.to_series().to_list() == [0, 0, -1, 1, 0, 1, 0, 1, -1, 1]
+
+
+@pytest.mark.parametrize(
+    "prices,expected",
+    [
+        ([], []),
+        ([100], [0]),
+        ([100, 100, 100], [0, 0, 0]),
+        ([100, 100, 99, 99, 100, 100], [0, 0, -1, -1, 1, 1]),
+        ([None, None], [0, 0]),
+        ([100, None, None, 101, 101], [0, 0, 0, 0, 0]),
+    ],
+)
+@pytest.mark.parametrize("lazy", [False, True])
+def test_tick_direction_stays_unknown_until_a_real_price_change(prices, expected, lazy):
+    frame = pl.DataFrame({"close": pl.Series(prices, dtype=pl.Float64)})
+    source = frame.lazy() if lazy else frame
+    selected = source.select(effective_tick_rule("close"))
+    result = selected.collect() if lazy else selected
+    assert result.to_series().to_list() == expected
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_integer_prices_keep_tick_rule_compatibility(lazy):
+    frame = pl.DataFrame({"close": pl.Series([100, 99, 99, 100, 100], dtype=pl.Int64)})
+    source = frame.lazy() if lazy else frame
+    selected = source.select(effective_tick_rule("close"))
+    result = selected.collect() if lazy else selected
+    assert result.to_series().to_list() == [0, -1, -1, 1, 1]
+
+
+@pytest.mark.parametrize(
+    "prices,expected",
+    [
+        pytest.param(
+            ["100.00", "99.00", "99.00", "99.01", None, "99.01", "99.01"],
+            [0, -1, -1, 1, 0, 0, 1],
+            id="decimal-with-missing-price",
+        ),
+        pytest.param(
+            [
+                "1000000000000000.00000000000001",
+                "1000000000000000.00000000000002",
+                "1000000000000000.00000000000002",
+                "1000000000000000.00000000000001",
+            ],
+            [0, 1, 1, -1],
+            id="decimal-moves-below-float-price-resolution",
+        ),
+    ],
+)
+@pytest.mark.parametrize("lazy", [False, True])
+def test_decimal_prices_keep_exact_tick_direction_and_order_flow(prices, expected, lazy):
+    frame = pl.DataFrame(
+        {
+            "close": [Decimal(value) if value is not None else None for value in prices],
+            "volume": [1.0] * len(prices),
+        }
+    )
+    source = frame.lazy() if lazy else frame
+    selected = source.select(
+        effective_tick_rule("close").alias("tick"),
+        order_flow_imbalance("volume", "close").alias("ofi"),
+    )
+    result = selected.collect() if lazy else selected
+    assert result["tick"].to_list() == expected
+    assert result["ofi"].to_list() == expected
 
 
 def test_tick_rule_logic(small_microstructure_data):
