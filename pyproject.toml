@@ -106,7 +106,7 @@ store = [
 
 # Trading calendar support
 calendars = [
-    "pandas-market-calendars>=4.0.0",
+    "pandas-market-calendars>=5.5.0",
 ]
 
 # Statistical diagnostics
@@ -141,7 +141,7 @@ dev = [
     "ipdb>=0.13.0",
     "pre-commit>=3.3.0",
     "duckdb>=0.9.0",
-    "pandas-market-calendars>=4.0.0",
+    "pandas-market-calendars>=5.5.0",
     "ta-lib>=0.4.0,<0.8",
     "yfinance>=0.2.0",
     "lightgbm>=4.0.0",
@@ -162,7 +162,7 @@ docs = [
 all = [
     "ta-lib>=0.4.0,<0.8",
     "duckdb>=0.9.0",
-    "pandas-market-calendars>=4.0.0",
+    "pandas-market-calendars>=5.5.0",
     "plotly>=5.15.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
@@ -209,7 +209,7 @@ dev = [
     "pre-commit>=3.3.0",
     "twine>=6.0.0",
     "pip-audit>=2.10.1",
-    "pandas-market-calendars>=4.0.0",
+    "pandas-market-calendars>=5.5.0",
     "duckdb>=0.9.0",
     "matplotlib>=3.7.0",
     "pyarrow>=14.0.0",

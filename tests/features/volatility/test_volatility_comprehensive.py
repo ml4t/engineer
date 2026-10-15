@@ -498,6 +498,47 @@ class TestGARCHForecast:
         with pytest.raises(ValueError):
             pl.DataFrame({"r": [0.01] * 10}).select(garch_forecast("r", alpha=0.5, beta=0.6))
 
+    @pytest.mark.parametrize("horizon", [1, 2, 5])
+    @pytest.mark.parametrize("lazy", [False, True])
+    def test_forecast_ignores_future_returns(self, horizon, lazy):
+        """A later shock must not change forecasts made before it is observed."""
+        from ml4t.engineer.features.volatility.garch_forecast import garch_forecast
+
+        calm = np.zeros(30)
+        shocked = calm.copy()
+        shocked[10] = 4.0
+        calm_frame = pl.DataFrame({"returns": calm})
+        shocked_frame = pl.DataFrame({"returns": shocked})
+        if lazy:
+            calm_frame = calm_frame.lazy()
+            shocked_frame = shocked_frame.lazy()
+        calm_result = calm_frame.select(garch_forecast("returns", horizon=horizon))
+        shocked_result = shocked_frame.select(garch_forecast("returns", horizon=horizon))
+        if lazy:
+            calm_result = calm_result.collect()
+            shocked_result = shocked_result.collect()
+        calm_forecast = calm_result["returns"]
+        shocked_forecast = shocked_result["returns"]
+
+        np.testing.assert_allclose(shocked_forecast[:10], calm_forecast[:10])
+        assert shocked_forecast[10] > shocked_forecast[9]
+
+    @pytest.mark.parametrize("horizon", [1, 2, 5])
+    @pytest.mark.parametrize("lazy", [False, True])
+    def test_forecast_uses_current_return_and_correct_horizon(self, horizon, lazy):
+        from ml4t.engineer.features.volatility.garch_forecast import garch_forecast
+
+        frame = pl.DataFrame({"returns": [0.1, -0.2, 0.4]})
+        if lazy:
+            frame = frame.lazy()
+        selected = frame.select(
+            garch_forecast("returns", omega=0.01, alpha=0.2, beta=0.3, horizon=horizon)
+        )
+        result = selected.collect() if lazy else selected
+        one_step_variances = np.array([0.015, 0.0225, 0.04875])
+        expected = np.sqrt(0.02 + 0.5 ** (horizon - 1) * (one_step_variances - 0.02))
+        np.testing.assert_allclose(result["returns"].to_numpy(), expected, rtol=1e-12)
+
     def test_responds_to_shocks(self, ohlcv_df):
         """Conditional vol should increase after large returns."""
         from ml4t.engineer.features.volatility.garch_forecast import garch_forecast

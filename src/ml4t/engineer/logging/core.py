@@ -29,7 +29,7 @@ import logging
 import sys
 import time
 import warnings
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from typing import Any
 
@@ -544,7 +544,7 @@ def get_logger(name: str, level: int | None = None) -> FeatureLogger:
 
 
 @contextmanager
-def suppress_warnings() -> Iterator[None]:
+def suppress_warnings() -> Generator[None]:
     """Context manager to suppress warnings during feature calculation."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
