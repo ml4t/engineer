@@ -32,7 +32,7 @@ def roll_spread_estimator(close: pl.Expr | str, period: int = 20) -> pl.Expr:
     Returns
     -------
     pl.Expr
-        Estimated bid-ask spread
+        Estimated bid-ask spread, null for an unobserved covariance window
 
     Raises
     ------
@@ -56,8 +56,8 @@ def roll_spread_estimator(close: pl.Expr | str, period: int = 20) -> pl.Expr:
     cov_approx = (price_changes * lag_changes).rolling_mean(period) - mean_change * mean_lag
 
     # Roll spread = 2 * sqrt(max(-cov, 0))
-    spread = 2 * pl.when(cov_approx.is_null()).then(None).when(cov_approx < 0).then(
-        (-cov_approx).sqrt()
-    ).otherwise(0)
+    spread = 2 * pl.when(cov_approx.is_null() | cov_approx.is_nan()).then(None).when(
+        cov_approx < 0
+    ).then((-cov_approx).sqrt()).otherwise(0)
 
     return spread
