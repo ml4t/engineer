@@ -1,6 +1,7 @@
 """Internal declared-grid checks; shared FeedSpec binding is owned by Specs."""
 
 import warnings
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, cast
 from zoneinfo import ZoneInfo
@@ -147,18 +148,18 @@ def validate_bar_grid(
             continue
         if len(actual) != len(set(actual)):
             raise ValueError(f"duplicate bar timestamp in group {group!r}")
-        expected = _expected_bar_labels(
-            adapter, actual[0], actual[-1], frequency, label_side, include_partial
-        )
         observed = set(actual)
-        missing = sorted(expected - observed)
-        if missing:
-            raise ValueError(
-                f"missing scheduled bar in group {group!r} at {missing[0].isoformat()}; "
-                "normalize prices to the declared grid before deriving returns, or explicitly "
-                "select calendar=None for observation-row calculations"
-            )
-        off_grid = sorted(observed - expected)
+        for expected in _expected_bar_labels(
+            adapter, actual[0], actual[-1], frequency, label_side, include_partial
+        ):
+            if expected not in observed:
+                raise ValueError(
+                    f"missing scheduled bar in group {group!r} at {expected.isoformat()}; "
+                    "normalize prices to the declared grid before deriving returns, or explicitly "
+                    "select calendar=None for observation-row calculations"
+                )
+            observed.remove(expected)
+        off_grid = sorted(observed)
         if off_grid:
             raise ValueError(f"off-grid bar in group {group!r} at {off_grid[0].isoformat()}")
 
@@ -170,7 +171,7 @@ def _expected_bar_labels(
     frequency: timedelta,
     label_side: Literal["left", "right"],
     include_partial: bool,
-) -> set[datetime]:
+) -> Iterator[datetime]:
     intervals = set()
     day = start.date()
     while day <= end.date():
@@ -178,17 +179,16 @@ def _expected_bar_labels(
             intervals.add((opened.astimezone(UTC), closed.astimezone(UTC)))
         day += timedelta(days=7)
 
-    expected = set()
-    for opened, closed in intervals:
+    for opened, closed in sorted(intervals):
         if closed < start or opened > end:
             continue
-        boundary = opened
+        skipped = max(0, (start - opened) // frequency - 1)
+        boundary = opened + skipped * frequency
         while boundary < closed and boundary <= end:
             next_boundary = min(boundary + frequency, closed)
             if next_boundary - boundary < frequency and not include_partial:
                 break
             label = boundary if label_side == "left" else next_boundary
             if start <= label <= end:
-                expected.add(label)
+                yield label
             boundary = next_boundary
-    return expected

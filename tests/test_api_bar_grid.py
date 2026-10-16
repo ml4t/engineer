@@ -380,3 +380,13 @@ def test_shared_single_entity_sequence_is_not_flattened_into_a_column_name():
     start = datetime(2025, 7, 11, tzinfo=UTC)
     data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
     assert run(data, False, feed_spec=replace(feed("24/7"), entity_col=["symbol"])).height == 8
+
+
+@pytest.mark.timeout(5)
+@pytest.mark.parametrize("lazy", [False, True])
+def test_sparse_fine_grid_rejects_first_missing_bar_without_materializing_billions(lazy):
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start, start + timedelta(hours=1)]))
+    contract = replace(feed("24/7"), data_frequency="1us")
+    with pytest.raises(ValueError, match=r"missing.*2025-07-11T00:00:00\.000001"):
+        run(data, lazy, feed_spec=contract)
