@@ -86,7 +86,13 @@ raise `ValueError` before feature execution.
 
 ### Calendar and bar grid
 
-The calendar-aware default is a breaking API migration, separate from the 0.1.7 patch.
+The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.
+Development and qualification currently pin the merged Specs v2 implementation at
+`701bde68744035050ede386efce498234c661c21`. The same immutable Git dependency is declared
+in built package metadata; published Specs 0.1.5 does not provide this API. Before a PyPI
+release, replace that source dependency with the verified published Specs version containing
+the v2 contract and repeat installed-package qualification.
+
 Calendar selection
 uses the explicit `calendar` argument, then declared feed metadata, then NYSE. Explicit
 `calendar=None` disables schedule interpretation. A named `"24/7"` calendar instead defines
