@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tarfile
 import zipfile
 from io import BytesIO
@@ -29,7 +30,6 @@ def test_candidate_manifest_binds_both_artifacts_to_source(candidate_dir: Path) 
         candidate_dir,
         expected_commit="a" * 40,
         expected_tree="b" * 40,
-        expected_tag=f"v{manifest['version']}",
     )
     assert manifest["name"] == "ml4t-engineer"
     assert manifest["version"]
@@ -40,6 +40,54 @@ def test_candidate_manifest_binds_both_artifacts_to_source(candidate_dir: Path) 
     assert manifest["metadata"]["maintainer_email"] == "Stefan Jansen <pm@ml4trading.io>"
     assert len(manifest["artifacts"]) == 2
     assert all(len(record["sha256"]) == 64 for record in manifest["artifacts"])
+
+
+@pytest.mark.parametrize("source_dependency", [False, True])
+def test_release_selection_rejects_real_source_dependent_artifacts_before_publication(
+    tmp_path: Path, source_dependency: bool
+) -> None:
+    source = tmp_path / "source"
+    package = source / "qualification_fixture"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    dependency = (
+        "ml4t-specs @ git+https://github.com/ml4t/specs.git@"
+        "701bde68744035050ede386efce498234c661c21"
+        if source_dependency
+        else "ml4t-specs>=0.1.0,<0.2.0"
+    )
+    (source / "pyproject.toml").write_text(
+        '[build-system]\nrequires=["hatchling"]\nbuild-backend="hatchling.build"\n'
+        '[project]\nname="qualification-fixture"\nversion="1.0.0"\n'
+        f"dependencies={json.dumps([dependency])}\n"
+        "[tool.hatch.metadata]\nallow-direct-references=true\n",
+        encoding="utf-8",
+    )
+    directory = tmp_path / "candidate"
+    subprocess.run(
+        ["uv", "build", "--directory", str(source), "--out-dir", str(directory / "dist")],
+        check=True,
+        capture_output=True,
+    )
+    candidate.create(directory, commit_sha="a" * 40, git_tree="b" * 40)
+    candidate.verify(directory)  # Immutable source dependencies can qualify in source CI.
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(candidate.__file__)),
+            "verify",
+            str(directory),
+            "--expected-tag",
+            "v1.0.0",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if source_dependency:
+        assert result.returncode != 0
+        assert "release requires index dependencies" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
 
 
 def test_candidate_verification_is_atomic_for_wrong_identity_and_bytes(

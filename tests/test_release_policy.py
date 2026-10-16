@@ -242,7 +242,7 @@ def test_ci_audits_core_and_complete_locked_environments() -> None:
     assert "complete.txt" in audit
 
 
-def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
+def test_core_dependency_uses_bounded_specs_or_immutable_source_for_qualification() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
@@ -251,9 +251,18 @@ def test_core_dependency_uses_stable_bounded_specs_contract() -> None:
         for value in project["project"]["dependencies"]
         if Requirement(value).name == "ml4t-specs"
     )
-    assert str(requirement.specifier) == "<0.2.0,>=0.1.0"
     specs = next(package for package in lock["package"] if package["name"] == "ml4t-specs")
-    assert specs["version"] in requirement.specifier
+    if requirement.url is None:
+        assert str(requirement.specifier) == "<0.2.0,>=0.1.0"
+        assert specs["version"] in requirement.specifier
+    else:
+        assert re.fullmatch(
+            r"git\+https://github.com/ml4t/specs\.git@[0-9a-f]{40}", requirement.url
+        )
+        commit = requirement.url.rsplit("@", maxsplit=1)[1]
+        assert specs["source"] == {
+            "git": f"https://github.com/ml4t/specs.git?rev={commit}#{commit}"
+        }
 
 
 def test_package_supports_python_312_through_314() -> None:
