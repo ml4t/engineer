@@ -140,6 +140,8 @@ def validate_bar_grid(
     frame = frame.with_columns(timestamps.dt.convert_time_zone("UTC"))
     if frame[timestamp_col].null_count():
         raise ValueError("declared bar grid contains null timestamps")
+    if frame.select((pl.col(timestamp_col).dt.nanosecond() % 1000 != 0).any()).item():
+        raise ValueError("off-grid bar timestamp has finer than supported microsecond precision")
 
     groups = frame.partition_by(group_cols, as_dict=True) if group_cols else {(): frame}
     for group, rows in groups.items():

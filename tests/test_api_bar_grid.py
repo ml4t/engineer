@@ -390,3 +390,18 @@ def test_sparse_fine_grid_rejects_first_missing_bar_without_materializing_billio
     contract = replace(feed("24/7"), data_frequency="1us")
     with pytest.raises(ValueError, match=r"missing.*2025-07-11T00:00:00\.000001"):
         run(data, lazy, feed_spec=contract)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("nanoseconds", [0, 1])
+def test_nanosecond_input_does_not_silently_truncate_off_grid_timestamps(lazy, nanoseconds):
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    data = returns(prices([start + timedelta(hours=h) for h in range(8)])).with_columns(
+        pl.col("timestamp").dt.cast_time_unit("ns") + pl.duration(nanoseconds=nanoseconds)
+    )
+    if nanoseconds:
+        with pytest.raises(ValueError, match="off-grid.*precision"):
+            run(data, lazy, feed_spec=feed("24/7"))
+    else:
+        output = run(data, lazy, feed_spec=feed("24/7"))
+        assert output["timestamp"].equals(data["timestamp"])
