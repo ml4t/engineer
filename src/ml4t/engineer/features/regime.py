@@ -322,10 +322,9 @@ def hurst_exponent_nb(
     log_rs = np.log(rs_values[valid_mask])
 
     # Fit line: log(R/S) = log(c) + H * log(lag)
-    # Use tuple instead of list for Numba compatibility
-    A = np.vstack((log_lags, np.ones(len(log_lags)))).T
-    # Use rcond=-1 instead of None for Numba compatibility (uses machine precision)
-    hurst, _ = np.linalg.lstsq(A, log_rs, rcond=-1.0)[0]
+    centered_lags = log_lags - np.mean(log_lags)
+    centered_rs = log_rs - np.mean(log_rs)
+    hurst = np.sum(centered_lags * centered_rs) / np.sum(centered_lags * centered_lags)
 
     return float(hurst)
 
