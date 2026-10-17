@@ -69,8 +69,9 @@ Common asset columns such as `asset_id`, `symbol`, and `ticker` are detected aut
 and every rolling or lagged feature is evaluated independently for each asset.
 The examples explicitly select `calendar=None`: their periods count observations and
 input order is preserved, even when timestamps are irregular. Sort prices yourself before
-deriving returns if chronological order is intended. Without timestamps, also pass
-`assume_sorted=True` to assert that the supplied row order is correct.
+deriving returns if chronological order is intended. Row mode does not require timestamps
+or an additional `assume_sorted=True` assertion. A disabled calendar in shared feed metadata
+has the same behavior, even when the feed's timestamp column is absent.
 
 Use `output` when requesting more than one configuration of the same feature:
 
@@ -469,7 +470,7 @@ Most features expect a DataFrame with standardized column names (lowercase):
 
 | Column | Type | Required By |
 |--------|------|-------------|
-| `timestamp` | datetime | Temporal ordering, unless `assume_sorted=True` |
+| `timestamp` | datetime | Required for calendar-aware grids; optional in observation-row mode |
 | `asset_id` | string | Optional panel grouping, auto-detected when present |
 | `open` | float | OHLCV, OHLC features |
 | `high` | float | OHLCV, OHLC, HLC, HL features |

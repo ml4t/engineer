@@ -144,6 +144,29 @@ def test_row_mode_does_not_reorder_values_when_timestamp_order_changes(lazy):
     assert outputs[0].equals(outputs[1])
 
 
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("metadata_disable", [False, True])
+def test_row_mode_does_not_require_timestamps_or_a_temporal_sort_assertion(
+    monkeypatch, lazy, metadata_disable
+):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "pandas_market_calendars", None)
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    timed = returns(prices([start + timedelta(hours=h) for h in [200, 0, 73, 1, 2, 300, 7, 5]]))
+    rows = timed.drop("timestamp")
+    kwargs = (
+        {"feed_spec": feed("NYSE").with_overrides(calendar=None)}
+        if metadata_disable
+        else {"calendar": None}
+    )
+    output = run(rows, lazy, **kwargs)
+    control = run(timed, lazy, calendar=None)
+    assert output.height == rows.height
+    assert output.select(rows.columns).equals(rows)
+    assert output["realized_volatility"].equals(control["realized_volatility"])
+
+
 @pytest.mark.parametrize("suffix", [".json", ".yaml"])
 @pytest.mark.parametrize("calendar", ["NYSE", None, UNSET_CALENDAR])
 def test_serialized_artifact_calendar_intent_reaches_real_feature_workflow(

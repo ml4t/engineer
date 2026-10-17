@@ -317,17 +317,17 @@ def test_output_cannot_replace_input_column(sample_ohlcv_data):
         )
 
 
-def test_compute_requires_time_or_explicit_order_assumption(sample_ohlcv_data):
-    """Row-order semantics must be explicit when no time column exists."""
+def test_explicit_row_mode_needs_no_additional_temporal_order_assertion(sample_ohlcv_data):
+    """Selecting observation order is sufficient even without timestamp metadata."""
     data = sample_ohlcv_data.drop("timestamp")
 
-    with pytest.raises(DataSchemaError, match="No time column found"):
-        compute_features(data, [{"name": "sma", "params": {"period": 2}}], calendar=None)
+    rows = compute_features(data, [{"name": "sma", "params": {"period": 2}}], calendar=None)
 
     result = compute_features(
         data, [{"name": "sma", "params": {"period": 2}}], assume_sorted=True, calendar=None
     )
     assert "sma" in result.columns
+    assert rows.equals(result)
 
 
 def test_row_mode_isolates_assets_without_reordering_observations():
