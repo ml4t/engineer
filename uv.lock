@@ -1693,6 +1693,7 @@ dev = [
 ]
 test = [
     { name = "hypothesis" },
+    { name = "pandas-market-calendars" },
     { name = "pytest" },
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
@@ -1792,6 +1793,7 @@ dev = [
 ]
 test = [
     { name = "hypothesis", specifier = ">=6.80.0" },
+    { name = "pandas-market-calendars", specifier = ">=5.5.0" },
     { name = "pytest", specifier = ">=7.4.0" },
     { name = "pytest-benchmark", specifier = ">=4.0.0" },
     { name = "pytest-cov", specifier = ">=4.1.0" },

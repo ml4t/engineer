@@ -206,6 +206,7 @@ test = [
     "pytest-timeout>=2.1.0",
     "pytest-benchmark>=4.0.0",
     "hypothesis>=6.80.0",
+    "pandas-market-calendars>=5.5.0",
 ]
 dev = [
     { include-group = "test" },
