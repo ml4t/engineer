@@ -39,6 +39,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -105,10 +106,12 @@ jobs:
           uv pip install --python .artifact-venv \
             --requirements "${{ runner.temp }}/stress-requirements.txt"
       - name: Verify actual installed origin and bytes
+        shell: bash
         run: >-
           uv run --python .artifact-venv --no-project
           python scripts/ci/candidate.py verify-installed native-candidate --source-root src
       - name: Run fresh-process native and cold-call regressions
+        shell: bash
         run: >-
           uv run --python .artifact-venv --no-project
           python scripts/ci/native_stress.py --repetitions 10
