@@ -98,12 +98,43 @@ uses the explicit `calendar` argument, then declared feed metadata, then NYSE. E
 `calendar=None` disables schedule interpretation. A named `"24/7"` calendar instead defines
 expected bars and detects outages, including on weekends.
 
-Calendar-aware execution requires a shared `FeedSpec(time_contract_version=2)` with an
-explicit fixed intraday frequency and bar-grid policy. The initial implementation supports
-time bars anchored at each tradable interval's open. It uses real holidays, early closes and
-breaks from the selected schedule. Daily/session-label grids and session or elapsed-duration
-windows are not supported by this validator; they fail rather than being treated as row counts.
-Naive timestamps need a declared timezone. Aware timestamps already declare their timezone.
+Calendar-aware execution requires a shared `FeedSpec(time_contract_version=2)` with declared
+frequency and timestamp meaning. Fixed intraday time bars require an explicit bar-grid policy,
+anchored at each tradable interval's open. The selected schedule supplies holidays, early closes
+and breaks. Naive instants need a declared timezone; aware instants declare their timezone.
+
+Daily bars instead declare `timestamp_semantics="session_label"`, `data_frequency="1d"` and
+`bar_type="time"`. Do not supply intraday anchor, label-side or partial-bar fields for session
+labels. Date values and datetime representations identify the displayed session date, without
+timezone conversion. Validation checks every scheduled session between each asset's first and
+last label, including completely missing sessions. A named `24/7` schedule includes weekends;
+an NYSE schedule does not. No prices are filled or rows inserted. A daily frequency alone does
+not turn `event_time` instants into session labels. Session-count and elapsed-duration feature
+windows remain unsupported; they fail rather than being treated as expected-bar counts.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+
+import polars as pl
+from ml4t.engineer import compute_features
+from ml4t.specs import FeedSpec
+
+close = [100.0, 103.0, 106.0, 109.0]
+daily_prices = pl.DataFrame({
+    "timestamp": [date(2025, 7, day) for day in (3, 7, 8, 9)],
+    "open": close, "high": close, "low": close, "close": close, "volume": 1.0,
+})
+daily_feed = FeedSpec(
+    time_contract_version=2, calendar="NYSE", data_frequency="1d",
+    timestamp_semantics="session_label", bar_type="time",
+)
+checked = compute_features(daily_prices, [], feed_spec=daily_feed)
+returns = checked.with_columns(pl.col("close").log().diff().alias("returns"))
+features = compute_features(returns, [{"name": "sma", "params": {"period": 2}}], feed_spec=daily_feed)
+assert features["sma"].to_list() == [None, 101.5, 104.5, 107.5]
+assert features["timestamp"].equals(daily_prices["timestamp"])
+```
 
 Validate prices before deriving returns. An empty feature list performs the same grid
 validation and chronological sorting without adding feature columns:
