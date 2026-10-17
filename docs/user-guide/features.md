@@ -106,6 +106,17 @@ breaks from the selected schedule. Daily/session-label grids and session or elap
 windows are not supported by this validator; they fail rather than being treated as row counts.
 Naive timestamps need a declared timezone. Aware timestamps already declare their timezone.
 
+`CryptoCalendar` also changes in the next minor version. Install the `calendars` extra
+to use its authoritative `24/7` schedule. It enumerates UTC daily session opens, not
+hourly observations. `next_open` and `previous_close` return strictly adjacent daily
+session boundaries; a maintenance break or reopen is not a new session boundary.
+The optional `(start_hour, end_hour)` maintenance window uses UTC, is half-open and
+may cross midnight, such as `(23, 1)`. Session duration excludes that downtime.
+Annotations use UTC session dates and times regardless of an instant's display timezone;
+naive instants mean UTC. Existing `CRYPTO_24_7` names and maintenance arguments remain
+accepted. A concrete calendar object cannot represent row mode: use `calendar=None`
+on the consuming feature API instead.
+
 Validate prices before deriving returns. An empty feature list performs the same grid
 validation and chronological sorting without adding feature columns:
 
@@ -165,6 +176,27 @@ Neither means sessions or elapsed hours. A shortened final bar still counts as o
 bar when `partial_bar_policy="include"`. Annualization remains a separate convention: for
 example, `realized_volatility(trading_periods=252)` retains its documented numerical default.
 No calendar-derived annualization factor is silently substituted.
+
+### Equity schedule helpers
+
+`ml4t.engineer.core.EquityCalendar(calendar="NYSE")` uses the same authoritative
+schedule adapter as labeling and grid validation. `exchange` and the existing positional
+selector remain compatible aliases; contradictory selectors fail. Its naive timestamps use
+the selected exchange timezone unless `timezone` explicitly overrides it. Ambiguous and
+nonexistent naive local times are rejected; pass an aware instant to disambiguate them.
+
+Membership excludes scheduled breaks. `sessions_between` returns session opens inside the
+inclusive instant interval. `session_duration` takes a session-label date, not an event
+instant, and returns tradable time excluding breaks, with zero duration on holidays.
+`add_session_info` uses the authoritative session label, including overnight sessions,
+and leaves that label null off-session. Its clock time uses the exchange timezone;
+the input timestamps remain unchanged. Boundary lookups return UTC-aware
+instants and fail explicitly if no scheduled boundary exists within 366 days.
+
+The next minor version removes the approximate weekday fallback when the calendar provider
+is absent or a schedule is empty. Install `ml4t-engineer[calendars]` for these helpers.
+An `EquityCalendar` object requires a named schedule; it cannot represent calendar-free
+execution. Use `compute_features(..., calendar=None)` for observation-row features.
 
 > **Book**: [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls `compute_features()` with names and parameter dictionaries, and compares the library RSI with a manual implementation.
 
