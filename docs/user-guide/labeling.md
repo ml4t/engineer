@@ -414,6 +414,12 @@ result = apply_meta_model(
 
 For futures and other instruments with defined trading sessions, calendar-aware labeling respects session boundaries. A label that would span an overnight gap is handled correctly.
 
+In the next minor version, `calendar_aware_labels` uses the shared temporal contract.
+An explicit `calendar` argument wins over a declared `LabelingConfig.calendar`, then
+`FeedSpec` metadata, then NYSE. Omitting a selector differs from explicit `None`.
+Config JSON/YAML output preserves that distinction and emits only explicitly declared
+column overrides, so a round trip does not replace feed column mappings with defaults.
+
 ```python
 from ml4t.engineer.labeling import calendar_aware_labels
 
@@ -432,6 +438,77 @@ The calendar prevents forward returns from crossing genuine session breaks, such
 former pause because trading is continuous until 4:00 PM.
 See the [CME exchange notice](https://www.cmegroup.com/notices/electronic-trading/2021/06/20210621.html)
 for the affected equity-index contracts.
+
+### Observation rows, expected bars, sessions and elapsed durations
+
+Use `calendar=None` for observation-row labeling, including timestamp-indexed data:
+
+```python
+row_config = LabelingConfig.triple_barrier(
+    upper_barrier=0.02,
+    lower_barrier=0.02,
+    max_holding_period=10,
+    calendar=None,
+    window_unit="observation",
+)
+labels = calendar_aware_labels(df, row_config)
+```
+
+Row mode retains input order, processes each asset independently, does not require
+timestamps and never loads a schedule provider. Its `label_bars` and `label_time` are
+observation counts and per-asset row offsets; `label_duration` is unset. Timestamp
+spacing and weekend placement do not alter its numerical labels. Duration holding
+periods are incompatible with this mode.
+
+Named calendars segment authoritative sessions and breaks. New shared-feed calls and
+omitted selectors default count windows to `"expected_bar"`; an undeclared or incomplete
+grid fails before labeling. Supply the complete shared grid
+declarations described in the [feature guide](features.md#calendar-and-bar-grid) to reject
+missing scheduled bars before labeling. Named `"24/7"` still has daily schedule boundaries
+and is not equivalent to row mode. Duration holding periods select `"elapsed"` and remain truncated at session
+boundaries, rather than counting sessions or observed dates.
+
+Pass `feed_spec=FeedSpec(...)` directly or through `LabelingConfig.feed_spec`. Shared
+`timestamp_semantics` must distinguish intraday instants from `session_label` identifiers.
+Naive feed timestamps require an explicit timezone, and ambiguous/nonexistent local
+times fail. Right-labeled/bar-close observations at a break boundary end the preceding
+tradable interval. Input timestamp representations are retained in the output.
+
+Legacy calls without FeedSpec keep naive-UTC handling. Custom protocol objects and
+explicit `calendar="auto"` remain compatibility modes without shared feed metadata.
+An explicit legacy calendar selector without FeedSpec retains observation-count horizons.
+New calls can also select `window_unit="observation"` explicitly to count received rows
+within each authoritative segment, without claiming scheduled-bar completeness.
+Auto-gap segmentation does not establish market holidays, session completeness or a
+bar grid. Standalone labeling kernels retain their documented row-count or elapsed-time
+definitions and chronological sorting; they do not acquire calendar interpretation from
+timestamps. Use this wrapper when selecting the shared calendar/row contract.
+Standalone kernels reject configs declaring calendar/feed/window semantics instead
+of silently ignoring those declarations.
+
+For `window_unit="session"`, an integer `max_holding_period=N` expires at the final
+bar of the Nth scheduled session after the entry session. A positive integral count
+column can select N per event. July 3, 2025 on NYSE therefore reaches July 7 for N=1,
+not the July 4 holiday. Intraday entries reach the following session's last bar,
+including an early close; lunch and overnight breaks do not truncate this horizon.
+Profit, stop and trailing barriers still use the existing triple-barrier calculation.
+The full declared grid is checked before any labels are computed, including whole-session
+outages. No prices are filled or rows inserted.
+
+Daily input uses `FeedSpec(time_contract_version=2, calendar="NYSE",
+timestamp_semantics="session_label", data_frequency="1d", bar_type="time")`.
+Do not supply intraday anchor/label/partial-bar fields. Date-valued and midnight datetime
+identifiers keep their displayed session date; they are not converted to UTC instants.
+Daily observation and expected-bar horizons scan across session rows rather than
+truncating every label to its entry row. Elapsed horizons reject these identifiers.
+
+As with existing count horizons, a deadline beyond the available dataset is censored
+at the last available bar. `label_bars` reports the actual observed holding length and
+`label_time` the actual exit, not an inferred future observation. These changes target
+the next 0.2 development release, not the historical 0.1.7 patch.
+Their legacy `Date` inputs retain date-valued label times and calendar-day differences
+in `label_duration`; those dates do not become authoritative session identifiers or
+intraday instants. Shared-feed session labels remain explicitly rejected by this wrapper.
 
 ## Sample Weighting
 
