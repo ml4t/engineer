@@ -261,3 +261,84 @@ def test_barless_short_session_never_pushes_a_session_deadline_into_a_later_sess
         index - entry if index is not None else None for entry, index in enumerate(exits)
     ]
     assert result["label_return"][0] == pytest.approx(first_exit / 100)
+
+
+@pytest.mark.parametrize("representation", ["UTC", "America/New_York", "naive"])
+def test_session_horizons_retain_actual_exchange_close_through_spring_dst(representation):
+    from ml4t.engineer.core.bar_grid import _expected_bar_labels
+    from ml4t.engineer.labeling.calendar import PandasMarketCalendar
+
+    timestamps = list(
+        _expected_bar_labels(
+            PandasMarketCalendar("NYSE"),
+            datetime(2025, 3, 7, tzinfo=UTC),
+            datetime(2025, 3, 12, tzinfo=UTC),
+            timedelta(hours=1),
+            "right",
+            True,
+        )
+    )
+    series = pl.Series("timestamp", timestamps)
+    if representation != "UTC":
+        series = series.dt.convert_time_zone("America/New_York")
+    if representation == "naive":
+        series = series.dt.replace_time_zone(None)
+    prices = pl.DataFrame(
+        {"timestamp": series, "close": [100.0 + i for i in range(len(timestamps))]}
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="NYSE",
+        timezone="America/New_York",
+        timestamp_semantics="bar_close",
+        data_frequency="1h",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="right",
+        partial_bar_policy="include",
+    )
+    result = calendar_aware_labels(prices, _config(), feed_spec=feed)
+    expected = datetime(2025, 3, 10, 20, tzinfo=UTC)
+    actual = result["label_time"]
+    if representation == "naive":
+        actual = actual.dt.replace_time_zone("America/New_York")
+    assert actual.dt.convert_time_zone("UTC")[0] == expected
+    assert result["label_bars"][0] == 13
+    assert result["label_return"][0] == pytest.approx(0.13)
+    assert result.select(prices.columns).equals(prices)
+
+
+def test_overnight_cme_session_horizon_counts_exchange_labels_not_utc_civil_dates():
+    from ml4t.engineer.core.bar_grid import _expected_bar_labels
+    from ml4t.engineer.labeling.calendar import PandasMarketCalendar
+
+    timestamps = list(
+        _expected_bar_labels(
+            PandasMarketCalendar("CME_Equity"),
+            datetime(2025, 7, 6, tzinfo=UTC),
+            datetime(2025, 7, 10, tzinfo=UTC),
+            timedelta(hours=1),
+            "right",
+            True,
+        )
+    )
+    assert timestamps[0] == datetime(2025, 7, 6, 23, tzinfo=UTC)
+    prices = pl.DataFrame(
+        {"timestamp": timestamps, "close": [100.0 + i for i in range(len(timestamps))]}
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="CME_Equity",
+        timezone="UTC",
+        timestamp_semantics="bar_close",
+        data_frequency="1h",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="right",
+        partial_bar_policy="include",
+    )
+    result = calendar_aware_labels(prices, _config(), feed_spec=feed)
+    # Sunday evening belongs to Monday's exchange session. One following session ends Tuesday.
+    assert result["label_time"][0] == datetime(2025, 7, 8, 21, tzinfo=UTC)
+    assert result["label_bars"][0] == 45
+    assert result["label_return"][0] == pytest.approx(0.45)
