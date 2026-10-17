@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ml4t.engineer.labeling.calendar import PandasMarketCalendar
 
 
-def validate_feature_grid(
+def validate_declared_grid(
     data: pl.DataFrame | pl.LazyFrame,
     *,
     feed_spec: FeedSpec,
@@ -78,6 +78,25 @@ def validate_feature_grid(
         label_side=cast(Literal["left", "right"], feed_spec.bar_label),
         include_partial=feed_spec.partial_bar_policy == "include",
     )
+
+
+def validate_feature_grid(
+    data: pl.DataFrame | pl.LazyFrame,
+    *,
+    feed_spec: FeedSpec,
+    calendar: str,
+    timestamp_col: str | None,
+    group_cols: list[str],
+) -> None:
+    """Validate the declared grid and supplied returns against adjacent prices."""
+    validate_declared_grid(
+        data,
+        feed_spec=feed_spec,
+        calendar=calendar,
+        timestamp_col=timestamp_col,
+        group_cols=group_cols,
+    )
+    schema = data.collect_schema() if isinstance(data, pl.LazyFrame) else data.schema
     if "returns" in schema:
         ordered = data.sort([*group_cols, timestamp_col])
         missing_price = ~pl.col("close").cast(pl.Float64).is_finite().fill_null(False)
