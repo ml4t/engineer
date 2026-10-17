@@ -439,6 +439,8 @@ former pause because trading is continuous until 4:00 PM.
 See the [CME exchange notice](https://www.cmegroup.com/notices/electronic-trading/2021/06/20210621.html)
 for the affected equity-index contracts.
 
+<a id="observation-rows-expected-bars-and-elapsed-durations"></a>
+
 ### Observation rows, expected bars, sessions and elapsed durations
 
 Use `calendar=None` for observation-row labeling, including timestamp-indexed data:
@@ -495,6 +497,11 @@ Profit, stop and trailing barriers still use the existing triple-barrier calcula
 The full declared grid is checked before any labels are computed, including whole-session
 outages. No prices are filled or rows inserted.
 
+With `partial_bar_policy="exclude"`, a shortened session can have no bars. It still
+counts as a scheduled session. The exit uses the last available bar no later than the
+deadline, even if that is the entry itself with zero holding bars. The calculation
+does not extend the deadline into a later session to obtain another observation.
+
 Daily input uses `FeedSpec(time_contract_version=2, calendar="NYSE",
 timestamp_semantics="session_label", data_frequency="1d", bar_type="time")`.
 Do not supply intraday anchor/label/partial-bar fields. Date-valued and midnight datetime
@@ -506,6 +513,32 @@ As with existing count horizons, a deadline beyond the available dataset is cens
 at the last available bar. `label_bars` reports the actual observed holding length and
 `label_time` the actual exit, not an inferred future observation. These changes target
 the next 0.2 development release, not the historical 0.1.7 patch.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+from io import BytesIO
+
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.config import LabelingConfig
+from ml4t.engineer.labeling import calendar_aware_labels
+
+prices = pl.DataFrame({
+    "timestamp": [date(2025, 7, day) for day in (3, 7, 8)],
+    "close": [100.0, 101.0, 103.0],
+})
+config = LabelingConfig.triple_barrier(
+    upper_barrier=None, lower_barrier=None, max_holding_period=1, window_unit="session",
+    feed_spec=FeedSpec(time_contract_version=2, calendar="NYSE", data_frequency="1d",
+                       timestamp_semantics="session_label", bar_type="time"),
+)
+labels = calendar_aware_labels(prices, config)
+assert labels["label_time"].to_list() == [date(2025, 7, 7), date(2025, 7, 8), date(2025, 7, 8)]
+assert labels["label_bars"].to_list() == [1, 1, 0]
+labels.write_parquet(BytesIO())
+labels.head(0).write_parquet(BytesIO())
+```
 Their legacy `Date` inputs retain date-valued label times and calendar-day differences
 in `label_duration`; those dates do not become authoritative session identifiers or
 intraday instants. Shared-feed session labels remain explicitly rejected by this wrapper.
