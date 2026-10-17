@@ -32,6 +32,7 @@ from ml4t.specs import FeedSpec, WindowUnit
 from pydantic import (
     AliasChoices,
     Field,
+    SerializationInfo,
     SerializerFunctionWrapHandler,
     field_serializer,
     field_validator,
@@ -181,12 +182,19 @@ class LabelingConfig(BaseConfig):
         return None if value is None else FeedSpec.from_any(value).to_dict()
 
     @model_serializer(mode="wrap")
-    def serialize_declarations(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+    def serialize_declarations(
+        self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+    ) -> dict[str, Any]:
         payload = handler(self)
         for name in ("calendar", "price_col", "timestamp_col", "group_col", "data_contract"):
             if name not in self.model_fields_set:
                 payload.pop(name, None)
-        if "calendar" in self.model_fields_set and self.calendar is None:
+        if (
+            "calendar" in self.model_fields_set
+            and self.calendar is None
+            and (info.include is None or "calendar" in info.include)
+            and (info.exclude is None or "calendar" not in info.exclude)
+        ):
             payload["calendar"] = None
         return payload
 

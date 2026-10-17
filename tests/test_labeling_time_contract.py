@@ -239,6 +239,14 @@ def test_config_equality_does_not_collapse_disabled_and_undeclared_calendars():
     assert "calendar" not in inherited.to_dict()
 
 
+@pytest.mark.parametrize("mode", ["python", "json"])
+def test_declared_null_calendar_does_not_leak_into_explicit_serialization_projection(mode):
+    config = _config(calendar=None)
+    assert config.model_dump(mode=mode, include={"method"}) == {"method": "triple_barrier"}
+    assert "calendar" not in config.model_dump(mode=mode, exclude={"calendar"}, exclude_none=True)
+    assert config.to_dict(mode=mode, exclude_none=True)["calendar"] is None
+
+
 def test_schedule_adapter_canonical_calendar_preserves_legacy_selector_and_rejects_conflicts():
     assert PandasMarketCalendar(calendar="LSE").calendar_name == "LSE"
     assert PandasMarketCalendar(calendar_name="LSE", calendar="LSE").calendar == "LSE"
