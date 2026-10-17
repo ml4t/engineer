@@ -112,9 +112,9 @@ def compute_features(
         Calendar-aware input is sorted by group and timestamp. Row mode retains
         input order within every group.
     assume_sorted : bool, default False
-        Permit row-order execution when no timestamp column exists. This is an
-        explicit assertion by the caller that rows are already in the required
-        temporal order.
+        Retained legacy ordering argument. Explicit calendar=None already selects
+        input observation order and needs no timestamp or additional sort assertion.
+        Calendar-aware execution always requires a declared datetime grid.
     calendar : str | None, optional
         Explicit selection overrides declared feed metadata, then defaults to NYSE.
         Explicit None selects observation rows in input order, without schedule checks.
@@ -182,7 +182,7 @@ def compute_features(
     - Calendar-aware calls require a declared complete grid before any feature runs.
       Empty feature lists can validate and sort prices before returns are derived.
     - Explicit ``calendar=None`` preserves input row order without schedule checks.
-      Without a timestamp, callers must still set ``assume_sorted=True`` explicitly.
+      Row mode does not require a timestamp or an additional sort assertion.
     """
     from ml4t.engineer.core.bar_grid import validate_feature_grid
     from ml4t.engineer.core.schemas import validate_ohlcv_schema
@@ -218,7 +218,9 @@ def compute_features(
         return data
 
     if feed_spec is not None:
-        if timestamp_col is None:
+        if timestamp_col is None and (
+            resolved_calendar is not None or contract.timestamp_col in schema
+        ):
             timestamp_col = contract.timestamp_col
         if group_col is None and contract.entity_col is not None:
             group_col = (
@@ -231,7 +233,7 @@ def compute_features(
         data=data,
         group_col=group_col,
         timestamp_col=timestamp_col,
-        assume_sorted=assume_sorted,
+        assume_sorted=assume_sorted or resolved_calendar is None,
     )
 
     # Resolve dependencies and get execution order
