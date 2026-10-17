@@ -16,11 +16,13 @@ because "the first call in a process, with nothing compiled" is the condition.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 import textwrap
 
+import numpy as np
 import pytest
 
 # feature -> the expression to build, as source, against columns `close` and `returns`
@@ -41,7 +43,7 @@ FEATURES = {
 
 PROBE = textwrap.dedent(
     """
-    import logging, warnings
+    import json, logging, warnings
     warnings.filterwarnings("ignore")
     logging.disable(logging.WARNING)
 
@@ -56,17 +58,16 @@ PROBE = textwrap.dedent(
 
     def evaluate():
         values = frame.select(({expr}).alias("v")).to_series().to_numpy().astype(float)
-        finite = values[np.isfinite(values)]
-        return len(np.unique(finite)), finite.size
+        return values.tolist()
 
-    first, n = evaluate()
-    second, _ = evaluate()
-    print(f"{{first}} {{second}} {{n}}")
+    first = evaluate()
+    second = evaluate()
+    print(json.dumps([first, second]))
     """
 )
 
 
-def _run(expr: str, tmp_path) -> tuple[int, int, int]:
+def _run(expr: str, tmp_path) -> tuple[np.ndarray, np.ndarray]:
     """Evaluate the feature twice in a fresh interpreter with an empty Numba cache."""
     env = dict(os.environ, NUMBA_CACHE_DIR=str(tmp_path), PYTHONWARNINGS="ignore")
     completed = subprocess.run(
@@ -79,18 +80,24 @@ def _run(expr: str, tmp_path) -> tuple[int, int, int]:
     )
     if completed.returncode != 0:
         pytest.fail(f"probe failed:\n{completed.stderr[-2000:]}")
-    first, second, n = (int(part) for part in completed.stdout.strip().split()[-3:])
-    return first, second, n
+    first, second = json.loads(completed.stdout.strip().splitlines()[-1])
+    return np.asarray(first), np.asarray(second)
 
 
 @pytest.mark.parametrize("name", sorted(FEATURES))
 def test_first_evaluation_matches_the_second(name: str, tmp_path) -> None:
-    first, second, n = _run(FEATURES[name], tmp_path)
+    first, second = _run(FEATURES[name], tmp_path)
+    finite = first[np.isfinite(first)]
+    n = finite.size
 
     assert n > 100, f"{name} produced almost nothing to compare"
-    assert first == second, (
-        f"{name} returns {first} distinct values on its first evaluation in a process "
-        f"and {second} on its second, over {n} rows: the rolling window did not advance "
-        f"while the kernel compiled"
+    np.testing.assert_allclose(
+        first,
+        second,
+        rtol=1e-12,
+        atol=1e-12,
+        equal_nan=True,
+        err_msg=f"{name} changes numerical output between its cold and second evaluation",
     )
-    assert first > 2, f"{name} came out near-constant ({first} distinct values over {n} rows)"
+    distinct = len(np.unique(finite))
+    assert distinct > 2, f"{name} came out near-constant ({distinct} distinct values over {n} rows)"

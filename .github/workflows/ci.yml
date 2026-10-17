@@ -213,7 +213,9 @@ jobs:
           uv pip install --python .artifact-venv \
             --requirements "${{ runner.temp }}/test-requirements.txt"
       - name: Import the installed candidate
-        run: uv run --python .artifact-venv --no-project python -c "import ml4t.engineer"
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python scripts/ci/candidate.py verify-installed candidate --source-root src
       - name: Run ty check
         run: >-
           uv run --python .artifact-venv --no-project

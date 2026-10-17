@@ -14,7 +14,9 @@ import yaml
 ROOT = Path(__file__).parents[1]
 
 
-def _run_suite(tmp_path: Path, test: str, *, hook: str = "", options: str = ""):
+def _run_suite(
+    tmp_path: Path, test: str, *, hook: str = "", options: str = "", native: bool = False
+):
     workflow = yaml.load((ROOT / ".github/workflows/ci.yml").read_text(), Loader=yaml.BaseLoader)
     command = next(
         step["run"]
@@ -25,7 +27,7 @@ def _run_suite(tmp_path: Path, test: str, *, hook: str = "", options: str = ""):
     command = command.replace("--python .artifact-venv", f"--python {shlex.quote(sys.executable)}")
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests/test_case.py").write_text(test)
-    (tmp_path / "pytest.ini").write_text(f"[pytest]\naddopts = {options}\n")
+    (tmp_path / "pytest.ini").write_text(f"[pytest]\naddopts = -s {options}\n")
     (tmp_path / "conftest.py").write_text(
         "import os\nfrom pathlib import Path\n"
         "def pytest_sessionstart(session):\n"
@@ -33,8 +35,33 @@ def _run_suite(tmp_path: Path, test: str, *, hook: str = "", options: str = ""):
         "        stream.write('started\\n')\n"
         "    if os.name == 'posix':\n"
         "        import resource\n"
-        "        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))\n" + hook
+        "        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))\n"
+        "    else:\n"
+        "        import ctypes\n"
+        "        ctypes.windll.kernel32.SetErrorMode(3)\n"
+        "        ctypes.CDLL('ucrtbase')._set_abort_behavior(0, 3)\n" + hook
     )
+    if native:
+        from scripts.ci.native_stress import FEATURE_ORDER, MACD
+
+        direct = tmp_path / MACD[0].split("::")[0]
+        direct.parent.mkdir(parents=True)
+        body = test.removeprefix("import time\nimport pytest\n")
+        if body.startswith("VALUE ="):
+            body = "pass\n"
+        direct.write_text(
+            "import time\nimport pytest\nclass TestMACDNumbaDirectCoverage:\n"
+            + "".join("    " + line + "\n" for line in body.replace("():", "(self):").splitlines())
+        )
+        (tmp_path / MACD[1]).write_text(test)
+        (tmp_path / FEATURE_ORDER[0].split("::")[0]).write_text(
+            "\n".join(f"def {node.split('::')[1]}(): pass" for node in FEATURE_ORDER)
+        )
+        (tmp_path / "tests/features/test_rolling_map_first_call.py").write_text(test)
+        command = (
+            f"{shlex.quote(sys.executable)} "
+            f"{shlex.quote(str(ROOT / 'scripts/ci/native_stress.py'))} --repetitions 2"
+        )
     return subprocess.run(
         ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", command],
         cwd=tmp_path,
@@ -57,6 +84,13 @@ def test_routine_wheel_cell_runs_the_full_suite_once(tmp_path: Path) -> None:
     assert (tmp_path / "sessions").read_text().splitlines() == ["started"]
 
 
+def test_native_stress_runs_fresh_ordered_processes_and_cold_call_control(tmp_path: Path) -> None:
+    result = _run_suite(tmp_path, "def test_pass():\n    assert 2 + 2 == 4\n", native=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "sessions").read_text().splitlines() == ["started"] * 5
+
+
+@pytest.mark.parametrize("native", [False, True], ids=["full-suite", "native-stress"])
 @pytest.mark.parametrize(
     ("test", "hook", "options", "message"),
     [
@@ -70,7 +104,13 @@ def test_routine_wheel_cell_runs_the_full_suite_once(tmp_path: Path) -> None:
             "",
             "real-internal-error",
         ),
-        ("def test_crashes():\n    import os\n    os.abort()\n", "", "", ""),
+        (
+            "def test_crashes():\n    import os\n"
+            "    print('native-abort', flush=True)\n    os.abort()\n",
+            "",
+            "",
+            "native-abort",
+        ),
         (
             "import time\nimport pytest\n@pytest.mark.timeout(0.2)\n"
             "def test_times_out():\n    time.sleep(30)\n",
@@ -100,8 +140,8 @@ def test_routine_wheel_cell_runs_the_full_suite_once(tmp_path: Path) -> None:
     ],
 )
 def test_configured_wheel_command_propagates_real_failure(
-    tmp_path: Path, test: str, hook: str, options: str, message: str
+    tmp_path: Path, test: str, hook: str, options: str, message: str, native: bool
 ) -> None:
-    result = _run_suite(tmp_path, test, hook=hook, options=options)
+    result = _run_suite(tmp_path, test, hook=hook, options=options, native=native)
     assert result.returncode != 0, result.stdout + result.stderr
     assert message in result.stdout + result.stderr
