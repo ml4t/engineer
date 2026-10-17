@@ -158,6 +158,14 @@ def verify(
 
     wheel_metadata = _wheel_metadata(wheel)
     sdist_metadata = _sdist_metadata(sdist)
+    if expected_tag is not None:
+        for metadata in (wheel_metadata, sdist_metadata):
+            for requirement in metadata.get_all("Requires-Dist", []):
+                if "@" in requirement.split(";", maxsplit=1)[0]:
+                    raise ValueError(
+                        f"release requires index dependencies, found {requirement!r}; "
+                        "publish and qualify the shared contract before release selection"
+                    )
     identity = _identity(wheel_metadata, wheel)
     if identity != _identity(sdist_metadata, sdist):
         raise ValueError("candidate wheel and sdist identities do not match")

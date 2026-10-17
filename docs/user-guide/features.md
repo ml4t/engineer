@@ -48,7 +48,7 @@ df = pl.DataFrame({
 })
 
 # 1. List of names (default parameters)
-result = compute_features(df, ["rsi", "macd", "atr"])
+result = compute_features(df, ["rsi", "macd", "atr"], calendar=None)
 
 # 2. List of dicts (custom parameters)
 result = compute_features(df, [
@@ -58,17 +58,19 @@ result = compute_features(df, [
         "name": "bollinger_bands",
         "params": {"period": 20, "nbdevup": 2.5, "nbdevdn": 2.5},
     },
-])
+], calendar=None)
 
 assert {"rsi", "sma", "bollinger_bands"} <= set(result.columns)
 ```
 
 Features are computed in dependency order (topological sort). Circular dependencies raise `ValueError`. The return type matches the input: `DataFrame` in, `DataFrame` out; `LazyFrame` in, `LazyFrame` out.
 
-Input is sorted by asset and timestamp before computation. Common asset columns such as
-`asset_id`, `symbol`, and `ticker` are detected automatically, and every rolling or
-lagged feature is evaluated independently for each asset. If no timestamp column
-exists, pass `assume_sorted=True` to make the row-order assumption explicit.
+Common asset columns such as `asset_id`, `symbol`, and `ticker` are detected automatically,
+and every rolling or lagged feature is evaluated independently for each asset.
+The examples explicitly select `calendar=None`: their periods count observations and
+input order is preserved, even when timestamps are irregular. Sort prices yourself before
+deriving returns if chronological order is intended. Without timestamps, also pass
+`assume_sorted=True` to assert that the supplied row order is correct.
 
 Use `output` when requesting more than one configuration of the same feature:
 
@@ -76,11 +78,92 @@ Use `output` when requesting more than one configuration of the same feature:
 result = compute_features(df, [
     {"name": "sma", "params": {"period": 20}, "output": "sma_20"},
     {"name": "sma", "params": {"period": 50}, "output": "sma_50"},
-])
+], calendar=None)
 ```
 
 Unknown parameters, repeated output names, and output names that replace input columns
 raise `ValueError` before feature execution.
+
+### Calendar and bar grid
+
+The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.
+Development and qualification currently pin the merged Specs v2 implementation at
+`701bde68744035050ede386efce498234c661c21`. The same immutable Git dependency is declared
+in built package metadata; published Specs 0.1.5 does not provide this API. Before a PyPI
+release, replace that source dependency with the verified published Specs version containing
+the v2 contract and repeat installed-package qualification.
+
+Calendar selection
+uses the explicit `calendar` argument, then declared feed metadata, then NYSE. Explicit
+`calendar=None` disables schedule interpretation. A named `"24/7"` calendar instead defines
+expected bars and detects outages, including on weekends.
+
+Calendar-aware execution requires a shared `FeedSpec(time_contract_version=2)` with an
+explicit fixed intraday frequency and bar-grid policy. The initial implementation supports
+time bars anchored at each tradable interval's open. It uses real holidays, early closes and
+breaks from the selected schedule. Daily/session-label grids and session or elapsed-duration
+windows are not supported by this validator; they fail rather than being treated as row counts.
+Naive timestamps need a declared timezone. Aware timestamps already declare their timezone.
+
+Validate prices before deriving returns. An empty feature list performs the same grid
+validation and chronological sorting without adding feature columns:
+
+<!-- ml4t-exec -->
+```python
+from datetime import datetime, timedelta, timezone
+
+import polars as pl
+from ml4t.engineer import compute_features
+from ml4t.specs import FeedSpec
+
+contract = FeedSpec(
+    time_contract_version=2,
+    calendar="24/7",
+    entity_col="symbol",
+    data_frequency="1h",
+    timezone="UTC",
+    bar_type="time",
+    timestamp_semantics="bar_close",
+    bar_grid_anchor="session_open",
+    bar_label="right",
+    partial_bar_policy="include",
+)
+close = [100.0 + i for i in range(8)]
+prices = pl.DataFrame({
+    "timestamp": [datetime(2025, 7, 11, tzinfo=timezone.utc) + timedelta(hours=i)
+                  for i in range(8)],
+    "symbol": "BTC",
+    "open": close, "high": close, "low": close, "close": close, "volume": 1.0,
+})
+checked = compute_features(prices, [], feed_spec=contract)
+with_returns = checked.with_columns(
+    pl.col("close").log().diff().over("symbol").alias("returns")
+)
+result = compute_features(with_returns, [{
+    "name": "realized_volatility",
+    "params": {"period": 3, "annualize": False},
+}], feed_spec=contract.to_dict(), window_unit="expected_bar")
+assert result.height == prices.height
+assert result["realized_volatility"][3] is not None
+```
+
+Missing, duplicate or off-grid bars fail before any feature executes. The validator neither
+fills prices nor changes row counts. If normalization is needed, explicitly construct the
+intended schedule grid with null prices first, then derive returns. Reindexing an already-derived
+return series leaves a cross-gap return intact; finite returns adjacent to missing prices are
+rejected. Completeness is checked between each asset's observed endpoints, not outside unknown
+dataset coverage.
+
+Use the canonical shared `to_dict()` methods for JSON/YAML handoffs. Omitted selectors and
+explicit null remain different in version 2. Legacy version-1 null metadata is unspecified,
+not an intentional opt-out; migrate it explicitly or pass `calendar=None` for row mode.
+This does not change legacy Specs bridges or the numerical feature kernels.
+
+`window_unit="observation"` belongs to row mode; `"expected_bar"` belongs to a validated grid.
+Neither means sessions or elapsed hours. A shortened final bar still counts as one expected
+bar when `partial_bar_policy="include"`. Annualization remains a separate convention: for
+example, `realized_volatility(trading_periods=252)` retains its documented numerical default.
+No calendar-derived annualization factor is silently substituted.
 
 > **Book**: [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls `compute_features()` with names and parameter dictionaries, and compares the library RSI with a manual implementation.
 
@@ -375,7 +458,8 @@ features:
   - name: yang_zhang_volatility
 ```
 
-Load with `compute_features(df, "features.yaml")`. The YAML format supports version comments and parameter documentation inline.
+Load row-based features with `compute_features(df, "features.yaml", calendar=None)`.
+The YAML format supports version comments and parameter documentation inline.
 
 ## Input Requirements
 
@@ -415,7 +499,7 @@ meta = get_registry().get("rsi")
 print(meta.parameters)  # {'period': 14}
 
 # Override
-result = compute_features(df, [{"name": "rsi", "params": {"period": 20}}])
+result = compute_features(df, [{"name": "rsi", "params": {"period": 20}}], calendar=None)
 ```
 
 Invalid parameters raise `ValueError` with the valid parameter names.

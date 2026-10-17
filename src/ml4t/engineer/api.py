@@ -16,10 +16,12 @@ Internal:
     _execute_feature() - Execute single feature computation
 """
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TypedDict
 
 import polars as pl
+from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec, WindowUnit
 
 try:
     import yaml
@@ -67,6 +69,9 @@ def compute_features(
     group_col: str | list[str] | None = None,
     timestamp_col: str | None = None,
     assume_sorted: bool = False,
+    calendar: str | None | CalendarUnset = UNSET_CALENDAR,
+    feed_spec: FeedSpec | Mapping[str, Any] | None = None,
+    window_unit: WindowUnit | str | None = None,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Compute features from a configuration.
 
@@ -104,11 +109,21 @@ def compute_features(
         omitted. Rolling and lagged features are computed independently per group.
     timestamp_col : str | None, default None
         Temporal ordering column. Common datetime columns are detected when omitted.
-        Input is sorted by group and timestamp before feature computation.
+        Calendar-aware input is sorted by group and timestamp. Row mode retains
+        input order within every group.
     assume_sorted : bool, default False
         Permit row-order execution when no timestamp column exists. This is an
         explicit assertion by the caller that rows are already in the required
         temporal order.
+    calendar : str | None, optional
+        Explicit selection overrides declared feed metadata, then defaults to NYSE.
+        Explicit None selects observation rows in input order, without schedule checks.
+    feed_spec : FeedSpec | Mapping | None
+        Shared input schema and temporal declarations. Calendar-aware execution requires
+        version 2, fixed intraday frequency, timestamp semantics and an explicit bar grid.
+    window_unit : WindowUnit | str | None
+        Defaults to observation in row mode or expected_bar with a calendar. Session
+        and elapsed windows are not implemented by these row-based numerical kernels.
 
     Returns
     -------
@@ -141,22 +156,22 @@ def compute_features(
     ... })
     >>>
     >>> # Compute features with default parameters
-    >>> result = compute_features(df, ["rsi", "sma"])
+    >>> result = compute_features(df, ["rsi", "sma"], calendar=None)
     >>>
     >>> # Compute features with custom parameters
     >>> result = compute_features(df, [
     ...     {"name": "rsi", "params": {"period": 20}},
     ...     {"name": "sma", "params": {"period": 50}},
-    ... ])
+    ... ], calendar=None)
     >>>
     >>> # Multiple configurations require explicit output names
     >>> result = compute_features(df, [
     ...     {"name": "sma", "params": {"period": 20}, "output": "sma_20"},
     ...     {"name": "sma", "params": {"period": 50}, "output": "sma_50"},
-    ... ])
+    ... ], calendar=None)
     >>>
     >>> # Compute from YAML config
-    >>> result = compute_features(df, "features.yaml")
+    >>> result = compute_features(df, "features.yaml", calendar=None)
 
     Notes
     -----
@@ -164,9 +179,12 @@ def compute_features(
     - Circular dependencies are detected and raise ValueError.
     - Parameters in config override default parameters from the function signature.
     - Recognized asset columns isolate rolling and lagged calculations.
-    - Input is sorted by group and timestamp. Without a timestamp, callers must set
-      ``assume_sorted=True`` explicitly.
+    - Calendar-aware calls require a declared complete grid before any feature runs.
+      Empty feature lists can validate and sort prices before returns are derived.
+    - Explicit ``calendar=None`` preserves input row order without schedule checks.
+      Without a timestamp, callers must still set ``assume_sorted=True`` explicitly.
     """
+    from ml4t.engineer.core.bar_grid import validate_feature_grid
     from ml4t.engineer.core.schemas import validate_ohlcv_schema
 
     # Validate input schema before parsing or execution.
@@ -176,8 +194,38 @@ def compute_features(
     # Parse input to standardized format
     feature_specs = _parse_feature_input(features)
     _validate_feature_specs(feature_specs, set(schema.names()))
-    if not feature_specs:
+    contract = (
+        FeedSpec(time_contract_version=2) if feed_spec is None else FeedSpec.from_any(feed_spec)
+    )
+    for name in ("open", "high", "low", "close", "volume"):
+        if getattr(contract, f"{name}_col") != name:
+            raise ValueError(f"Feature computation requires the canonical {name!r} column")
+    if contract.price_col != "close":
+        raise ValueError("Feature computation requires price_col='close'")
+    resolved_calendar = contract.resolve_calendar(calendar=calendar)
+    unit = (
+        WindowUnit(window_unit)
+        if window_unit is not None
+        else WindowUnit.OBSERVATION
+        if resolved_calendar is None
+        else WindowUnit.EXPECTED_BAR
+    )
+    if resolved_calendar is None and unit != WindowUnit.OBSERVATION:
+        raise ValueError("calendar=None requires window_unit='observation'")
+    if resolved_calendar is not None and unit != WindowUnit.EXPECTED_BAR:
+        raise ValueError("Calendar-aware features support only window_unit='expected_bar'")
+    if not feature_specs and resolved_calendar is None:
         return data
+
+    if feed_spec is not None:
+        if timestamp_col is None:
+            timestamp_col = contract.timestamp_col
+        if group_col is None and contract.entity_col is not None:
+            group_col = (
+                contract.entity_col
+                if isinstance(contract.entity_col, str)
+                else list(contract.entity_col)
+            )
 
     group_cols, resolved_timestamp_col = _resolve_ordering_columns(
         data=data,
@@ -189,12 +237,21 @@ def compute_features(
     # Resolve dependencies and get execution order
     execution_order = _resolve_dependencies(feature_specs)
 
+    if resolved_calendar is not None:
+        validate_feature_grid(
+            data,
+            feed_spec=contract,
+            calendar=resolved_calendar,
+            timestamp_col=resolved_timestamp_col,
+            group_cols=group_cols,
+        )
+
     sort_cols = [*group_cols]
     if resolved_timestamp_col is not None:
         sort_cols.append(resolved_timestamp_col)
 
     # Execute features in order
-    result = data.sort(sort_cols) if sort_cols else data
+    result = data.sort(sort_cols) if resolved_calendar is not None and sort_cols else data
     for spec in execution_order:
         result = _execute_feature(
             result,
@@ -402,15 +459,14 @@ def _resolve_ordering_columns(
                 f"Timestamp column '{resolved_timestamp_col}' must be Date or Datetime, got {dtype}"
             )
 
-    if isinstance(data, pl.DataFrame):
-        checked_columns = [*group_cols]
-        if resolved_timestamp_col is not None:
-            checked_columns.append(resolved_timestamp_col)
-        null_columns = [name for name in checked_columns if data[name].null_count() > 0]
-        if null_columns:
-            raise DataSchemaError(
-                f"Grouping and ordering columns cannot contain nulls: {null_columns}"
-            )
+    checked_columns = [*group_cols]
+    if resolved_timestamp_col is not None:
+        checked_columns.append(resolved_timestamp_col)
+    projection = data.select(checked_columns)
+    checked = projection.collect() if isinstance(projection, pl.LazyFrame) else projection
+    null_columns = [name for name in checked_columns if checked[name].null_count() > 0]
+    if null_columns:
+        raise DataSchemaError(f"Grouping and ordering columns cannot contain nulls: {null_columns}")
 
     return group_cols, resolved_timestamp_col
 

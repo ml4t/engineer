@@ -202,7 +202,7 @@ from ml4t.engineer.labeling import triple_barrier_labels
 
 # 1. Compute features
 df = pl.read_parquet("spy_daily.parquet")
-features_df = compute_features(df, ["rsi", "macd", "atr", "bollinger_bands"])
+features_df = compute_features(df, ["rsi", "macd", "atr", "bollinger_bands"], calendar=None)
 
 # 2. Create labels
 config = LabelingConfig.triple_barrier(

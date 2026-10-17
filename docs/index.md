@@ -61,7 +61,7 @@ df = pl.DataFrame({
     "close": close,
     "volume": [100_000 + i * 100 for i in range(100)],
 })
-features = compute_features(df, ["rsi", "macd", "atr"])
+features = compute_features(df, ["rsi", "macd", "atr"], calendar=None)
 
 assert {"rsi", "macd", "atr"} <= set(features.columns)
 assert features.select(["rsi", "macd", "atr"]).drop_nulls().height > 0

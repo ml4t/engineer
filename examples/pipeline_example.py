@@ -38,6 +38,7 @@ def main() -> None:
             {"name": "rsi", "params": {"period": 14}, "output": "rsi_14"},
             {"name": "atr", "params": {"period": 14}, "output": "atr_14"},
         ],
+        calendar=None,
     )
     feature_columns = ["sma_20", "ema_12", "rsi_14", "atr_14"]
     usable = engineered.drop_nulls(feature_columns)

@@ -161,7 +161,7 @@ from ml4t.engineer.core.registry import get_registry
 from ml4t.engineer.preprocessing import StandardScaler
 
 # Compute mixed features
-result = compute_features(ohlcv, ["rsi", "sma", "atr", "macd"])
+result = compute_features(ohlcv, ["rsi", "sma", "atr", "macd"], calendar=None)
 
 # Separate normalized and non-normalized
 registry = get_registry()

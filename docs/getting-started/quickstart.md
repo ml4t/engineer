@@ -33,7 +33,7 @@ ohlcv = pl.DataFrame(
     }
 )
 
-features = compute_features(ohlcv, ["rsi", "macd", "atr"])
+features = compute_features(ohlcv, ["rsi", "macd", "atr"], calendar=None)
 
 added = [name for name in features.columns if name not in ohlcv.columns]
 print(f"rows={features.height}")
