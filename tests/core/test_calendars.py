@@ -660,7 +660,7 @@ class TestCryptoCalendar:
         assert calendar.is_session(dt_after) is True
 
     def test_next_open_without_maintenance(self) -> None:
-        """Test next_open returns immediately without maintenance."""
+        """Test next_open returns the next UTC daily open."""
         from ml4t.engineer.core.calendars.crypto import CryptoCalendar
 
         calendar = CryptoCalendar()
@@ -668,10 +668,10 @@ class TestCryptoCalendar:
         dt = datetime(2024, 1, 1, 10, 0, 0)
         next_open = calendar.next_open(dt)
 
-        assert next_open == dt
+        assert next_open == datetime(2024, 1, 2, tzinfo=UTC)
 
     def test_next_open_during_maintenance(self) -> None:
-        """Test next_open returns end of maintenance window."""
+        """Test maintenance reopen does not create a new session."""
         from ml4t.engineer.core.calendars.crypto import CryptoCalendar
 
         calendar = CryptoCalendar(maintenance_window=(4, 5))
@@ -680,11 +680,10 @@ class TestCryptoCalendar:
         dt = datetime(2024, 1, 1, 4, 30, 0)
         next_open = calendar.next_open(dt)
 
-        assert next_open.hour == 5
-        assert next_open.minute == 0
+        assert next_open == datetime(2024, 1, 2, tzinfo=UTC)
 
     def test_previous_close_without_maintenance(self) -> None:
-        """Test previous_close returns 1 second ago without maintenance."""
+        """Test previous_close returns the preceding daily close."""
         from ml4t.engineer.core.calendars.crypto import CryptoCalendar
 
         calendar = CryptoCalendar()
@@ -692,10 +691,10 @@ class TestCryptoCalendar:
         dt = datetime(2024, 1, 1, 10, 0, 0)
         prev_close = calendar.previous_close(dt)
 
-        assert prev_close == dt - timedelta(seconds=1)
+        assert prev_close == datetime(2024, 1, 1, tzinfo=UTC)
 
     def test_previous_close_with_maintenance(self) -> None:
-        """Test previous_close returns start of maintenance."""
+        """Test an intraday maintenance break is not a session close."""
         from ml4t.engineer.core.calendars.crypto import CryptoCalendar
 
         calendar = CryptoCalendar(maintenance_window=(4, 5))
@@ -704,8 +703,7 @@ class TestCryptoCalendar:
         dt = datetime(2024, 1, 1, 10, 0, 0)
         prev_close = calendar.previous_close(dt)
 
-        assert prev_close.hour == 4
-        assert prev_close.day == 1
+        assert prev_close == datetime(2024, 1, 1, tzinfo=UTC)
 
     def test_previous_close_before_maintenance(self) -> None:
         """Test previous_close when before maintenance today."""
@@ -717,12 +715,10 @@ class TestCryptoCalendar:
         dt = datetime(2024, 1, 2, 3, 0, 0)
         prev_close = calendar.previous_close(dt)
 
-        # Should be yesterday's maintenance start
-        assert prev_close.day == 1
-        assert prev_close.hour == 4
+        assert prev_close == datetime(2024, 1, 2, tzinfo=UTC)
 
     def test_sessions_between_without_maintenance(self) -> None:
-        """Test sessions_between returns every hour without maintenance."""
+        """Test sessions_between returns daily session opens."""
         from ml4t.engineer.core.calendars.crypto import CryptoCalendar
 
         calendar = CryptoCalendar()
@@ -732,11 +728,10 @@ class TestCryptoCalendar:
 
         sessions = calendar.sessions_between(start, end)
 
-        # Should have 4 sessions (0:00, 1:00, 2:00, 3:00)
-        assert len(sessions) == 4
+        assert sessions == [datetime(2024, 1, 1, tzinfo=UTC)]
 
     def test_sessions_between_with_maintenance(self) -> None:
-        """Test sessions_between excludes maintenance window."""
+        """Test an intraday span contains no daily open, even across a maintenance break."""
         from ml4t.engineer.core.calendars.crypto import CryptoCalendar
 
         calendar = CryptoCalendar(maintenance_window=(4, 5))
@@ -746,10 +741,7 @@ class TestCryptoCalendar:
 
         sessions = calendar.sessions_between(start, end)
 
-        # Should have 3 sessions (3:00, 5:00, 6:00) - skipping 4:00
-        assert len(sessions) == 3
-        session_hours = [s.hour for s in sessions]
-        assert 4 not in session_hours
+        assert sessions == []
 
     def test_session_duration_without_maintenance(self) -> None:
         """Test session_duration is 24 hours without maintenance."""
