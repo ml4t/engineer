@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
+from io import BytesIO
 
 import polars as pl
 import pytest
@@ -299,3 +300,12 @@ def test_legacy_date_labels_report_calendar_day_difference_without_numpy_resolut
         timedelta(0),
     ]
     assert result["label_bars"].to_list() == [1, 1, 0]
+
+
+def test_row_labels_persist_without_untyped_python_object_duration_metadata():
+    result = calendar_aware_labels(_prices(), _config(), calendar=None)
+    target = BytesIO()
+    result.write_parquet(target)
+    target.seek(0)
+    assert_frame_equal(pl.read_parquet(target), result)
+    assert result["label_duration"].is_null().all()

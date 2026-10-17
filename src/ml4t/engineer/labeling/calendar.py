@@ -389,7 +389,10 @@ def _segment_labels(
         )
         for frame in frames
     ]
-    return pl.concat(results, how="vertical").sort(row_col).drop(row_col)
+    result = pl.concat(results, how="vertical").sort(row_col).drop(row_col)
+    if timestamp_col is None:
+        result = result.with_columns(pl.lit(None).alias("label_duration"))
+    return result
 
 
 def calendar_aware_labels(
