@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime, timedelta
 from inspect import signature
 from typing import TYPE_CHECKING, Any, Protocol
 
+import numpy as np
 import polars as pl
 from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec, TimestampSemantics, WindowUnit
 
@@ -395,6 +396,60 @@ def _segment_labels(
     return result
 
 
+def _session_window_labels(
+    data: pl.DataFrame,
+    config: LabelingConfig,
+    feed: FeedSpec,
+    calendar: str,
+    price_col: str,
+    timestamp_col: str,
+    group_cols: list[str],
+) -> pl.DataFrame:
+    from ml4t.engineer.core.bar_grid import scheduled_session_indices
+
+    sorted_data = data.sort([*group_cols, timestamp_col])
+    frames = (
+        sorted_data.partition_by(group_cols, maintain_order=True) if group_cols else [sorted_data]
+    )
+    frames = frames or [sorted_data]
+    holding_col = _temporary_column_name(data.columns, "__ml4t_session_holding_bars")
+    results = []
+    for frame in frames:
+        session_ids = scheduled_session_indices(
+            frame, feed_spec=feed, calendar=calendar, timestamp_col=timestamp_col
+        )
+        horizon = config.max_holding_period
+        if isinstance(horizon, int):
+            counts = np.full(frame.height, horizon, dtype=np.float64)
+        elif isinstance(horizon, str) and horizon in frame.columns:
+            counts = np.asarray(frame[horizon].to_numpy(), dtype=np.float64)
+        else:
+            raise ValueError("Session holding periods require a positive integer or count column")
+        if (
+            not np.isfinite(counts).all()
+            or np.any(counts <= 0)
+            or np.any(counts != np.floor(counts))
+        ):
+            raise ValueError("Session holding periods must contain finite positive integral counts")
+        # A deadline beyond observed coverage is censored at the final available bar,
+        # as in the existing count-horizon engine. Clip before integer conversion.
+        bounded_counts = (
+            np.minimum(counts, session_ids[-1] + 1).astype(np.int64)
+            if frame.height
+            else np.empty(0, dtype=np.int64)
+        )
+        exits = np.searchsorted(session_ids, session_ids + bounded_counts, side="right") - 1
+        periods = np.maximum(1, exits - np.arange(frame.height))
+        prepared = frame.with_columns(pl.Series(holding_col, periods))
+        numerical_config = config.model_copy(update={"max_holding_period": holding_col})
+        results.append(
+            _segment_labels(prepared, numerical_config, price_col, [], timestamp_col).drop(
+                holding_col
+            )
+        )
+    return pl.concat(results, how="vertical")
+
+
 def calendar_aware_labels(
     data: pl.DataFrame,
     config: LabelingConfig,
@@ -407,10 +462,10 @@ def calendar_aware_labels(
     feed_spec: FeedSpec | Mapping[str, Any] | None = None,
     window_unit: WindowUnit | str | None = None,
 ) -> pl.DataFrame:
-    """Apply triple-barrier labeling with session awareness.
+    """Apply triple-barrier labeling with declared calendar and horizon units.
 
-    Splits data by trading sessions and applies labeling within each session.
-    This prevents labels from spanning session gaps (maintenance, overnight, holidays).
+    Intraday count/elapsed compatibility modes stop at breaks. Session-count
+    horizons span scheduled sessions, and daily labels count whole-session rows.
 
     Parameters
     ----------
@@ -437,7 +492,8 @@ def calendar_aware_labels(
         Count windows default to expected_bar for shared feeds and omitted selectors;
         a complete declared grid is required. Explicit observation counts and elapsed
         duration horizons remain distinct. Legacy explicit selectors without FeedSpec
-        retain observation counts. Session-count windows are not implemented.
+        retain observation counts. Session counts expire on the final available
+        bar of the Nth following scheduled session, or at observed coverage end.
 
     Returns
     -------
@@ -478,7 +534,8 @@ def calendar_aware_labels(
     - Uses pandas_market_calendars for all string calendar names
     - Supports 200+ global calendars + product-specific futures calendars
     - See pandas_market_calendars.get_calendar_names() for available calendars
-    - Labels that would span session breaks are truncated at the break
+    - Intraday observation/expected-bar and legacy duration windows stop at breaks
+    - Session-count windows cross breaks and use the same numerical barrier engine
     - This may result in more timeout labels near session closes
     - Rows outside an explicit calendar's trading times are rejected
     - Without FeedSpec, legacy naive calendar timestamps are interpreted as UTC
@@ -528,8 +585,6 @@ def calendar_aware_labels(
         raise ValueError(
             "calendar=None requires observation-count holding periods and window_unit='observation'"
         )
-    if unit == WindowUnit.SESSION:
-        raise ValueError("session-count labeling windows are not supported")
     if (unit == WindowUnit.ELAPSED) != duration_horizon:
         raise ValueError(
             "elapsed windows require duration holding periods; count windows require observation/expected_bar"
@@ -557,8 +612,9 @@ def calendar_aware_labels(
 
     if selected is None:
         return _segment_labels(data, config, resolved_price_col, resolved_group_cols)
-    if feed.timestamp_semantics == TimestampSemantics.SESSION_LABEL:
-        raise ValueError("session_label timestamps are not intraday labeling instants")
+    daily_labels = feed.timestamp_semantics == TimestampSemantics.SESSION_LABEL
+    if daily_labels and unit == WindowUnit.ELAPSED:
+        raise ValueError("session_label identifiers cannot define an elapsed horizon")
     if declared_feed is not None and feed.timestamp_semantics is None:
         raise ValueError("Calendar-aware FeedSpec requires declared timestamp_semantics")
     if declared_feed is not None and selected == "auto":
@@ -569,14 +625,15 @@ def calendar_aware_labels(
     dtype = data.schema[resolved_ts_col]
     if (
         declared_feed is not None
+        and not daily_labels
         and isinstance(dtype, pl.Datetime)
         and dtype.time_zone is None
         and feed.timezone is None
     ):
         raise ValueError("Calendar-aware FeedSpec requires timezone metadata for naive timestamps")
-    if unit == WindowUnit.EXPECTED_BAR:
+    if unit in {WindowUnit.EXPECTED_BAR, WindowUnit.SESSION} or daily_labels:
         if not isinstance(selected, str) or selected == "auto":
-            raise ValueError("expected_bar windows require an authoritative named calendar")
+            raise ValueError("Scheduled windows require an authoritative named calendar")
         from ml4t.engineer.core.bar_grid import validate_declared_grid
 
         validate_declared_grid(
@@ -585,6 +642,19 @@ def calendar_aware_labels(
             calendar=selected,
             timestamp_col=resolved_ts_col,
             group_cols=resolved_group_cols,
+        )
+    if unit == WindowUnit.SESSION:
+        assert isinstance(selected, str)
+        return _session_window_labels(
+            data, config, feed, selected, resolved_price_col, resolved_ts_col, resolved_group_cols
+        )
+    if daily_labels:
+        return _segment_labels(
+            data.sort([*resolved_group_cols, resolved_ts_col]),
+            config,
+            resolved_price_col,
+            resolved_group_cols,
+            resolved_ts_col,
         )
 
     # Create calendar instance if string provided

@@ -183,7 +183,7 @@ def test_expected_bar_labels_reject_price_outage_before_horizon_interpretation()
 @pytest.mark.parametrize(
     "declaration,error",
     [
-        ({"timestamp_semantics": "session_label"}, "session_label"),
+        ({"timestamp_semantics": "session_label"}, "declared bar grid"),
         ({"timestamp_semantics": "event_time"}, "timezone"),
     ],
 )

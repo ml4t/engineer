@@ -439,7 +439,7 @@ former pause because trading is continuous until 4:00 PM.
 See the [CME exchange notice](https://www.cmegroup.com/notices/electronic-trading/2021/06/20210621.html)
 for the affected equity-index contracts.
 
-### Observation rows, expected bars and elapsed durations
+### Observation rows, expected bars, sessions and elapsed durations
 
 Use `calendar=None` for observation-row labeling, including timestamp-indexed data:
 
@@ -465,12 +465,11 @@ omitted selectors default count windows to `"expected_bar"`; an undeclared or in
 grid fails before labeling. Supply the complete shared grid
 declarations described in the [feature guide](features.md#calendar-and-bar-grid) to reject
 missing scheduled bars before labeling. Named `"24/7"` still has daily schedule boundaries
-and is not equivalent to row mode. `"session"` count windows are not implemented and fail
-explicitly. Duration holding periods select `"elapsed"` and remain truncated at session
+and is not equivalent to row mode. Duration holding periods select `"elapsed"` and remain truncated at session
 boundaries, rather than counting sessions or observed dates.
 
 Pass `feed_spec=FeedSpec(...)` directly or through `LabelingConfig.feed_spec`. Shared
-`timestamp_semantics` must declare an intraday instant; `session_label` is rejected.
+`timestamp_semantics` must distinguish intraday instants from `session_label` identifiers.
 Naive feed timestamps require an explicit timezone, and ambiguous/nonexistent local
 times fail. Right-labeled/bar-close observations at a break boundary end the preceding
 tradable interval. Input timestamp representations are retained in the output.
@@ -486,6 +485,27 @@ definitions and chronological sorting; they do not acquire calendar interpretati
 timestamps. Use this wrapper when selecting the shared calendar/row contract.
 Standalone kernels reject configs declaring calendar/feed/window semantics instead
 of silently ignoring those declarations.
+
+For `window_unit="session"`, an integer `max_holding_period=N` expires at the final
+bar of the Nth scheduled session after the entry session. A positive integral count
+column can select N per event. July 3, 2025 on NYSE therefore reaches July 7 for N=1,
+not the July 4 holiday. Intraday entries reach the following session's last bar,
+including an early close; lunch and overnight breaks do not truncate this horizon.
+Profit, stop and trailing barriers still use the existing triple-barrier calculation.
+The full declared grid is checked before any labels are computed, including whole-session
+outages. No prices are filled or rows inserted.
+
+Daily input uses `FeedSpec(time_contract_version=2, calendar="NYSE",
+timestamp_semantics="session_label", data_frequency="1d", bar_type="time")`.
+Do not supply intraday anchor/label/partial-bar fields. Date-valued and midnight datetime
+identifiers keep their displayed session date; they are not converted to UTC instants.
+Daily observation and expected-bar horizons scan across session rows rather than
+truncating every label to its entry row. Elapsed horizons reject these identifiers.
+
+As with existing count horizons, a deadline beyond the available dataset is censored
+at the last available bar. `label_bars` reports the actual observed holding length and
+`label_time` the actual exit, not an inferred future observation. These changes target
+the next 0.2 development release, not the historical 0.1.7 patch.
 Their legacy `Date` inputs retain date-valued label times and calendar-day differences
 in `label_duration`; those dates do not become authoritative session identifiers or
 intraday instants. Shared-feed session labels remain explicitly rejected by this wrapper.

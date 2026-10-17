@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, cast
 from zoneinfo import ZoneInfo
 
+import numpy as np
+import numpy.typing as npt
 import polars as pl
 from ml4t.specs import FeedSpec, TimestampSemantics
 
@@ -162,6 +164,50 @@ def _validate_session_grid(
             raise ValueError(
                 f"off-schedule session label in group {group!r} at {off_schedule[0].isoformat()}"
             )
+
+
+def scheduled_session_indices(
+    data: pl.DataFrame,
+    *,
+    feed_spec: FeedSpec,
+    calendar: str,
+    timestamp_col: str,
+) -> npt.NDArray[np.int64]:
+    """Map a validated, sorted single-asset grid to actual schedule ordinals."""
+    from ml4t.engineer.labeling.calendar import PandasMarketCalendar
+
+    if data.is_empty():
+        return np.empty(0, dtype=np.int64)
+    labels = feed_spec.timestamp_semantics == TimestampSemantics.SESSION_LABEL
+    values = data[timestamp_col]
+    if labels:
+        days = values.dt.date().to_list()
+    else:
+        dtype = values.dtype
+        if not isinstance(dtype, pl.Datetime):
+            raise ValueError("Session windows require datetime instants or declared session labels")
+        if dtype.time_zone is None:
+            values = values.dt.replace_time_zone(
+                feed_spec.timezone, ambiguous="raise", non_existent="raise"
+            )
+        values = values.dt.convert_time_zone("UTC")
+        days = values.dt.date().to_list()
+    adapter = PandasMarketCalendar(calendar)
+    schedule = adapter._calendar.schedule(
+        start_date=min(days) - timedelta(days=7), end_date=max(days) + timedelta(days=7)
+    )
+    if labels:
+        indices = {label.date(): index for index, label in enumerate(schedule.index)}
+        return np.array([indices[day] for day in days], dtype=np.int64)
+    timestamps = values.dt.epoch("us").to_numpy()
+    opened = np.array([stamp.value // 1000 for stamp in schedule["market_open"]], dtype=np.int64)
+    side = (
+        "left"
+        if feed_spec.bar_label == "right"
+        or feed_spec.timestamp_semantics == TimestampSemantics.BAR_CLOSE
+        else "right"
+    )
+    return np.asarray(np.searchsorted(opened, timestamps, side=side) - 1, dtype=np.int64)
 
 
 def validate_bar_grid(
