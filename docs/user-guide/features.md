@@ -165,6 +165,24 @@ bar when `partial_bar_policy="include"`. Annualization remains a separate conven
 example, `realized_volatility(trading_periods=252)` retains its documented numerical default.
 No calendar-derived annualization factor is silently substituted.
 
+### Equity schedule helpers
+
+`ml4t.engineer.core.EquityCalendar(calendar="NYSE")` uses the same authoritative
+schedule adapter as labeling and grid validation. `exchange` and the existing positional
+selector remain compatible aliases; contradictory selectors fail. Its naive timestamps use
+the selected exchange timezone unless `timezone` explicitly overrides it. Ambiguous and
+nonexistent naive local times are rejected; pass an aware instant to disambiguate them.
+
+Membership excludes scheduled breaks. `sessions_between` returns session opens inside the
+inclusive instant interval. `session_duration` returns tradable time on the exchange-local
+date, excluding breaks, with zero duration on holidays. Boundary lookups return UTC-aware
+instants and fail explicitly if no scheduled boundary exists within 366 days.
+
+The next minor version removes the approximate weekday fallback when the calendar provider
+is absent or a schedule is empty. Install `ml4t-engineer[calendars]` for these helpers.
+An `EquityCalendar` object requires a named schedule; it cannot represent calendar-free
+execution. Use `compute_features(..., calendar=None)` for observation-row features.
+
 > **Book**: [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls `compute_features()` with names and parameter dictionaries, and compares the library RSI with a manual implementation.
 
 ## Category Reference
