@@ -327,7 +327,7 @@ def _build_labeling_result(
             "label_return": pl.Series(label_returns, dtype=pl.Float64),
             "label_bars": pl.Series(bar_durations, dtype=pl.Int64),
             "label_duration": pl.Series(time_durations),
-            "barrier_hit": pl.Series(barrier_hit),
+            "barrier_hit": pl.Series(barrier_hit, dtype=pl.String),
         }
         if calc_uniq:
             columns_to_add["label_uniqueness"] = pl.Series(uniqueness, dtype=pl.Float64)
@@ -534,7 +534,7 @@ def triple_barrier_labels(
     if group_cols:
         sort_cols = group_cols + ([resolved_ts_col] if resolved_ts_col else [])
         sorted_data = data.sort(sort_cols)
-        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True)
+        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True) or [sorted_data]
 
         grouped_results = [
             _triple_barrier_labels_single_group(
