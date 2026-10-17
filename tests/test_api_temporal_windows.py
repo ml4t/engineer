@@ -331,3 +331,54 @@ def test_empty_temporal_feature_input_preserves_typed_columns_and_no_observation
     assert result.height == 0
     assert result.schema["sma"] == pl.Float64
     assert result.select(prices.columns).equals(prices)
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("lazy", [False, True])
+def test_feature_session_windows_count_short_sessions_even_when_partial_policy_excludes_all_bars(
+    side, lazy
+):
+    from ml4t.engineer.core.bar_grid import _expected_bar_labels
+    from ml4t.engineer.labeling.calendar import PandasMarketCalendar
+
+    timestamps = list(
+        _expected_bar_labels(
+            PandasMarketCalendar("NYSE"),
+            datetime(2025, 7, 2, tzinfo=UTC),
+            datetime(2025, 7, 9, tzinfo=UTC),
+            timedelta(hours=5),
+            side,
+            False,
+        )
+    )
+    values = [100.0, 101.0, 102.0]
+    prices = pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": values,
+            "high": values,
+            "low": values,
+            "close": values,
+            "volume": 1.0,
+        }
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="NYSE",
+        timezone="UTC",
+        data_frequency="5h",
+        timestamp_semantics="bar_close" if side == "right" else "event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label=side,
+        partial_bar_policy="exclude",
+    )
+    result = compute_features(
+        prices.lazy() if lazy else prices,
+        [{"name": "sma", "params": {"period": 2}}],
+        feed_spec=feed,
+        window_unit="session",
+    )
+    result = result.collect() if lazy else result
+    # July3 counts, despite having no5h bar. July7 must not include the July2 price.
+    assert result["sma"].to_list() == [None, 101.0, 101.5]
