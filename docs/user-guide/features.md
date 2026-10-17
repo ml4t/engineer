@@ -87,11 +87,9 @@ raise `ValueError` before feature execution.
 ### Calendar and bar grid
 
 The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.
-Development and qualification currently pin the merged Specs v2 implementation at
-`701bde68744035050ede386efce498234c661c21`. The same immutable Git dependency is declared
-in built package metadata; published Specs 0.1.5 does not provide this API. Before a PyPI
-release, replace that source dependency with the verified published Specs version containing
-the v2 contract and repeat installed-package qualification.
+The shared temporal contract requires published `ml4t-specs>=0.2.0,<0.3.0`, also declared
+in built package metadata. Specs 0.1.5 does not provide this API. Engineer's development
+branch uses the published dependency; the temporal migration is not part of the 0.1.7 patch.
 
 Calendar selection
 uses the explicit `calendar` argument, then declared feed metadata, then NYSE. Explicit
