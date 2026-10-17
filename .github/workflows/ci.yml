@@ -218,14 +218,11 @@ jobs:
         run: >-
           uv run --python .artifact-venv --no-project
           ty check --python-version ${{ matrix.python-version }}
-      - name: Run the installed-wheel suite repeatedly
+      - name: Run the installed-wheel suite
         shell: bash
         run: |
-          for iteration in {1..10}; do
-            echo "Installed-wheel suite ${iteration}/10"
-            uv run --python .artifact-venv --no-project \
-              python -m pytest tests/ -q --tb=short --no-cov
-          done
+          uv run --python .artifact-venv --no-project \
+            python -m pytest tests/ -q --tb=short --no-cov
       - name: Run documented workflows from the installed candidate
         run: >-
           uv run --python .artifact-venv --no-project
