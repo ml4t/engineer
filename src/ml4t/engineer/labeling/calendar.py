@@ -407,12 +407,12 @@ def _session_window_labels(
 ) -> pl.DataFrame:
     from ml4t.engineer.core.bar_grid import scheduled_session_indices
 
+    validate_price_no_nans(data, price_col)
     sorted_data = data.sort([*group_cols, timestamp_col])
     frames = (
         sorted_data.partition_by(group_cols, maintain_order=True) if group_cols else [sorted_data]
     )
     frames = frames or [sorted_data]
-    holding_col = _temporary_column_name(data.columns, "__ml4t_session_holding_bars")
     results = []
     for frame in frames:
         session_ids = scheduled_session_indices(
@@ -439,12 +439,19 @@ def _session_window_labels(
             else np.empty(0, dtype=np.int64)
         )
         exits = np.searchsorted(session_ids, session_ids + bounded_counts, side="right") - 1
-        periods = np.maximum(1, exits - np.arange(frame.height))
-        prepared = frame.with_columns(pl.Series(holding_col, periods))
-        numerical_config = config.model_copy(update={"max_holding_period": holding_col})
+        periods = np.asarray(exits - np.arange(frame.height), dtype=np.int64)
         results.append(
-            _segment_labels(prepared, numerical_config, price_col, [], timestamp_col).drop(
-                holding_col
+            _triple_barrier_labels_single_group(
+                frame,
+                config,
+                price_col,
+                None,
+                None,
+                None,
+                timestamp_col,
+                False,
+                "returns_uniqueness",
+                max_holding_bars=periods,
             )
         )
     return pl.concat(results, how="vertical")

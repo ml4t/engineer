@@ -216,3 +216,48 @@ def test_explicit_continuous_session_counts_include_weekends_without_becoming_ro
             calendar="24/7",
             feed_spec=_feed(),
         )
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("sparse", [False, True])
+@pytest.mark.parametrize("horizon,first_exit", [(1, 0), (2, 1)])
+def test_barless_short_session_never_pushes_a_session_deadline_into_a_later_session(
+    side, sparse, horizon, first_exit
+):
+    from ml4t.engineer.core.bar_grid import _expected_bar_labels
+    from ml4t.engineer.labeling.calendar import PandasMarketCalendar
+
+    timestamps = list(
+        _expected_bar_labels(
+            PandasMarketCalendar("NYSE"),
+            datetime(2025, 7, 2, tzinfo=UTC),
+            datetime(2025, 7, 9, tzinfo=UTC),
+            timedelta(hours=5),
+            side,
+            False,
+        )
+    )
+    assert [stamp.date() for stamp in timestamps] == [date(2025, 7, d) for d in (2, 7, 8)]
+    prices = pl.DataFrame({"timestamp": timestamps, "close": [100.0, 101.0, 102.0]})
+    if sparse:
+        prices = prices.with_columns(pl.Series("event_time", [timestamps[0], None, timestamps[2]]))
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="NYSE",
+        timezone="UTC",
+        data_frequency="5h",
+        timestamp_semantics="bar_close" if side == "right" else "event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label=side,
+        partial_bar_policy="exclude",
+    )
+    result = calendar_aware_labels(prices, _config(horizon), feed_spec=feed)
+    exits = [first_exit, None if sparse else 2, 2]
+    assert result["label_time"].to_list() == [
+        timestamps[index] if index is not None else None for index in exits
+    ]
+    assert result["label_bars"].to_list() == [
+        index - entry if index is not None else None for entry, index in enumerate(exits)
+    ]
+    assert result["label_return"][0] == pytest.approx(first_exit / 100)
