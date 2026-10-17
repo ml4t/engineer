@@ -165,6 +165,11 @@ class LabelingConfig(BaseConfig):
         description="Observation, expected_bar, session or elapsed; consumer validates support",
     )
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, LabelingConfig):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
     @field_validator("calendar", mode="before")
     @classmethod
     def validate_calendar(cls, value: Any) -> str | None:

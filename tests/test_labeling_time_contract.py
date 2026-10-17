@@ -226,3 +226,12 @@ def test_new_default_does_not_treat_an_undeclared_intraday_grid_as_complete():
     data = _prices([datetime(2025, 7, 7, 14, tzinfo=UTC) + timedelta(hours=i) for i in range(4)])
     with pytest.raises(ValueError, match="declared bar grid"):
         calendar_aware_labels(data, _config())
+
+
+def test_config_equality_does_not_collapse_disabled_and_undeclared_calendars():
+    inherited = _config()
+    disabled = inherited.model_copy(update={"calendar": None})
+    assert disabled != inherited
+    assert disabled == deepcopy(disabled)
+    assert disabled.to_dict()["calendar"] is None
+    assert "calendar" not in inherited.to_dict()
