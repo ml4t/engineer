@@ -21,15 +21,15 @@ def validate_declared_grid(
     timestamp_col: str | None,
     group_cols: list[str],
 ) -> None:
-    """Bind shared v2 declarations to the fixed-intraday schedule checker."""
+    """Validate shared v2 daily session labels or fixed intraday bar timestamps."""
+    daily_labels = feed_spec.timestamp_semantics == TimestampSemantics.SESSION_LABEL
     required = (
         "data_frequency",
         "timestamp_semantics",
         "bar_type",
-        "bar_grid_anchor",
-        "bar_label",
-        "partial_bar_policy",
     )
+    if not daily_labels:
+        required += ("bar_grid_anchor", "bar_label", "partial_bar_policy")
     missing = [name for name in required if getattr(feed_spec, name) is None]
     if feed_spec.time_contract_version != 2 or missing or timestamp_col is None:
         raise ValueError(
@@ -41,16 +41,10 @@ def validate_declared_grid(
     if feed_spec.timestamp_semantics not in {
         TimestampSemantics.BAR_CLOSE,
         TimestampSemantics.EVENT_TIME,
+        TimestampSemantics.SESSION_LABEL,
     }:
-        raise ValueError("Fixed intraday bar grids require event_time or bar_close timestamps")
+        raise ValueError("Bar grids require event_time, bar_close or session_label timestamps")
     schema = data.collect_schema() if isinstance(data, pl.LazyFrame) else data.schema
-    dtype = schema[timestamp_col]
-    timezone = feed_spec.timezone
-    if timezone is None and isinstance(dtype, pl.Datetime):
-        timezone = dtype.time_zone
-    if timezone is None:
-        raise ValueError("A declared bar grid requires timezone metadata for naive timestamps")
-
     frequency = feed_spec.data_frequency
     if isinstance(frequency, str):
         import pandas as pd
@@ -59,7 +53,7 @@ def validate_declared_grid(
             with warnings.catch_warnings():
                 warnings.simplefilter("error", FutureWarning)
                 warnings.simplefilter("error", DeprecationWarning)
-                parsed = pd.Timedelta(frequency)
+                parsed = pd.Timedelta("1D" if frequency == "1d" else frequency)
         except (ValueError, TypeError, FutureWarning, DeprecationWarning) as exc:
             raise ValueError("declared grid data_frequency must be a fixed duration") from exc
         if not isinstance(parsed, pd.Timedelta) or parsed.value % 1000:
@@ -67,17 +61,32 @@ def validate_declared_grid(
         frequency = parsed.to_pytimedelta()
     if not isinstance(frequency, timedelta):
         raise ValueError("declared grid data_frequency must be a duration string or timedelta")
-    validate_bar_grid(
-        data,
-        calendar=calendar,
-        frequency=frequency,
-        timezone=timezone,
-        timestamp_col=timestamp_col,
-        group_cols=group_cols,
-        anchor=cast(Literal["session_open"], feed_spec.bar_grid_anchor),
-        label_side=cast(Literal["left", "right"], feed_spec.bar_label),
-        include_partial=feed_spec.partial_bar_policy == "include",
-    )
+    if daily_labels:
+        _validate_session_grid(
+            data,
+            calendar=calendar,
+            frequency=frequency,
+            timestamp_col=timestamp_col,
+            group_cols=group_cols,
+        )
+    else:
+        dtype = schema[timestamp_col]
+        timezone = feed_spec.timezone
+        if timezone is None and isinstance(dtype, pl.Datetime):
+            timezone = dtype.time_zone
+        if timezone is None:
+            raise ValueError("A declared bar grid requires timezone metadata for naive timestamps")
+        validate_bar_grid(
+            data,
+            calendar=calendar,
+            frequency=frequency,
+            timezone=timezone,
+            timestamp_col=timestamp_col,
+            group_cols=group_cols,
+            anchor=cast(Literal["session_open"], feed_spec.bar_grid_anchor),
+            label_side=cast(Literal["left", "right"], feed_spec.bar_label),
+            include_partial=feed_spec.partial_bar_policy == "include",
+        )
 
 
 def validate_feature_grid(
@@ -112,6 +121,46 @@ def validate_feature_grid(
             raise ValueError(
                 f"Return adjacent to a missing price at {invalid.row(0, named=True)!r}; "
                 "normalize prices before deriving returns, not an already-derived return series"
+            )
+
+
+def _validate_session_grid(
+    data: pl.DataFrame | pl.LazyFrame,
+    *,
+    calendar: str,
+    frequency: timedelta,
+    timestamp_col: str,
+    group_cols: list[str],
+) -> None:
+    if frequency != timedelta(days=1):
+        raise ValueError("Daily session labels require declared data_frequency='1d'")
+    from ml4t.engineer.labeling.calendar import PandasMarketCalendar
+
+    adapter = PandasMarketCalendar(calendar)
+    labels = data.select([*group_cols, pl.col(timestamp_col).dt.date()])
+    frame = labels.collect() if isinstance(labels, pl.LazyFrame) else labels
+    if frame[timestamp_col].null_count():
+        raise ValueError("declared daily grid contains null session labels")
+    groups = frame.partition_by(group_cols, as_dict=True) if group_cols else {(): frame}
+    for group, rows in groups.items():
+        actual = sorted(rows[timestamp_col].to_list())
+        if not actual:
+            continue
+        observed = set(actual)
+        if len(actual) != len(observed):
+            raise ValueError(f"duplicate session label in group {group!r}")
+        schedule = adapter._calendar.schedule(start_date=actual[0], end_date=actual[-1])
+        expected = {label.date() for label in schedule.index}
+        missing = sorted(expected - observed)
+        if missing:
+            raise ValueError(
+                f"missing scheduled session in group {group!r} at {missing[0].isoformat()}; "
+                "validate daily prices before deriving returns, or explicitly select calendar=None"
+            )
+        off_schedule = sorted(observed - expected)
+        if off_schedule:
+            raise ValueError(
+                f"off-schedule session label in group {group!r} at {off_schedule[0].isoformat()}"
             )
 
 
