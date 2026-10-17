@@ -5,7 +5,7 @@ and then move directly into the first workflow.
 
 ## Requirements
 
-- Python 3.12, 3.13, or 3.14
+- Python 3.12, 3.13, 3.14, or 3.15
 - Polars 0.20+
 
 ## Install from PyPI
