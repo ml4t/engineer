@@ -60,10 +60,13 @@ result = compute_features(
 ```
 
 This example explicitly counts observation rows. Omitting `calendar` selects shared
-feed metadata, then NYSE, and requires a declared complete intraday grid. Use
+feed metadata, then NYSE, and requires a declared complete daily or intraday grid. Use
 `FeedSpec` declarations for expected bars; do not infer frequency or holidays from gaps.
 Numerical kernels keep their documented annualization conventions independently of
-calendar selection. Session and elapsed feature windows remain unsupported.
+calendar selection. `sma`, `stddev` and `realized_volatility` also support session/elapsed
+windows through the public API. Reuse their existing finite kernels over causal original
+bars, with schedule ordinals for sessions and open-left physical UTC intervals for elapsed
+durations. Do not resample, infer missing sessions or reinterpret recursive indicators.
 
 ## Trust Signals
 

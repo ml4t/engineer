@@ -110,8 +110,8 @@ labels. Date values and datetime representations identify the displayed session 
 timezone conversion. Validation checks every scheduled session between each asset's first and
 last label, including completely missing sessions. A named `24/7` schedule includes weekends;
 an NYSE schedule does not. No prices are filled or rows inserted. A daily frequency alone does
-not turn `event_time` instants into session labels. Session-count and elapsed-duration feature
-windows remain unsupported; they fail rather than being treated as expected-bar counts.
+not turn `event_time` instants into session labels. Temporal feature windows below use the
+same completeness checks; choosing a unit does not permit missing scheduled observations.
 
 <!-- ml4t-exec -->
 ```python
@@ -206,6 +206,56 @@ This does not change legacy Specs bridges or the numerical feature kernels.
 Neither means sessions or elapsed hours. A shortened final bar still counts as one expected
 bar when `partial_bar_policy="include"`. Annualization remains a separate convention: for
 example, `realized_volatility(trading_periods=252)` retains its documented numerical default.
+
+### Session and elapsed feature windows
+
+`sma`, `stddev` and `realized_volatility` accept `window_unit="session"` or `"elapsed"`.
+They retain original bars and row counts. They do not first aggregate to session closes.
+For sessions, `params.period=N` includes the current session's observations through the
+current row and the preceding N-1 scheduled sessions. Earlier rows of the first N-1
+observed sessions are null. July 4 holidays and lunch breaks do not create extra sessions.
+A one-session average of intraday prices100/110 is therefore100 at the first row and105
+at the second row, not the session's eventual closing price110 at both rows.
+
+Elapsed periods use a positive duration such as `params.period="2h"` and the physical
+UTC interval `(timestamp - duration, timestamp]`, including through DST changes.
+Outputs remain null until observed coverage spans the requested duration. A half-hour
+final bar can put three observations inside two elapsed hours. Daily `session_label`
+identifiers cannot define elapsed windows; they do support session-count windows.
+Windows with insufficient samples for the numerical statistic also remain null.
+Annualization parameters and all other supported feature parameters retain their
+numerical definitions. Recursive EMA/RSI and other unqualified window definitions
+reject temporal units explicitly rather than silently resetting or reseeding.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date, datetime, timedelta, timezone
+
+import polars as pl
+from ml4t.engineer import compute_features
+from ml4t.specs import FeedSpec
+
+daily = FeedSpec(time_contract_version=2, calendar="NYSE", data_frequency="1d",
+                 timestamp_semantics="session_label", bar_type="time")
+values = [100.0, 101.0, 104.0]
+prices = pl.DataFrame({
+    "timestamp": [date(2025, 7, day) for day in (2, 3, 7)],
+    "open": values, "high": values, "low": values, "close": values, "volume": 1.0,
+})
+result = compute_features(prices, [{"name": "sma", "params": {"period": 2}}],
+                          feed_spec=daily, window_unit="session")
+assert result["sma"].to_list() == [None, 100.5, 102.5]
+
+hourly = FeedSpec(time_contract_version=2, calendar="24/7", data_frequency="1h",
+                  timestamp_semantics="event_time", timezone="UTC", bar_type="time",
+                  bar_grid_anchor="session_open", bar_label="left", partial_bar_policy="include")
+prices = prices.with_columns(pl.Series("timestamp", [
+    datetime(2025, 7, 5, tzinfo=timezone.utc) + timedelta(hours=i) for i in range(3)
+]))
+result = compute_features(prices, [{"name": "sma", "params": {"period": "2h"}}],
+                          feed_spec=hourly, window_unit="elapsed")
+assert result["sma"].to_list() == [None, None, 102.5]
+```
 No calendar-derived annualization factor is silently substituted.
 
 ### Equity schedule helpers

@@ -269,8 +269,13 @@ def test_invalid_grid_never_executes_any_feature(monkeypatch, lazy):
 def test_calendar_grid_does_not_reinterpret_other_window_units_as_expected_bars(unit):
     start = datetime(2025, 7, 11, tzinfo=UTC)
     data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
-    with pytest.raises(ValueError, match="window_unit='expected_bar'"):
-        run(data, False, feed_spec=feed("24/7"), window_unit=unit)
+    if unit is WindowUnit.SESSION:
+        result = run(data, False, feed_spec=feed("24/7"), window_unit=unit)
+        assert result["realized_volatility"].is_null().all()
+    else:
+        error = "period" if unit is WindowUnit.ELAPSED else "Calendar-aware"
+        with pytest.raises(ValueError, match=error):
+            run(data, False, feed_spec=feed("24/7"), window_unit=unit)
     if unit is WindowUnit.OBSERVATION:
         assert run(data, False, calendar=None, window_unit=unit).height == 8
     else:
