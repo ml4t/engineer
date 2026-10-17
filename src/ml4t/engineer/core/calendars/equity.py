@@ -1,45 +1,49 @@
-"""
-Equity market calendar implementation.
-"""
+"""Authoritative exchange schedules for equity calendar helpers."""
 
-from datetime import datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+import polars as pl
+from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec
 
 from .base import ExchangeCalendar
 
 
 class EquityCalendar(ExchangeCalendar):
-    """Traditional equity market calendar (NYSE/NASDAQ).
+    """Schedule-backed market hours with naive times in the configured exchange timezone.
 
-    Handles timezone-aware datetime operations for US equity markets.
-    Defaults to America/New_York timezone for all operations.
+    ``calendar`` is the canonical selector; ``exchange`` remains a compatible alias.
+    A calendar object requires a named schedule. Calendar-free calculations belong
+    to consumers accepting ``calendar=None``, not an approximate weekday schedule.
     """
 
-    def __init__(self, exchange: str = "NYSE", timezone: str | None = None):
-        self.exchange = exchange
-        self._timezone = timezone or "America/New_York"
+    def __init__(
+        self,
+        exchange: str | CalendarUnset = UNSET_CALENDAR,
+        timezone: str | None = None,
+        *,
+        calendar: str | None | CalendarUnset = UNSET_CALENDAR,
+    ):
+        from ml4t.engineer.labeling.calendar import PandasMarketCalendar
+
+        aliases = {"XNYS": "NYSE", "XNAS": "NASDAQ"}
+        if exchange is not UNSET_CALENDAR:
+            if not isinstance(exchange, str) or not exchange:
+                raise ValueError("exchange must name a calendar")
+            if calendar is not UNSET_CALENDAR and aliases.get(exchange, exchange) != aliases.get(
+                calendar, calendar
+            ):
+                raise ValueError("calendar and exchange selectors conflict")
+        selected = FeedSpec(time_contract_version=2).resolve_calendar(
+            calendar=exchange if calendar is UNSET_CALENDAR else calendar
+        )
+        if selected is None:
+            raise ValueError("EquityCalendar requires a named calendar, not calendar=None")
+        self.exchange = exchange if isinstance(exchange, str) else selected
+        self._adapter = PandasMarketCalendar(aliases.get(selected, selected))
+        self._calendar = self._adapter._calendar
+        self._timezone = timezone if timezone is not None else str(self._calendar.tz)
         self._tz = ZoneInfo(self._timezone)
-        self._calendar = None
-        self._load_calendar()
-
-    def _load_calendar(self) -> None:
-        """Load calendar using pandas_market_calendars if available."""
-        try:
-            import pandas_market_calendars as mcal
-
-            # Map exchange names to pandas_market_calendars names
-            exchange_map = {
-                "NYSE": "NYSE",
-                "NASDAQ": "NASDAQ",
-                "XNYS": "NYSE",  # Alternative name
-                "XNAS": "NASDAQ",  # Alternative name
-            }
-
-            exchange_name = exchange_map.get(self.exchange, self.exchange)
-            self._calendar = mcal.get_calendar(exchange_name)
-        except (ImportError, ValueError):
-            # Fallback to basic implementation if library not available or exchange not found
-            self._calendar = None
 
     @property
     def name(self) -> str:
@@ -49,161 +53,105 @@ class EquityCalendar(ExchangeCalendar):
     def timezone(self) -> str:
         return self._timezone
 
+    def _normalize(self, dt: datetime) -> datetime:
+        if not isinstance(dt, datetime):
+            raise TypeError("calendar timestamps must be datetime values")
+        if dt.tzinfo is None or dt.utcoffset() is None:
+            first = dt.replace(tzinfo=self._tz, fold=0)
+            second = dt.replace(tzinfo=self._tz, fold=1)
+            if first.utcoffset() != second.utcoffset():
+                raise ValueError("ambiguous or nonexistent local calendar timestamp")
+            dt = first
+        return dt.astimezone(UTC)
+
     def is_session(self, dt: datetime) -> bool:
-        """Check trading hours, interpreting naive values in the configured timezone."""
-        if self._calendar:
-            dt_in_market_tz = (
-                dt.replace(tzinfo=self._tz) if dt.tzinfo is None else dt.astimezone(self._tz)
+        """Check authoritative membership, excluding breaks and interruptions."""
+        return self._adapter.is_trading_time(self._normalize(dt))
+
+    def _adjacent_boundary(self, dt: datetime, *, forward: bool) -> datetime:
+        instant = self._normalize(dt)
+        day = instant.astimezone(self._calendar.tz).date()
+        column = "market_open" if forward else "market_close"
+        for days in (10, 31, 366):
+            schedule = self._calendar.schedule(
+                start_date=day - timedelta(days=1 if forward else days),
+                end_date=day + timedelta(days=days if forward else 1),
             )
-            # The provider's exchange date can differ from the configured display timezone.
-            date_only = dt_in_market_tz.astimezone(self._calendar.tz).date()
-
-            # Get trading schedule for this date
-            schedule = self._calendar.schedule(start_date=date_only, end_date=date_only)
-
             if schedule.empty:
-                return False  # Not a trading day
-
-            # Check if time is within trading hours
-            market_open = schedule.iloc[0]["market_open"]
-            market_close = schedule.iloc[0]["market_close"]
-
-            return market_open <= dt_in_market_tz <= market_close
-
-        # Basic fallback: weekdays 9:30-16:00 ET
-        return self._is_basic_session(dt)
-
-    def _is_basic_session(self, dt: datetime) -> bool:
-        """Basic session check without holidays."""
-        # Convert to market timezone if needed
-        dt_market = dt.replace(tzinfo=self._tz) if dt.tzinfo is None else dt.astimezone(self._tz)
-
-        # Check weekday
-        if dt_market.weekday() >= 5:  # Saturday = 5, Sunday = 6
-            return False
-
-        # Check time (9:30 AM - 4:00 PM ET)
-        market_open = time(9, 30)
-        market_close = time(16, 0)
-
-        current_time = dt_market.time()
-        return market_open <= current_time <= market_close
+                continue
+            boundaries = schedule[column]
+            eligible = (
+                boundaries[boundaries > instant] if forward else boundaries[boundaries < instant]
+            )
+            if not eligible.empty:
+                return (eligible.iloc[0] if forward else eligible.iloc[-1]).to_pydatetime()
+        raise ValueError(f"No scheduled {column} within 366 days of {instant.isoformat()}")
 
     def next_open(self, dt: datetime) -> datetime:
-        """Next market open after given datetime."""
-        if self._calendar:
-            # pandas_market_calendars has different API
-            from datetime import timedelta
-
-            # Get schedule for next few days to find next open
-            end_date = dt.date() + timedelta(days=10)  # Look ahead 10 days
-            schedule = self._calendar.schedule(start_date=dt.date(), end_date=end_date)
-
-            if not schedule.empty:
-                # Find first market open after current datetime
-                for _, row in schedule.iterrows():
-                    market_open = row["market_open"]
-                    if market_open > dt:
-                        return market_open.to_pydatetime()
-
-        # Basic implementation fallback
-        return self._next_basic_open(dt)
-
-    def _next_basic_open(self, dt: datetime) -> datetime:
-        """Basic next open calculation with timezone handling."""
-        # Ensure we're working in market timezone
-        dt = dt.replace(tzinfo=self._tz) if dt.tzinfo is None else dt.astimezone(self._tz)
-
-        # If before today's open, next open is today 9:30
-        if dt.time() < time(9, 30):
-            candidate = dt.replace(hour=9, minute=30, second=0, microsecond=0)
-        else:
-            # During or after market hours — next open is tomorrow 9:30
-            candidate = dt.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=1)
-
-        # Skip weekends
-        while candidate.weekday() >= 5:
-            candidate += timedelta(days=1)
-
-        return candidate
+        """Return the next session open, or fail if no schedule exists within a year."""
+        return self._adjacent_boundary(dt, forward=True)
 
     def previous_close(self, dt: datetime) -> datetime:
-        """Previous market close before given datetime."""
-        if self._calendar:
-            # pandas_market_calendars approach
-            from datetime import timedelta
-
-            # Get schedule for previous few days
-            start_date = dt.date() - timedelta(days=10)
-            schedule = self._calendar.schedule(start_date=start_date, end_date=dt.date())
-
-            if not schedule.empty:
-                # Find last market close before current datetime
-                for i in range(len(schedule) - 1, -1, -1):
-                    row = schedule.iloc[i]
-                    market_close = row["market_close"]
-                    if market_close < dt:
-                        return market_close.to_pydatetime()
-
-        return self._previous_basic_close(dt)
-
-    def _previous_basic_close(self, dt: datetime) -> datetime:
-        """Basic previous close calculation with timezone handling."""
-        # Ensure we're working in market timezone
-        dt = dt.replace(tzinfo=self._tz) if dt.tzinfo is None else dt.astimezone(self._tz)
-
-        # If after today's close, previous close is today 16:00
-        if dt.time() > time(16, 0):
-            candidate = dt.replace(hour=16, minute=0, second=0, microsecond=0)
-        else:
-            # Before or during market hours — previous close is yesterday 16:00
-            candidate = dt.replace(hour=16, minute=0, second=0, microsecond=0) - timedelta(days=1)
-
-        # Skip weekends backwards
-        while candidate.weekday() >= 5:
-            candidate -= timedelta(days=1)
-
-        return candidate
+        """Return the previous session close, or fail if none exists within a year."""
+        return self._adjacent_boundary(dt, forward=False)
 
     def sessions_between(self, start: datetime, end: datetime) -> list[datetime]:
-        """List all trading sessions between dates."""
-        if self._calendar:
-            # pandas_market_calendars approach
-            schedule = self._calendar.schedule(start_date=start.date(), end_date=end.date())
-
-            if not schedule.empty:
-                # Return market open times as session starts
-                return [
-                    row["market_open"].to_pydatetime()
-                    for _, row in schedule.iterrows()
-                    if start <= row["market_open"].to_pydatetime() <= end
-                ]
-
-        return self._basic_sessions_between(start, end)
-
-    def _basic_sessions_between(self, start: datetime, end: datetime) -> list[datetime]:
-        """Basic session enumeration."""
-        sessions = []
-        current = start.replace(hour=9, minute=30, second=0, microsecond=0)
-
-        while current <= end:
-            if self._is_basic_session(current):
-                sessions.append(current)
-            current += timedelta(days=1)
-
-        return sessions
+        """Return authoritative session opens inside the inclusive instant interval."""
+        start, end = self._normalize(start), self._normalize(end)
+        if start > end:
+            raise ValueError("session interval start must not follow end")
+        schedule = self._calendar.schedule(
+            start_date=start.astimezone(self._calendar.tz).date() - timedelta(days=1),
+            end_date=end.astimezone(self._calendar.tz).date() + timedelta(days=1),
+        )
+        if schedule.empty:
+            return []
+        return [
+            opened.to_pydatetime() for opened in schedule["market_open"] if start <= opened <= end
+        ]
 
     def session_duration(self, date: datetime) -> timedelta:
-        """Duration of trading session on given date."""
-        if self._calendar:
-            # pandas_market_calendars approach
-            schedule = self._calendar.schedule(start_date=date.date(), end_date=date.date())
+        """Return tradable duration for the supplied session-label date, zero on a closure."""
+        day = date.date()
+        sessions = [
+            (session["market_open"], session["market_close"])
+            for label, session in self._adapter._schedule_around(day).iterrows()
+            if label.date() == day
+        ]
+        return sum(
+            (
+                closed - opened
+                for opened, closed, _, _ in self._adapter._trading_intervals_around(day)
+                if any(start <= opened <= closed <= end for start, end in sessions)
+            ),
+            timedelta(0),
+        )
 
-            if not schedule.empty:
-                row = schedule.iloc[0]
-                market_open = row["market_open"]
-                market_close = row["market_close"]
-                return market_close - market_open
+    def _session_label(self, dt: datetime) -> date | None:
+        instant = self._normalize(dt)
+        if not self._adapter.is_trading_time(instant):
+            return None
+        for label, session in self._adapter._schedule_around(instant.date()).iterrows():
+            if session["market_open"] <= instant <= session["market_close"]:
+                return label.date()
+        return None
 
-        # Standard 6.5 hour session (9:30 AM - 4:00 PM)
-        return timedelta(hours=6, minutes=30)
+    def add_session_info(self, df: pl.DataFrame, timestamp_col: str = "timestamp") -> pl.DataFrame:
+        """Add schedule membership, authoritative session label and exchange-local clock time."""
+        timestamps = pl.col(timestamp_col)
+        dtype = df.schema[timestamp_col]
+        if not isinstance(dtype, pl.Datetime):
+            raise TypeError("session annotations require datetime instants, not session labels")
+        if dtype.time_zone is None:
+            timestamps = timestamps.dt.replace_time_zone(
+                self.timezone, ambiguous="raise", non_existent="raise"
+            )
+        return df.with_columns(
+            pl.col(timestamp_col)
+            .map_elements(self.is_session, return_dtype=pl.Boolean)
+            .alias("is_session"),
+            pl.col(timestamp_col)
+            .map_elements(self._session_label, return_dtype=pl.Date)
+            .alias("session_date"),
+            timestamps.dt.convert_time_zone(str(self._calendar.tz)).dt.time().alias("session_time"),
+        )

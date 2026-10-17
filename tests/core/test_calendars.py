@@ -198,25 +198,12 @@ def test_naive_timestamps_use_configured_timezone_before_selecting_exchange_date
     assert calendar.filter_sessions(naive)["row"].to_list() == [1, 2, 3, 6, 7, 8, 10, 11]
 
 
-@pytest.mark.parametrize(
-    "input_zone", ["UTC", "America/New_York", "Asia/Tokyo", "Australia/Sydney"]
-)
-def test_missing_calendar_provider_keeps_basic_weekday_filtering(
-    monkeypatch: pytest.MonkeyPatch, input_zone: str
+def test_missing_calendar_provider_requires_install_instead_of_weekday_filtering(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "pandas_market_calendars", None)
-    calendar = EquityCalendar("NYSE")
-    frame = pl.DataFrame(
-        {
-            "timestamp": [
-                datetime(2024, 7, 2, 19, tzinfo=UTC),
-                datetime(2024, 7, 2, 23, tzinfo=UTC),
-                datetime(2024, 7, 6, 19, tzinfo=UTC),
-            ],
-            "row": ["open", "after_close", "weekend"],
-        }
-    ).with_columns(pl.col("timestamp").dt.convert_time_zone(input_zone))
-    assert calendar.filter_sessions(frame)["row"].to_list() == ["open"]
+    with pytest.raises(ImportError, match="pandas.market.calendars"):
+        EquityCalendar("NYSE")
 
 
 # =============================================================================
