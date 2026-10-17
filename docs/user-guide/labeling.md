@@ -487,6 +487,9 @@ definitions and chronological sorting; they do not acquire calendar interpretati
 timestamps. Use this wrapper when selecting the shared calendar/row contract.
 Standalone kernels reject configs declaring calendar/feed/window semantics instead
 of silently ignoring those declarations.
+Standalone kernels retain date-valued label times and calendar-day differences in
+`label_duration` for legacy `Date` inputs. These standalone calls do not validate
+the dates against an exchange schedule.
 
 For `window_unit="session"`, an integer `max_holding_period=N` expires at the final
 bar of the Nth scheduled session after the entry session. A positive integral count
@@ -539,10 +542,6 @@ assert labels["label_bars"].to_list() == [1, 1, 0]
 labels.write_parquet(BytesIO())
 labels.head(0).write_parquet(BytesIO())
 ```
-Their legacy `Date` inputs retain date-valued label times and calendar-day differences
-in `label_duration`; those dates do not become authoritative session identifiers or
-intraday instants. Shared-feed session labels remain explicitly rejected by this wrapper.
-
 ## Sample Weighting
 
 AFML Chapter 4 addresses the problem of overlapping labels creating correlated samples. The library provides the full toolkit:
