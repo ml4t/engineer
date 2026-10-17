@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,21 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
+
+
+def _bash() -> str:
+    if os.name == "nt":
+        git = shutil.which("git")
+        if git is not None:
+            for parent in Path(git).resolve().parents:
+                for relative in ("bin/bash.exe", "usr/bin/bash.exe"):
+                    candidate = parent / relative
+                    if candidate.is_file():
+                        return str(candidate)
+        raise AssertionError("The configured Bash workflow requires Git Bash on Windows, not WSL")
+    bash = shutil.which("bash")
+    assert bash is not None, "The configured Bash workflow requires Bash"
+    return bash
 
 
 def _run_suite(
@@ -24,7 +40,8 @@ def _run_suite(
         if "python -m pytest tests/" in step.get("run", "")
     )
     # Bind the runner's interpreter input, without replacing its shell/exit logic.
-    command = command.replace("--python .artifact-venv", f"--python {shlex.quote(sys.executable)}")
+    python = shlex.quote(Path(sys.executable).as_posix())
+    command = command.replace("--python .artifact-venv", f"--python {python}")
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests/test_case.py").write_text(test)
     (tmp_path / "pytest.ini").write_text(f"[pytest]\naddopts = -s {options}\n")
@@ -59,11 +76,11 @@ def _run_suite(
         )
         (tmp_path / "tests/features/test_rolling_map_first_call.py").write_text(test)
         command = (
-            f"{shlex.quote(sys.executable)} "
-            f"{shlex.quote(str(ROOT / 'scripts/ci/native_stress.py'))} --repetitions 2"
+            f"{python} "
+            f"{shlex.quote((ROOT / 'scripts/ci/native_stress.py').as_posix())} --repetitions 2"
         )
     return subprocess.run(
-        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", command],
+        [_bash(), "--noprofile", "--norc", "-eo", "pipefail", "-c", command],
         cwd=tmp_path,
         env={
             **os.environ,
