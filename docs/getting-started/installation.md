@@ -28,21 +28,16 @@ pip install -e .
 
 ### TA-Lib (for validation)
 
-Some indicators can be validated against TA-Lib. Install TA-Lib if you need this:
+Some indicators can be validated against TA-Lib. The `ta` extra requires TA-Lib 0.8.2
+or later in the 0.8 series, whose wheels include the native library and support Python 3.15:
 
 ```bash
-# macOS
-brew install ta-lib
-pip install TA-Lib
-
-# Ubuntu/Debian
-sudo apt-get install libta-lib-dev
-pip install TA-Lib
-
-# Windows
-# Download from https://www.ta-lib.org/
-pip install TA-Lib
+uv pip install "ml4t-engineer[ta]"
 ```
+
+Use the [upstream installation guide](https://github.com/TA-Lib/ta-lib-python#installation)
+when your platform requires a source build. Comparisons must declare matching moving-average
+types: Engineer's APO/PPO default remains SMA (`matype=0`), while TA-Lib 0.8 defaults to EMA.
 
 ### Statistical diagnostics
 

@@ -277,44 +277,27 @@ class TestLinearRegFamily:
         assert np.all(np.isnan(angle[: period - 1]))
 
     def test_linearreg_family_crypto_accuracy(self, crypto_data_small):
-        """Test accuracy on real crypto data."""
+        """Keep regression outputs accurate when the upstream rolling reference drifts."""
         prices = crypto_data_small["close"].to_numpy()
 
         for period in [5, 10, 14, 20]:
-            # Test slope
-            expected_slope = talib.LINEARREG_SLOPE(prices, timeperiod=period)
-            result_slope = linearreg_slope(prices, timeperiod=period)
-            valid_idx = ~(np.isnan(expected_slope) | np.isnan(result_slope))
-            if np.any(valid_idx):
+            windows = np.lib.stride_tricks.sliding_window_view(prices, period)
+            design = np.column_stack((np.arange(period), np.ones(period)))
+            # Translation leaves slope unchanged and avoids a large price offset in the solve.
+            slope, intercept = np.linalg.lstsq(design, (windows - windows[:, :1]).T, rcond=None)[0]
+            for function, expected in [
+                (linearreg_slope, slope),
+                (linearreg_intercept, intercept + windows[:, 0]),
+                (linearreg_angle, np.degrees(np.arctan(slope))),
+            ]:
+                aligned = np.full(len(prices), np.nan)
+                aligned[period - 1 :] = expected
                 assert_allclose(
-                    result_slope[valid_idx],
-                    expected_slope[valid_idx],
+                    function(prices, timeperiod=period),
+                    aligned,
                     rtol=1e-7,
-                    err_msg=f"LINEARREG_SLOPE mismatch on crypto data for period {period}",
-                )
-
-            # Test intercept
-            expected_intercept = talib.LINEARREG_INTERCEPT(prices, timeperiod=period)
-            result_intercept = linearreg_intercept(prices, timeperiod=period)
-            valid_idx = ~(np.isnan(expected_intercept) | np.isnan(result_intercept))
-            if np.any(valid_idx):
-                assert_allclose(
-                    result_intercept[valid_idx],
-                    expected_intercept[valid_idx],
-                    rtol=1e-7,
-                    err_msg=f"LINEARREG_INTERCEPT mismatch on crypto data for period {period}",
-                )
-
-            # Test angle
-            expected_angle = talib.LINEARREG_ANGLE(prices, timeperiod=period)
-            result_angle = linearreg_angle(prices, timeperiod=period)
-            valid_idx = ~(np.isnan(expected_angle) | np.isnan(result_angle))
-            if np.any(valid_idx):
-                assert_allclose(
-                    result_angle[valid_idx],
-                    expected_angle[valid_idx],
-                    rtol=1e-7,
-                    err_msg=f"LINEARREG_ANGLE mismatch on crypto data for period {period}",
+                    equal_nan=True,
+                    err_msg=f"{function.__name__} differs from least squares for period {period}",
                 )
 
     @pytest.mark.perf

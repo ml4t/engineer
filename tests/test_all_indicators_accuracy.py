@@ -175,13 +175,13 @@ class TestAllIndicatorsAccuracy:
         assert_allclose(result, expected, rtol=1e-10, equal_nan=True)
 
         # APO
-        result = apo(close, 12, 26)
-        expected = talib.APO(close, 12, 26)
+        result = apo(close, 12, 26, matype=0)
+        expected = talib.APO(close, 12, 26, matype=0)
         assert_allclose(result, expected, rtol=1e-10, equal_nan=True)
 
         # PPO
-        result = ppo(close, 12, 26)
-        expected = talib.PPO(close, 12, 26)
+        result = ppo(close, 12, 26, matype=0)
+        expected = talib.PPO(close, 12, 26, matype=0)
         assert_allclose(result, expected, rtol=1e-10, equal_nan=True)
 
         # AROON
