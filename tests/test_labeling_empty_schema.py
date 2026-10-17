@@ -43,3 +43,39 @@ def test_filtering_all_prices_still_produces_a_portable_typed_label_table(
     result.write_parquet(buffer)
     buffer.seek(0)
     assert pl.read_parquet(buffer).schema == result.schema
+
+
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("grouped", [False, True])
+@pytest.mark.parametrize("events", ["dense", "sparse", "none"])
+def test_timestamp_free_legacy_labels_keep_unknown_duration_portable_without_changing_holding_bars(
+    empty, grouped, events
+):
+    prices = pl.DataFrame({"close": [100.0, 101.0, 102.0], "symbol": "A"})
+    if not grouped:
+        prices = prices.drop("symbol")
+    if events != "dense":
+        prices = prices.with_row_index("event_time").with_columns(
+            pl.when(pl.col("event_time") % 2 == 0 if events == "sparse" else pl.col("close") > 1000)
+            .then(pl.col("event_time"))
+            .otherwise(None)
+            .alias("event_time")
+        )
+    if empty:
+        prices = prices.filter(pl.col("close") > 1000)
+    config = LabelingConfig.triple_barrier(
+        upper_barrier=None, lower_barrier=None, max_holding_period=1
+    )
+    result = triple_barrier_labels(prices, config)
+    assert result.select(prices.columns).equals(prices)
+    assert result.schema["label_duration"] == pl.Null
+    assert result["label_duration"].is_null().all()
+    if not empty:
+        expected = {"dense": [1, 1, 0], "sparse": [1, None, 0], "none": [None] * 3}
+        assert result["label_bars"].to_list() == expected[events]
+        if events != "none":
+            assert result["label_return"][0] == pytest.approx(0.01)
+    buffer = BytesIO()
+    result.write_parquet(buffer)
+    buffer.seek(0)
+    assert pl.read_parquet(buffer).equals(result)

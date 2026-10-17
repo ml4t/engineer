@@ -297,6 +297,11 @@ def _build_labeling_result(
 ) -> pl.DataFrame:
     """Build the result DataFrame from labeling outputs."""
     calc_uniq = uniqueness is not None
+    duration_series = (
+        pl.Series(time_durations.tolist())
+        if time_durations.dtype.kind == "O"
+        else pl.Series(time_durations)
+    )
 
     if "event_time" in data.columns:
         label_dict: dict[str, Any] = {
@@ -306,7 +311,7 @@ def _build_labeling_result(
             "label_price": label_prices,
             "label_return": label_returns,
             "label_bars": bar_durations,
-            "label_duration": time_durations,
+            "label_duration": duration_series,
             "barrier_hit": barrier_hit,
         }
         if calc_uniq:
@@ -326,7 +331,7 @@ def _build_labeling_result(
             "label_price": pl.Series(label_prices, dtype=pl.Float64),
             "label_return": pl.Series(label_returns, dtype=pl.Float64),
             "label_bars": pl.Series(bar_durations, dtype=pl.Int64),
-            "label_duration": pl.Series(time_durations),
+            "label_duration": duration_series,
             "barrier_hit": pl.Series(barrier_hit, dtype=pl.String),
         }
         if calc_uniq:
@@ -365,7 +370,7 @@ def _triple_barrier_labels_single_group(
             duration_dtype = (
                 pl.Duration(time_dtype.time_unit if isinstance(time_dtype, pl.Datetime) else "ms")
                 if timestamp_col is not None
-                else pl.Object
+                else pl.Null
             )
             result = data.with_columns(
                 label=pl.lit(None, dtype=pl.Int32),
