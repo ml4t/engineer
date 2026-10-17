@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import polars as pl
@@ -99,3 +99,27 @@ def test_invalid_naive_dst_timestamp_does_not_get_silently_assigned_an_offset(ti
     calendar = EquityCalendar("NYSE")
     with pytest.raises(ValueError, match="ambiguous or nonexistent"):
         calendar.is_session(timestamp)
+
+
+@pytest.mark.parametrize("zone", ["UTC", "Asia/Tokyo"])
+def test_session_annotations_use_authoritative_session_label_not_input_civil_date(zone):
+    calendar = EquityCalendar("CME_Equity")
+    data = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2025, 7, 6, 23, 30, tzinfo=UTC),
+                datetime(2025, 7, 4, 23, 30, tzinfo=UTC),
+            ],
+            "close": [100.0, 101.0],
+        }
+    ).with_columns(pl.col("timestamp").dt.convert_time_zone(zone))
+    result = calendar.add_session_info(data)
+    assert result["is_session"].to_list() == [True, False]
+    assert result["session_date"].to_list() == [date(2025, 7, 7), None]
+    assert result.select(data.columns).equals(data)
+
+
+def test_session_duration_uses_session_label_not_overnight_open_date():
+    calendar = EquityCalendar("CME_Equity")
+    assert calendar.session_duration(datetime(2025, 7, 7)) == timedelta(hours=23)
+    assert calendar.session_duration(datetime(2025, 11, 28)) == timedelta(hours=19)

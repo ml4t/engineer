@@ -1,8 +1,9 @@
 """Authoritative exchange schedules for equity calendar helpers."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import polars as pl
 from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec
 
 from .base import ExchangeCalendar
@@ -110,11 +111,47 @@ class EquityCalendar(ExchangeCalendar):
         ]
 
     def session_duration(self, date: datetime) -> timedelta:
-        """Return tradable duration on the exchange-local date, zero on a closure."""
-        day = self._normalize(date).astimezone(self._calendar.tz).date()
-        duration = timedelta(0)
-        for opened, closed, _, _ in self._adapter._trading_intervals_around(day):
-            # The schedule adapter includes surrounding dates for overnight lookup.
-            if opened.astimezone(self._calendar.tz).date() == day:
-                duration += closed - opened
-        return duration
+        """Return tradable duration for the supplied session-label date, zero on a closure."""
+        day = date.date()
+        sessions = [
+            (session["market_open"], session["market_close"])
+            for label, session in self._adapter._schedule_around(day).iterrows()
+            if label.date() == day
+        ]
+        return sum(
+            (
+                closed - opened
+                for opened, closed, _, _ in self._adapter._trading_intervals_around(day)
+                if any(start <= opened <= closed <= end for start, end in sessions)
+            ),
+            timedelta(0),
+        )
+
+    def _session_label(self, dt: datetime) -> date | None:
+        instant = self._normalize(dt)
+        if not self._adapter.is_trading_time(instant):
+            return None
+        for label, session in self._adapter._schedule_around(instant.date()).iterrows():
+            if session["market_open"] <= instant <= session["market_close"]:
+                return label.date()
+        return None
+
+    def add_session_info(self, df: pl.DataFrame, timestamp_col: str = "timestamp") -> pl.DataFrame:
+        """Add schedule membership, authoritative session label and exchange-local clock time."""
+        timestamps = pl.col(timestamp_col)
+        dtype = df.schema[timestamp_col]
+        if not isinstance(dtype, pl.Datetime):
+            raise TypeError("session annotations require datetime instants, not session labels")
+        if dtype.time_zone is None:
+            timestamps = timestamps.dt.replace_time_zone(
+                self.timezone, ambiguous="raise", non_existent="raise"
+            )
+        return df.with_columns(
+            pl.col(timestamp_col)
+            .map_elements(self.is_session, return_dtype=pl.Boolean)
+            .alias("is_session"),
+            pl.col(timestamp_col)
+            .map_elements(self._session_label, return_dtype=pl.Date)
+            .alias("session_date"),
+            timestamps.dt.convert_time_zone(str(self._calendar.tz)).dt.time().alias("session_time"),
+        )

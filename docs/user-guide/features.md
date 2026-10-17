@@ -174,8 +174,11 @@ the selected exchange timezone unless `timezone` explicitly overrides it. Ambigu
 nonexistent naive local times are rejected; pass an aware instant to disambiguate them.
 
 Membership excludes scheduled breaks. `sessions_between` returns session opens inside the
-inclusive instant interval. `session_duration` returns tradable time on the exchange-local
-date, excluding breaks, with zero duration on holidays. Boundary lookups return UTC-aware
+inclusive instant interval. `session_duration` takes a session-label date, not an event
+instant, and returns tradable time excluding breaks, with zero duration on holidays.
+`add_session_info` uses the authoritative session label, including overnight sessions,
+and leaves that label null off-session. Its clock time uses the exchange timezone;
+the input timestamps remain unchanged. Boundary lookups return UTC-aware
 instants and fail explicitly if no scheduled boundary exists within 366 days.
 
 The next minor version removes the approximate weekday fallback when the calendar provider
