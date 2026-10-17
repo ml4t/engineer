@@ -38,7 +38,7 @@ is under `docs/user-guide/`, and the generated API reference is under
 
 ## Engineering constraints
 
-- Python 3.12, 3.13, and 3.14 are supported.
+- Python 3.12, 3.13, 3.14, and 3.15 are supported.
 - Feature computation must preserve the documented DataFrame or LazyFrame
   return behavior.
 - Changes to registered features must keep implementation, registry metadata,
