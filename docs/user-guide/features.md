@@ -136,6 +136,17 @@ assert features["sma"].to_list() == [None, 101.5, 104.5, 107.5]
 assert features["timestamp"].equals(daily_prices["timestamp"])
 ```
 
+`CryptoCalendar` also changes in the next minor version. Install the `calendars` extra
+to use its authoritative `24/7` schedule. It enumerates UTC daily session opens, not
+hourly observations. `next_open` and `previous_close` return strictly adjacent daily
+session boundaries; a maintenance break or reopen is not a new session boundary.
+The optional `(start_hour, end_hour)` maintenance window uses UTC, is half-open and
+may cross midnight, such as `(23, 1)`. Session duration excludes that downtime.
+Annotations use UTC session dates and times regardless of an instant's display timezone;
+naive instants mean UTC. Existing `CRYPTO_24_7` names and maintenance arguments remain
+accepted. A concrete calendar object cannot represent row mode: use `calendar=None`
+on the consuming feature API instead.
+
 Validate prices before deriving returns. An empty feature list performs the same grid
 validation and chronological sorting without adding feature columns:
 
