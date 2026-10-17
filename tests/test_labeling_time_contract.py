@@ -9,6 +9,7 @@ from polars.testing import assert_frame_equal
 from ml4t.engineer.config import LabelingConfig
 from ml4t.engineer.core.exceptions import DataValidationError
 from ml4t.engineer.labeling import calendar_aware_labels, triple_barrier_labels
+from ml4t.engineer.labeling.calendar import PandasMarketCalendar
 
 
 def _config(**kwargs):
@@ -235,3 +236,13 @@ def test_config_equality_does_not_collapse_disabled_and_undeclared_calendars():
     assert disabled == deepcopy(disabled)
     assert disabled.to_dict()["calendar"] is None
     assert "calendar" not in inherited.to_dict()
+
+
+def test_schedule_adapter_canonical_calendar_preserves_legacy_selector_and_rejects_conflicts():
+    assert PandasMarketCalendar(calendar="LSE").calendar_name == "LSE"
+    assert PandasMarketCalendar(calendar_name="LSE", calendar="LSE").calendar == "LSE"
+    assert PandasMarketCalendar().calendar == "NYSE"
+    with pytest.raises(ValueError, match="conflict"):
+        PandasMarketCalendar(calendar_name="NYSE", calendar="LSE")
+    with pytest.raises(ValueError, match="named calendar"):
+        PandasMarketCalendar(calendar=None)

@@ -114,14 +114,32 @@ class PandasMarketCalendar:
     Supports 200+ calendars including CME, NYSE, LSE, etc.
     """
 
-    def __init__(self, calendar_name: str):
+    def __init__(
+        self,
+        calendar_name: str | CalendarUnset = UNSET_CALENDAR,
+        *,
+        calendar: str | None | CalendarUnset = UNSET_CALENDAR,
+    ):
         """
         Parameters
         ----------
-        calendar_name : str
-            Calendar name (e.g., "CME_Equity", "NYSE", "LSE")
-            See pandas_market_calendars.get_calendar_names()
+        calendar_name : str, optional
+            Legacy positional/keyword selector. Conflicting selectors fail.
+        calendar : str or None, optional
+            Canonical named selector, default NYSE. None is rejected because a
+            provider adapter cannot represent calendar-free observation order.
         """
+        if (
+            calendar_name is not UNSET_CALENDAR
+            and calendar is not UNSET_CALENDAR
+            and calendar_name != calendar
+        ):
+            raise ValueError("calendar and calendar_name selectors conflict")
+        selected = FeedSpec(time_contract_version=2).resolve_calendar(
+            calendar=calendar_name if calendar is UNSET_CALENDAR else calendar
+        )
+        if selected is None:
+            raise ValueError("PandasMarketCalendar requires a named calendar, not calendar=None")
         try:
             import pandas_market_calendars as mcal
         except ImportError as err:
@@ -130,8 +148,9 @@ class PandasMarketCalendar:
                 "Install with: pip install pandas-market-calendars"
             ) from err
 
-        self.calendar_name = calendar_name
-        self._calendar = mcal.get_calendar(calendar_name)
+        self.calendar = selected
+        self.calendar_name = selected
+        self._calendar = mcal.get_calendar(selected)
         self._supports_interruptions = (
             "interruptions" in signature(self._calendar.schedule).parameters
         )
