@@ -327,7 +327,7 @@ def _build_labeling_result(
             "label_return": pl.Series(label_returns, dtype=pl.Float64),
             "label_bars": pl.Series(bar_durations, dtype=pl.Int64),
             "label_duration": pl.Series(time_durations),
-            "barrier_hit": pl.Series(barrier_hit),
+            "barrier_hit": pl.Series(barrier_hit, dtype=pl.String),
         }
         if calc_uniq:
             columns_to_add["label_uniqueness"] = pl.Series(uniqueness, dtype=pl.Float64)
@@ -350,6 +350,8 @@ def _triple_barrier_labels_single_group(
     uniqueness_weight_scheme: Literal[
         "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
     ],
+    *,
+    max_holding_bars: npt.NDArray[np.int64] | None = None,
 ) -> pl.DataFrame:
     """Apply triple barrier labeling to a single asset/group."""
     if timestamp_col is not None:
@@ -394,6 +396,8 @@ def _triple_barrier_labels_single_group(
     upper_barriers, lower_barriers, max_periods, sides, trailing_stops = _prepare_barrier_arrays(
         data, config, event_indices, timestamp_col=timestamp_col
     )
+    if max_holding_bars is not None:
+        max_periods = max_holding_bars[event_indices]
     labels, label_indices, label_prices, label_returns, bar_durations = _apply_triple_barrier_nb(
         closes,
         opens,
@@ -534,7 +538,7 @@ def triple_barrier_labels(
     if group_cols:
         sort_cols = group_cols + ([resolved_ts_col] if resolved_ts_col else [])
         sorted_data = data.sort(sort_cols)
-        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True)
+        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True) or [sorted_data]
 
         grouped_results = [
             _triple_barrier_labels_single_group(
