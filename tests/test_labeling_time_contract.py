@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import polars as pl
 import pytest
@@ -246,3 +246,56 @@ def test_schedule_adapter_canonical_calendar_preserves_legacy_selector_and_rejec
         PandasMarketCalendar(calendar_name="NYSE", calendar="LSE")
     with pytest.raises(ValueError, match="named calendar"):
         PandasMarketCalendar(calendar=None)
+
+
+@pytest.mark.parametrize("precision", ["us", "ns"])
+@pytest.mark.parametrize("workflow", ["calendar", "row", "standalone"])
+def test_asset_without_selected_events_keeps_compatible_null_label_schema(precision, workflow):
+    data = pl.DataFrame(
+        {
+            "symbol": ["A", "B", "A", "B"],
+            "timestamp": [datetime(2025, 7, 7, hour, tzinfo=UTC) for hour in (14, 14, 15, 15)],
+            "close": [100.0, 200.0, 101.0, 201.0],
+        }
+    ).with_columns(pl.col("timestamp").cast(pl.Datetime(precision, "UTC")))
+    selected = data.with_columns(
+        pl.when(pl.col("symbol") == "A")
+        .then(pl.col("timestamp"))
+        .otherwise(None)
+        .alias("event_time")
+    )
+    if workflow == "standalone":
+        result = triple_barrier_labels(selected, _config(), calculate_uniqueness=True)
+        assert result.filter(pl.col("symbol") == "B")["sample_weight"].is_null().all()
+    else:
+        result = calendar_aware_labels(
+            selected, _config(), calendar=None if workflow == "row" else "NYSE"
+        )
+    assert result.height == data.height
+    inactive = result.filter(pl.col("symbol") == "B")
+    assert inactive["label_time"].is_null().all()
+    assert inactive["label_duration"].is_null().all()
+    assert result.filter(pl.col("symbol") == "A")["label_return"].to_list() == pytest.approx(
+        [0.01, 0.0]
+    )
+    assert result["label_time"].dtype == (
+        pl.Int64 if workflow == "row" else data["timestamp"].dtype
+    )
+
+
+def test_legacy_date_labels_report_calendar_day_difference_without_numpy_resolution_error():
+    data = pl.DataFrame(
+        {
+            "timestamp": [date(2025, 7, day) for day in (3, 7, 8)],
+            "close": [100.0, 101.0, 99.0],
+        }
+    )
+    result = triple_barrier_labels(data, _config())
+    assert result["label_time"].dtype == pl.Date
+    assert result["label_time"].to_list() == [date(2025, 7, 7), date(2025, 7, 8), date(2025, 7, 8)]
+    assert result["label_duration"].to_list() == [
+        timedelta(days=4),
+        timedelta(days=1),
+        timedelta(0),
+    ]
+    assert result["label_bars"].to_list() == [1, 1, 0]

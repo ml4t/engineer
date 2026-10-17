@@ -486,6 +486,9 @@ definitions and chronological sorting; they do not acquire calendar interpretati
 timestamps. Use this wrapper when selecting the shared calendar/row contract.
 Standalone kernels reject configs declaring calendar/feed/window semantics instead
 of silently ignoring those declarations.
+Their legacy `Date` inputs retain date-valued label times and calendar-day differences
+in `label_duration`; those dates do not become authoritative session identifiers or
+intraday instants. Shared-feed session labels remain explicitly rejected by this wrapper.
 
 ## Sample Weighting
 
