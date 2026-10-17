@@ -69,3 +69,20 @@ Uniqueness score per label.
 
 Legacy module notes:
 - `core.py`, `barriers.py`, and `barrier_utils.py` are removed compatibility paths that raise import-time migration errors.
+
+## Temporal contract boundary
+
+`calendar_aware_labels` consumes shared Specs declarations. Use canonical `calendar`:
+explicit argument, declared config selector, feed metadata, then NYSE. Explicit None is
+observation-row mode without timestamp sorting or provider loading. Never turn that
+opt-out into a continuous schedule. Config serialization must preserve declaration presence.
+
+Named schedules segment actual sessions/breaks. Observation counts are not expected-bar
+counts; expected-bar mode validates the declared grid before labeling. Session-count
+windows are unsupported, and elapsed durations remain distinct from count horizons.
+Right-labeled bars can end at a break start; event timestamps at that instant are off-session.
+
+Standalone numerical labeling functions retain their legacy chronological row/duration
+definitions. Do not infer calendar adoption from a timestamp parameter or change numerical
+definitions without explicit migration evidence. Legacy auto-gap mode is not an authoritative
+calendar or completeness check. Keep this boundary explicit in task guidance and user docs.

@@ -454,11 +454,25 @@ def resolve_labeling_columns(
     config: LabelingConfig | None = None,
     contract: DataContractConfig | None = None,
     require_timestamp: bool = False,
+    allow_temporal_contract: bool = False,
 ) -> tuple[str, str | None, list[str]]:
     """Resolve columns using explicit args > labeling config > shared contract > defaults."""
     config_fields_set = (
         set(getattr(config, "model_fields_set", set())) if config is not None else set()
     )
+    if (
+        config is not None
+        and not allow_temporal_contract
+        and (
+            "calendar" in config_fields_set
+            or config.feed_spec is not None
+            or config.window_unit is not None
+        )
+    ):
+        raise DataValidationError(
+            "Declared calendar/feed/window semantics require calendar_aware_labels; "
+            "this standalone kernel does not interpret the temporal contract"
+        )
     timestamp_is_explicit = timestamp_col is not None
 
     if contract is None and config is not None:

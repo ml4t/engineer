@@ -8,15 +8,21 @@ This prevents data leakage when labels would otherwise span non-trading periods.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from inspect import signature
 from typing import TYPE_CHECKING, Any, Protocol
 
 import polars as pl
+from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec, TimestampSemantics, WindowUnit
 
 from ml4t.engineer.core.exceptions import DataValidationError
-from ml4t.engineer.labeling.triple_barrier import triple_barrier_labels
-from ml4t.engineer.labeling.utils import resolve_labeling_columns
+from ml4t.engineer.labeling.triple_barrier import _triple_barrier_labels_single_group
+from ml4t.engineer.labeling.utils import (
+    is_duration_string,
+    resolve_labeling_columns,
+    validate_price_no_nans,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - imports used only by static analysis
     from ml4t.engineer.config import DataContractConfig, LabelingConfig
@@ -108,14 +114,32 @@ class PandasMarketCalendar:
     Supports 200+ calendars including CME, NYSE, LSE, etc.
     """
 
-    def __init__(self, calendar_name: str):
+    def __init__(
+        self,
+        calendar_name: str | CalendarUnset = UNSET_CALENDAR,
+        *,
+        calendar: str | None | CalendarUnset = UNSET_CALENDAR,
+    ):
         """
         Parameters
         ----------
-        calendar_name : str
-            Calendar name (e.g., "CME_Equity", "NYSE", "LSE")
-            See pandas_market_calendars.get_calendar_names()
+        calendar_name : str, optional
+            Legacy positional/keyword selector. Conflicting selectors fail.
+        calendar : str or None, optional
+            Canonical named selector, default NYSE. None is rejected because a
+            provider adapter cannot represent calendar-free observation order.
         """
+        if (
+            calendar_name is not UNSET_CALENDAR
+            and calendar is not UNSET_CALENDAR
+            and calendar_name != calendar
+        ):
+            raise ValueError("calendar and calendar_name selectors conflict")
+        selected = FeedSpec(time_contract_version=2).resolve_calendar(
+            calendar=calendar_name if calendar is UNSET_CALENDAR else calendar
+        )
+        if selected is None:
+            raise ValueError("PandasMarketCalendar requires a named calendar, not calendar=None")
         try:
             import pandas_market_calendars as mcal
         except ImportError as err:
@@ -124,8 +148,9 @@ class PandasMarketCalendar:
                 "Install with: pip install pandas-market-calendars"
             ) from err
 
-        self.calendar_name = calendar_name
-        self._calendar = mcal.get_calendar(calendar_name)
+        self.calendar = selected
+        self.calendar_name = selected
+        self._calendar = mcal.get_calendar(selected)
         self._supports_interruptions = (
             "interruptions" in signature(self._calendar.schedule).parameters
         )
@@ -219,13 +244,20 @@ class PandasMarketCalendar:
         """Check timestamp membership with explicit close-boundary semantics."""
         return start <= timestamp <= end if end_inclusive else start <= timestamp < end
 
-    def _trading_boundary(self, timestamp: datetime) -> tuple[bool, datetime | None]:
+    def _trading_boundary(
+        self, timestamp: datetime, *, bar_close: bool = False
+    ) -> tuple[bool, datetime | None]:
         """Return whether a timestamp is trading and its next session boundary."""
         normalized = self._normalize_timestamp(timestamp)
         for start, end, boundary, end_inclusive in self._trading_intervals_around(
             normalized.date()
         ):
-            if self._contains_timestamp(normalized, start, end, end_inclusive):
+            contains = (
+                start < normalized <= end
+                if bar_close
+                else self._contains_timestamp(normalized, start, end, end_inclusive)
+            )
+            if contains:
                 return True, boundary
         return False, None
 
@@ -269,26 +301,39 @@ def _calendar_session_ids(
     calendar: TradingCalendar,
     timestamp_col: str,
     group_cols: list[str],
+    timezone: str | None = None,
+    bar_close: bool = False,
 ) -> tuple[pl.DataFrame, list[int]]:
     """Sort rows and derive sessions from an explicit calendar."""
     _validate_explicit_calendar(calendar)
     sort_cols = [*group_cols, timestamp_col]
     sorted_data = data.sort(sort_cols)
     selected_cols = [*group_cols, timestamp_col]
+    projection = sorted_data.select(selected_cols)
+    dtype = projection.schema[timestamp_col]
+    if isinstance(dtype, pl.Datetime):
+        if projection.select((pl.col(timestamp_col).dt.nanosecond() % 1000 != 0).any()).item():
+            raise ValueError("calendar timestamp has finer than supported microsecond precision")
+        if dtype.time_zone is None and timezone is not None:
+            projection = projection.with_columns(
+                pl.col(timestamp_col)
+                .dt.replace_time_zone(timezone, ambiguous="raise", non_existent="raise")
+                .dt.convert_time_zone("UTC")
+            )
 
     session_ids: list[int] = []
     previous_group: tuple[Any, ...] | None = None
     previous_break: datetime | None = None
     session_id = -1
 
-    for row in sorted_data.select(selected_cols).iter_rows(named=False):
+    for row in projection.iter_rows(named=False):
         group = tuple(row[: len(group_cols)])
         timestamp = row[-1]
         if not isinstance(timestamp, datetime):
             raise TypeError(f"timestamp column {timestamp_col!r} must contain datetime values")
 
         if isinstance(calendar, PandasMarketCalendar):
-            is_trading, session_break = calendar._trading_boundary(timestamp)
+            is_trading, session_break = calendar._trading_boundary(timestamp, bar_close=bar_close)
         else:
             is_trading = calendar.is_trading_time(timestamp)
             session_break = calendar.next_session_break(timestamp) if is_trading else None
@@ -326,14 +371,41 @@ def _calendar_session_ids(
     return sorted_data, session_ids
 
 
+def _segment_labels(
+    data: pl.DataFrame,
+    config: LabelingConfig,
+    price_col: str,
+    group_cols: list[str],
+    timestamp_col: str | None = None,
+) -> pl.DataFrame:
+    validate_price_no_nans(data, price_col)
+    row_col = _temporary_column_name(data.columns, "__ml4t_observation_row")
+    indexed = data.with_row_index(row_col)
+    frames = indexed.partition_by(group_cols, maintain_order=True) if group_cols else [indexed]
+    frames = frames or [indexed]
+    results = [
+        _triple_barrier_labels_single_group(
+            frame, config, price_col, None, None, None, timestamp_col, False, "returns_uniqueness"
+        )
+        for frame in frames
+    ]
+    result = pl.concat(results, how="vertical").sort(row_col).drop(row_col)
+    if timestamp_col is None:
+        result = result.with_columns(pl.lit(None).alias("label_duration"))
+    return result
+
+
 def calendar_aware_labels(
     data: pl.DataFrame,
     config: LabelingConfig,
-    calendar: str | TradingCalendar,
+    calendar: str | TradingCalendar | None | CalendarUnset = UNSET_CALENDAR,
     price_col: str | None = None,
     timestamp_col: str | None = None,
     group_col: str | list[str] | None = None,
     contract: DataContractConfig | None = None,
+    *,
+    feed_spec: FeedSpec | Mapping[str, Any] | None = None,
+    window_unit: WindowUnit | str | None = None,
 ) -> pl.DataFrame:
     """Apply triple-barrier labeling with session awareness.
 
@@ -346,11 +418,10 @@ def calendar_aware_labels(
         Input data with OHLCV and timestamp
     config : LabelingConfig
         Barrier configuration
-    calendar : str or TradingCalendar
-        Either:
-        - Calendar name string (uses pandas_market_calendars)
-        - TradingCalendar protocol implementation
-        - "auto" to detect gaps automatically
+    calendar : str, TradingCalendar or None, optional
+        Explicit selector overrides config, then FeedSpec metadata, then NYSE.
+        None selects observation-row labeling without a schedule. Protocol objects
+        and explicit legacy "auto" gap mode remain available without FeedSpec.
     price_col : str | None, default None
         Price column name
     timestamp_col : str | None, default None
@@ -359,6 +430,14 @@ def calendar_aware_labels(
         Grouping column(s) for panel-aware session labeling.
     contract : DataContractConfig | None, default None
         Optional shared dataframe contract. Used after config and before defaults.
+    feed_spec : FeedSpec or Mapping, optional
+        Shared column/time declarations, otherwise config.feed_spec. Named-calendar
+        feeds require timestamp semantics and a timezone for naive timestamps.
+    window_unit : WindowUnit or str, optional
+        Count windows default to expected_bar for shared feeds and omitted selectors;
+        a complete declared grid is required. Explicit observation counts and elapsed
+        duration horizons remain distinct. Legacy explicit selectors without FeedSpec
+        retain observation counts. Session-count windows are not implemented.
 
     Returns
     -------
@@ -402,8 +481,11 @@ def calendar_aware_labels(
     - Labels that would span session breaks are truncated at the break
     - This may result in more timeout labels near session closes
     - Rows outside an explicit calendar's trading times are rejected
-    - Naive datetimes passed to PandasMarketCalendar are interpreted as UTC
-    - For 24/7 markets, use standard triple_barrier_labels instead
+    - Without FeedSpec, legacy naive calendar timestamps are interpreted as UTC
+    - FeedSpec naive timestamps use its declared timezone; ambiguous times fail
+    - Explicit None preserves per-asset observation order and global row order;
+      label_time contains per-asset row offsets and label_duration is unset
+    - A named 24/7 schedule still segments daily sessions; it is not row mode
     """
     from ml4t.engineer.config import LabelingConfig as _LabelingConfig
 
@@ -414,6 +496,52 @@ def calendar_aware_labels(
             "use LabelingConfig.triple_barrier(...)."
         )
 
+    declared_feed = feed_spec if feed_spec is not None else config.feed_spec
+    legacy_selector = declared_feed is None and calendar is not UNSET_CALENDAR
+    feed = (
+        FeedSpec.from_any(declared_feed)
+        if declared_feed is not None
+        else FeedSpec(time_contract_version=2)
+    )
+    if calendar is UNSET_CALENDAR and "calendar" in config.model_fields_set:
+        calendar = config.calendar
+    custom_calendar = (
+        calendar is not UNSET_CALENDAR and calendar is not None and not isinstance(calendar, str)
+    )
+    selected = calendar if custom_calendar else feed.resolve_calendar(calendar=calendar)
+    duration_horizon = isinstance(config.max_holding_period, timedelta) or (
+        isinstance(config.max_holding_period, str) and is_duration_string(config.max_holding_period)
+    )
+    declared_unit = window_unit if window_unit is not None else config.window_unit
+    unit = (
+        WindowUnit(declared_unit)
+        if declared_unit is not None
+        else (
+            WindowUnit.ELAPSED
+            if duration_horizon
+            else WindowUnit.OBSERVATION
+            if selected is None or legacy_selector
+            else WindowUnit.EXPECTED_BAR
+        )
+    )
+    if selected is None and (unit != WindowUnit.OBSERVATION or duration_horizon):
+        raise ValueError(
+            "calendar=None requires observation-count holding periods and window_unit='observation'"
+        )
+    if unit == WindowUnit.SESSION:
+        raise ValueError("session-count labeling windows are not supported")
+    if (unit == WindowUnit.ELAPSED) != duration_horizon:
+        raise ValueError(
+            "elapsed windows require duration holding periods; count windows require observation/expected_bar"
+        )
+    if declared_feed is not None and contract is None and config.data_contract is None:
+        from ml4t.engineer.config import DataContractConfig as _DataContractConfig
+
+        contract = _DataContractConfig(
+            timestamp_col=feed.timestamp_col,
+            price_col=feed.price_col,
+            symbol_col=feed.entity_col,
+        )
     resolved_price_col, resolved_ts_col, resolved_group_cols = resolve_labeling_columns(
         data=data,
         price_col=price_col,
@@ -421,20 +549,53 @@ def calendar_aware_labels(
         group_col=group_col,
         config=config,
         contract=contract,
-        require_timestamp=True,
+        require_timestamp=selected is not None,
+        allow_temporal_contract=True,
     )
     if config.method != "triple_barrier":
         raise ValueError("calendar_aware_labels requires LabelingConfig.method='triple_barrier'.")
 
+    if selected is None:
+        return _segment_labels(data, config, resolved_price_col, resolved_group_cols)
+    if feed.timestamp_semantics == TimestampSemantics.SESSION_LABEL:
+        raise ValueError("session_label timestamps are not intraday labeling instants")
+    if declared_feed is not None and feed.timestamp_semantics is None:
+        raise ValueError("Calendar-aware FeedSpec requires declared timestamp_semantics")
+    if declared_feed is not None and selected == "auto":
+        raise ValueError(
+            "auto gap inference is a legacy mode, not an authoritative FeedSpec calendar"
+        )
+    assert resolved_ts_col is not None
+    dtype = data.schema[resolved_ts_col]
+    if (
+        declared_feed is not None
+        and isinstance(dtype, pl.Datetime)
+        and dtype.time_zone is None
+        and feed.timezone is None
+    ):
+        raise ValueError("Calendar-aware FeedSpec requires timezone metadata for naive timestamps")
+    if unit == WindowUnit.EXPECTED_BAR:
+        if not isinstance(selected, str) or selected == "auto":
+            raise ValueError("expected_bar windows require an authoritative named calendar")
+        from ml4t.engineer.core.bar_grid import validate_declared_grid
+
+        validate_declared_grid(
+            data,
+            feed_spec=feed,
+            calendar=selected,
+            timestamp_col=resolved_ts_col,
+            group_cols=resolved_group_cols,
+        )
+
     # Create calendar instance if string provided
-    if isinstance(calendar, str):
-        if calendar == "auto":
+    if isinstance(selected, str):
+        if selected == "auto":
             cal = SimpleTradingCalendar()
         else:
             # Always use pandas_market_calendars for string calendars
-            cal = PandasMarketCalendar(calendar)
+            cal = PandasMarketCalendar(selected)
     else:
-        cal = calendar
+        cal = selected
 
     session_col = _temporary_column_name(data.columns, "__ml4t_session_id")
     assert resolved_ts_col is not None
@@ -471,6 +632,9 @@ def calendar_aware_labels(
             cal,
             resolved_ts_col,
             resolved_group_cols,
+            timezone=feed.timezone,
+            bar_close=feed.timestamp_semantics == TimestampSemantics.BAR_CLOSE
+            or feed.bar_label == "right",
         )
         data_with_session = sorted_data.with_columns(
             pl.Series(session_col, session_ids, dtype=pl.Int64)
@@ -479,12 +643,12 @@ def calendar_aware_labels(
     session_group_cols = (
         [*resolved_group_cols, session_col] if resolved_group_cols else [session_col]
     )
-    labeled = triple_barrier_labels(
-        data=data_with_session,
-        config=config,
-        price_col=resolved_price_col,
-        timestamp_col=resolved_ts_col,
-        group_col=session_group_cols,
+    labeled = _segment_labels(
+        data_with_session,
+        config,
+        resolved_price_col,
+        session_group_cols,
+        resolved_ts_col,
     )
     return labeled.drop(session_col)
 
