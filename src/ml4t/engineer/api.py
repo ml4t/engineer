@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 import polars as pl
-from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec, WindowUnit
+from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec, TimestampSemantics, WindowUnit
 
 try:
     import yaml
@@ -112,18 +112,21 @@ def compute_features(
         Calendar-aware input is sorted by group and timestamp. Row mode retains
         input order within every group.
     assume_sorted : bool, default False
-        Permit row-order execution when no timestamp column exists. This is an
-        explicit assertion by the caller that rows are already in the required
-        temporal order.
+        Retained legacy ordering argument. Explicit calendar=None already selects
+        input observation order and needs no timestamp or additional sort assertion.
+        Calendar-aware execution always requires a declared datetime grid.
     calendar : str | None, optional
         Explicit selection overrides declared feed metadata, then defaults to NYSE.
         Explicit None selects observation rows in input order, without schedule checks.
     feed_spec : FeedSpec | Mapping | None
         Shared input schema and temporal declarations. Calendar-aware execution requires
-        version 2, fixed intraday frequency, timestamp semantics and an explicit bar grid.
+        version 2, declared frequency and timestamp semantics. Intraday feeds also
+        require an explicit bar grid; daily feeds identify session labels.
     window_unit : WindowUnit | str | None
-        Defaults to observation in row mode or expected_bar with a calendar. Session
-        and elapsed windows are not implemented by these row-based numerical kernels.
+        Defaults to observation in row mode or expected_bar with a calendar. For sma,
+        stddev and realized_volatility, session periods count scheduled sessions and
+        elapsed periods are positive duration strings/timedeltas over original bars.
+        Recursive and multi-window features reject these temporal units explicitly.
 
     Returns
     -------
@@ -182,7 +185,7 @@ def compute_features(
     - Calendar-aware calls require a declared complete grid before any feature runs.
       Empty feature lists can validate and sort prices before returns are derived.
     - Explicit ``calendar=None`` preserves input row order without schedule checks.
-      Without a timestamp, callers must still set ``assume_sorted=True`` explicitly.
+      Row mode does not require a timestamp or an additional sort assertion.
     """
     from ml4t.engineer.core.bar_grid import validate_feature_grid
     from ml4t.engineer.core.schemas import validate_ohlcv_schema
@@ -212,13 +215,26 @@ def compute_features(
     )
     if resolved_calendar is None and unit != WindowUnit.OBSERVATION:
         raise ValueError("calendar=None requires window_unit='observation'")
-    if resolved_calendar is not None and unit != WindowUnit.EXPECTED_BAR:
-        raise ValueError("Calendar-aware features support only window_unit='expected_bar'")
+    if resolved_calendar is not None and unit == WindowUnit.OBSERVATION:
+        raise ValueError("Calendar-aware features require expected_bar, session or elapsed windows")
+    temporal = unit in {WindowUnit.SESSION, WindowUnit.ELAPSED}
+    if (
+        unit == WindowUnit.ELAPSED
+        and contract.timestamp_semantics == TimestampSemantics.SESSION_LABEL
+    ):
+        raise ValueError("session_label identifiers cannot define elapsed feature windows")
+    if temporal:
+        from ml4t.engineer.core.temporal_windows import temporal_period
+
+        for spec in feature_specs:
+            temporal_period(spec["name"], spec["params"], unit)
     if not feature_specs and resolved_calendar is None:
         return data
 
     if feed_spec is not None:
-        if timestamp_col is None:
+        if timestamp_col is None and (
+            resolved_calendar is not None or contract.timestamp_col in schema
+        ):
             timestamp_col = contract.timestamp_col
         if group_col is None and contract.entity_col is not None:
             group_col = (
@@ -231,7 +247,7 @@ def compute_features(
         data=data,
         group_col=group_col,
         timestamp_col=timestamp_col,
-        assume_sorted=assume_sorted,
+        assume_sorted=assume_sorted or resolved_calendar is None,
     )
 
     # Resolve dependencies and get execution order
@@ -253,13 +269,29 @@ def compute_features(
     # Execute features in order
     result = data.sort(sort_cols) if resolved_calendar is not None and sort_cols else data
     for spec in execution_order:
-        result = _execute_feature(
-            result,
-            feature_name=spec["name"],
-            params=spec["params"],
-            output_name=spec["output"],
-            group_cols=group_cols,
-        )
+        if temporal:
+            from ml4t.engineer.core.temporal_windows import execute_temporal_feature
+
+            assert resolved_timestamp_col is not None and resolved_calendar is not None
+            result = execute_temporal_feature(
+                result,
+                feature_name=spec["name"],
+                params=spec["params"],
+                output_name=spec["output"],
+                group_cols=group_cols,
+                timestamp_col=resolved_timestamp_col,
+                feed=contract,
+                calendar=resolved_calendar,
+                period=temporal_period(spec["name"], spec["params"], unit),
+            )
+        else:
+            result = _execute_feature(
+                result,
+                feature_name=spec["name"],
+                params=spec["params"],
+                output_name=spec["output"],
+                group_cols=group_cols,
+            )
 
     return result
 

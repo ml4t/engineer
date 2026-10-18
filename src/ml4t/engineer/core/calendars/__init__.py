@@ -1,11 +1,10 @@
 """
-Exchange calendars for time-aware feature engineering.
+Exchange schedule helpers for membership, boundaries and dataframe annotations.
 
-This module provides calendar-aware functionality for:
-- Rolling windows over trading sessions (not calendar days)
-- Holiday-aware feature calculations
-- Market-hours filtering
-- Cross-validation split timing
+These helpers do not implement feature windows or cross-validation. CryptoCalendar
+enumerates UTC daily sessions; recurring maintenance does not create extra sessions.
+Shared calendar/grid consumers use labeling.calendar.PandasMarketCalendar and
+FeedSpec declarations.
 """
 
 from .base import ExchangeCalendar

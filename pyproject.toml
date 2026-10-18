@@ -8,10 +8,6 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
-[tool.hatch.metadata]
-# Qualification pin until the shared time-contract v2 API is published on PyPI.
-allow-direct-references = true
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/ml4t"]
 namespaces = true
@@ -77,7 +73,7 @@ requires-python = ">=3.12"
 
 # Core dependencies
 dependencies = [
-    "ml4t-specs @ git+https://github.com/ml4t/specs.git@701bde68744035050ede386efce498234c661c21",
+    "ml4t-specs>=0.2.0,<0.3.0",
 
     # Data processing (Polars-first)
     "polars>=0.20.0",

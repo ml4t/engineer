@@ -8,6 +8,12 @@ and then move directly into the first workflow.
 - Python 3.12, 3.13, 3.14, or 3.15
 - Polars 0.20+
 
+These requirements describe development source for the 0.2 release. Published 0.1.6
+supports Python 3.12-3.14 and does not accept the new `calendar` argument. Use its
+[version-matched quick start](https://github.com/ml4t/engineer/tree/v0.1.6#quick-start)
+for that release. Until 0.2 is available from PyPI, use the source installation below
+for Python 3.15 and the calendar-aware examples in this guide.
+
 ## Install from PyPI
 
 ```bash
@@ -20,9 +26,11 @@ If you standardize on `uv`, `uv pip install ml4t-engineer` is equivalent.
 
 ```bash
 git clone https://github.com/ml4t/engineer.git
-cd ml4t-engineer
-pip install -e .
+cd engineer
+uv sync --no-dev
 ```
+
+Run the examples with the created environment, for example `uv run --no-sync python`.
 
 ## Optional Dependencies
 

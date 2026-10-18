@@ -144,6 +144,29 @@ def test_row_mode_does_not_reorder_values_when_timestamp_order_changes(lazy):
     assert outputs[0].equals(outputs[1])
 
 
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("metadata_disable", [False, True])
+def test_row_mode_does_not_require_timestamps_or_a_temporal_sort_assertion(
+    monkeypatch, lazy, metadata_disable
+):
+    import sys
+
+    monkeypatch.setitem(sys.modules, "pandas_market_calendars", None)
+    start = datetime(2025, 7, 11, tzinfo=UTC)
+    timed = returns(prices([start + timedelta(hours=h) for h in [200, 0, 73, 1, 2, 300, 7, 5]]))
+    rows = timed.drop("timestamp")
+    kwargs = (
+        {"feed_spec": feed("NYSE").with_overrides(calendar=None)}
+        if metadata_disable
+        else {"calendar": None}
+    )
+    output = run(rows, lazy, **kwargs)
+    control = run(timed, lazy, calendar=None)
+    assert output.height == rows.height
+    assert output.select(rows.columns).equals(rows)
+    assert output["realized_volatility"].equals(control["realized_volatility"])
+
+
 @pytest.mark.parametrize("suffix", [".json", ".yaml"])
 @pytest.mark.parametrize("calendar", ["NYSE", None, UNSET_CALENDAR])
 def test_serialized_artifact_calendar_intent_reaches_real_feature_workflow(
@@ -246,8 +269,13 @@ def test_invalid_grid_never_executes_any_feature(monkeypatch, lazy):
 def test_calendar_grid_does_not_reinterpret_other_window_units_as_expected_bars(unit):
     start = datetime(2025, 7, 11, tzinfo=UTC)
     data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
-    with pytest.raises(ValueError, match="window_unit='expected_bar'"):
-        run(data, False, feed_spec=feed("24/7"), window_unit=unit)
+    if unit is WindowUnit.SESSION:
+        result = run(data, False, feed_spec=feed("24/7"), window_unit=unit)
+        assert result["realized_volatility"].is_null().all()
+    else:
+        error = "period" if unit is WindowUnit.ELAPSED else "Calendar-aware"
+        with pytest.raises(ValueError, match=error):
+            run(data, False, feed_spec=feed("24/7"), window_unit=unit)
     if unit is WindowUnit.OBSERVATION:
         assert run(data, False, calendar=None, window_unit=unit).height == 8
     else:
