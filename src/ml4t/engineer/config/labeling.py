@@ -28,7 +28,16 @@ import math
 from datetime import timedelta
 from typing import Any, Literal
 
-from pydantic import AliasChoices, Field, field_serializer, field_validator
+from ml4t.specs import FeedSpec, WindowUnit
+from pydantic import (
+    AliasChoices,
+    Field,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    field_serializer,
+    field_validator,
+    model_serializer,
+)
 
 from ml4t.engineer.config.base import (
     BaseConfig,
@@ -145,6 +154,49 @@ class LabelingConfig(BaseConfig):
         validation_alias=AliasChoices("data_contract", "contract"),
         description="Optional shared dataframe column contract for cross-library workflows",
     )
+    calendar: str | None = Field(
+        None,
+        description="Declared calendar selector; omitted inherits feed metadata, explicit null disables",
+    )
+    feed_spec: dict[str, Any] | None = Field(
+        None, description="Shared FeedSpec declarations for calendar-aware labeling"
+    )
+    window_unit: WindowUnit | None = Field(
+        None,
+        description="Observation, expected_bar, session or elapsed; consumer validates support",
+    )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, LabelingConfig):
+            return NotImplemented
+        return self.to_dict() == other.to_dict()
+
+    @field_validator("calendar", mode="before")
+    @classmethod
+    def validate_calendar(cls, value: Any) -> str | None:
+        return FeedSpec(time_contract_version=2).resolve_calendar(calendar=value)
+
+    @field_validator("feed_spec", mode="before")
+    @classmethod
+    def validate_feed_spec(cls, value: Any) -> dict[str, Any] | None:
+        return None if value is None else FeedSpec.from_any(value).to_dict()
+
+    @model_serializer(mode="wrap")
+    def serialize_declarations(
+        self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+    ) -> dict[str, Any]:
+        payload = handler(self)
+        for name in ("calendar", "price_col", "timestamp_col", "group_col", "data_contract"):
+            if name not in self.model_fields_set:
+                payload.pop(name, None)
+        if (
+            "calendar" in self.model_fields_set
+            and self.calendar is None
+            and (info.include is None or "calendar" in info.include)
+            and (info.exclude is None or "calendar" not in info.exclude)
+        ):
+            payload["calendar"] = None
+        return payload
 
     # Triple barrier parameters
     upper_barrier: float | str | None = Field(

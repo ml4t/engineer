@@ -69,3 +69,26 @@ Uniqueness score per label.
 
 Legacy module notes:
 - `core.py`, `barriers.py`, and `barrier_utils.py` are removed compatibility paths that raise import-time migration errors.
+
+## Temporal contract boundary
+
+`calendar_aware_labels` consumes shared Specs declarations. Use canonical `calendar`:
+explicit argument, declared config selector, feed metadata, then NYSE. Explicit None is
+observation-row mode without timestamp sorting or provider loading. Never turn that
+opt-out into a continuous schedule. Config serialization must preserve declaration presence.
+
+Named schedules segment actual sessions/breaks. Observation counts are not expected-bar
+counts; expected-bar and session modes validate the declared grid before labeling.
+Session-count horizons expire at the last available bar of the Nth following scheduled
+session, censored at observed coverage end. They must not be split at lunch or overnight.
+Daily session-label rows preserve date identifiers and can span whole-session rows;
+elapsed durations need instants and must reject session-label identifiers.
+Shared session-label outputs leave physical label_duration unset. For instant inputs,
+use the declared timezone for both elapsed-horizon targeting and duration arithmetic,
+including DST, while preserving input timestamp and label-time representations.
+Right-labeled bars can end at a break start; event timestamps at that instant are off-session.
+
+Standalone numerical labeling functions retain their legacy chronological row/duration
+definitions. Do not infer calendar adoption from a timestamp parameter or change numerical
+definitions without explicit migration evidence. Legacy auto-gap mode is not an authoritative
+calendar or completeness check. Keep this boundary explicit in task guidance and user docs.

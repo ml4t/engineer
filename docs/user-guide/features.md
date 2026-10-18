@@ -69,8 +69,9 @@ Common asset columns such as `asset_id`, `symbol`, and `ticker` are detected aut
 and every rolling or lagged feature is evaluated independently for each asset.
 The examples explicitly select `calendar=None`: their periods count observations and
 input order is preserved, even when timestamps are irregular. Sort prices yourself before
-deriving returns if chronological order is intended. Without timestamps, also pass
-`assume_sorted=True` to assert that the supplied row order is correct.
+deriving returns if chronological order is intended. Row mode does not require timestamps
+or an additional `assume_sorted=True` assertion. A disabled calendar in shared feed metadata
+has the same behavior, even when the feed's timestamp column is absent.
 
 Use `output` when requesting more than one configuration of the same feature:
 
@@ -87,23 +88,52 @@ raise `ValueError` before feature execution.
 ### Calendar and bar grid
 
 The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.
-Development and qualification currently pin the merged Specs v2 implementation at
-`701bde68744035050ede386efce498234c661c21`. The same immutable Git dependency is declared
-in built package metadata; published Specs 0.1.5 does not provide this API. Before a PyPI
-release, replace that source dependency with the verified published Specs version containing
-the v2 contract and repeat installed-package qualification.
+The shared temporal contract requires published `ml4t-specs>=0.2.0,<0.3.0`, also declared
+in built package metadata. Specs 0.1.5 does not provide this API. Engineer's development
+branch uses the published dependency; the temporal migration is not part of the 0.1.7 patch.
 
 Calendar selection
 uses the explicit `calendar` argument, then declared feed metadata, then NYSE. Explicit
 `calendar=None` disables schedule interpretation. A named `"24/7"` calendar instead defines
 expected bars and detects outages, including on weekends.
 
-Calendar-aware execution requires a shared `FeedSpec(time_contract_version=2)` with an
-explicit fixed intraday frequency and bar-grid policy. The initial implementation supports
-time bars anchored at each tradable interval's open. It uses real holidays, early closes and
-breaks from the selected schedule. Daily/session-label grids and session or elapsed-duration
-windows are not supported by this validator; they fail rather than being treated as row counts.
-Naive timestamps need a declared timezone. Aware timestamps already declare their timezone.
+Calendar-aware execution requires a shared `FeedSpec(time_contract_version=2)` with declared
+frequency and timestamp meaning. Fixed intraday time bars require an explicit bar-grid policy,
+anchored at each tradable interval's open. The selected schedule supplies holidays, early closes
+and breaks. Naive instants need a declared timezone; aware instants declare their timezone.
+
+Daily bars instead declare `timestamp_semantics="session_label"`, `data_frequency="1d"` and
+`bar_type="time"`. Do not supply intraday anchor, label-side or partial-bar fields for session
+labels. Date values and datetime representations identify the displayed session date, without
+timezone conversion. Validation checks every scheduled session between each asset's first and
+last label, including completely missing sessions. A named `24/7` schedule includes weekends;
+an NYSE schedule does not. No prices are filled or rows inserted. A daily frequency alone does
+not turn `event_time` instants into session labels. Temporal feature windows below use the
+same completeness checks; choosing a unit does not permit missing scheduled observations.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+
+import polars as pl
+from ml4t.engineer import compute_features
+from ml4t.specs import FeedSpec
+
+close = [100.0, 103.0, 106.0, 109.0]
+daily_prices = pl.DataFrame({
+    "timestamp": [date(2025, 7, day) for day in (3, 7, 8, 9)],
+    "open": close, "high": close, "low": close, "close": close, "volume": 1.0,
+})
+daily_feed = FeedSpec(
+    time_contract_version=2, calendar="NYSE", data_frequency="1d",
+    timestamp_semantics="session_label", bar_type="time",
+)
+checked = compute_features(daily_prices, [], feed_spec=daily_feed)
+returns = checked.with_columns(pl.col("close").log().diff().alias("returns"))
+features = compute_features(returns, [{"name": "sma", "params": {"period": 2}}], feed_spec=daily_feed)
+assert features["sma"].to_list() == [None, 101.5, 104.5, 107.5]
+assert features["timestamp"].equals(daily_prices["timestamp"])
+```
 
 `CryptoCalendar` also changes in the next minor version. Install the `calendars` extra
 to use its authoritative `24/7` schedule. It enumerates UTC daily session opens, not
@@ -174,6 +204,56 @@ This does not change legacy Specs bridges or the numerical feature kernels.
 Neither means sessions or elapsed hours. A shortened final bar still counts as one expected
 bar when `partial_bar_policy="include"`. Annualization remains a separate convention: for
 example, `realized_volatility(trading_periods=252)` retains its documented numerical default.
+
+### Session and elapsed feature windows
+
+`sma`, `stddev` and `realized_volatility` accept `window_unit="session"` or `"elapsed"`.
+They retain original bars and row counts. They do not first aggregate to session closes.
+For sessions, `params.period=N` includes the current session's observations through the
+current row and the preceding N-1 scheduled sessions. Earlier rows of the first N-1
+observed sessions are null. July 4 holidays and lunch breaks do not create extra sessions.
+A one-session average of intraday prices100/110 is therefore100 at the first row and105
+at the second row, not the session's eventual closing price110 at both rows.
+
+Elapsed periods use a positive duration such as `params.period="2h"` and the physical
+UTC interval `(timestamp - duration, timestamp]`, including through DST changes.
+Outputs remain null until observed coverage spans the requested duration. A half-hour
+final bar can put three observations inside two elapsed hours. Daily `session_label`
+identifiers cannot define elapsed windows; they do support session-count windows.
+Windows with insufficient samples for the numerical statistic also remain null.
+Annualization parameters and all other supported feature parameters retain their
+numerical definitions. Recursive EMA/RSI and other unqualified window definitions
+reject temporal units explicitly rather than silently resetting or reseeding.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date, datetime, timedelta, timezone
+
+import polars as pl
+from ml4t.engineer import compute_features
+from ml4t.specs import FeedSpec
+
+daily = FeedSpec(time_contract_version=2, calendar="NYSE", data_frequency="1d",
+                 timestamp_semantics="session_label", bar_type="time")
+values = [100.0, 101.0, 104.0]
+prices = pl.DataFrame({
+    "timestamp": [date(2025, 7, day) for day in (2, 3, 7)],
+    "open": values, "high": values, "low": values, "close": values, "volume": 1.0,
+})
+result = compute_features(prices, [{"name": "sma", "params": {"period": 2}}],
+                          feed_spec=daily, window_unit="session")
+assert result["sma"].to_list() == [None, 100.5, 102.5]
+
+hourly = FeedSpec(time_contract_version=2, calendar="24/7", data_frequency="1h",
+                  timestamp_semantics="event_time", timezone="UTC", bar_type="time",
+                  bar_grid_anchor="session_open", bar_label="left", partial_bar_policy="include")
+prices = prices.with_columns(pl.Series("timestamp", [
+    datetime(2025, 7, 5, tzinfo=timezone.utc) + timedelta(hours=i) for i in range(3)
+]))
+result = compute_features(prices, [{"name": "sma", "params": {"period": "2h"}}],
+                          feed_spec=hourly, window_unit="elapsed")
+assert result["sma"].to_list() == [None, None, 102.5]
+```
 No calendar-derived annualization factor is silently substituted.
 
 ### Equity schedule helpers
@@ -501,7 +581,7 @@ Most features expect a DataFrame with standardized column names (lowercase):
 
 | Column | Type | Required By |
 |--------|------|-------------|
-| `timestamp` | datetime | Temporal ordering, unless `assume_sorted=True` |
+| `timestamp` | datetime | Required for calendar-aware grids; optional in observation-row mode |
 | `asset_id` | string | Optional panel grouping, auto-detected when present |
 | `open` | float | OHLCV, OHLC features |
 | `high` | float | OHLCV, OHLC, HLC, HL features |

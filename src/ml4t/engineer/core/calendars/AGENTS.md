@@ -20,3 +20,5 @@ Calendar utilities for session-aware workflows.
   This does not imply that all labeling APIs already consume the shared temporal contract.
 - Calendar-free feature calculations use `compute_features(..., calendar=None)`.
   A named continuous calendar is not calendar-free execution.
+- `CryptoCalendar` uses UTC daily sessions, not hourly observation points. Maintenance
+  reopens do not create extra sessions; keep membership and daily boundary methods distinct.

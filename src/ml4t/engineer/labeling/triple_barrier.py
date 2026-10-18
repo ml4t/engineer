@@ -263,19 +263,20 @@ def _calculate_time_durations(
     event_indices: npt.NDArray[np.intp],
     label_indices: npt.NDArray[np.int64],
     timestamp_col: str | None,
-) -> tuple[list[Any], npt.NDArray[Any]]:
+) -> tuple[pl.Series, npt.NDArray[Any]]:
     """Calculate label times and durations."""
     n_events = len(event_indices)
 
     if timestamp_col is not None:
-        timestamps = data[timestamp_col].to_list()
-        label_times = [timestamps[idx] if idx < len(timestamps) else None for idx in label_indices]
+        label_times = data[timestamp_col].gather(label_indices)
         timestamps_array = data[timestamp_col].to_numpy()
+        if data.schema[timestamp_col] == pl.Date:
+            timestamps_array = timestamps_array.astype("datetime64[ms]")
         entry_times = timestamps_array[event_indices]
         exit_times = timestamps_array[label_indices]
         time_durations = exit_times - entry_times
     else:
-        label_times = list(label_indices)
+        label_times = pl.Series(label_indices)
         time_durations = np.array([None] * n_events, dtype=object)
 
     return label_times, time_durations
@@ -285,7 +286,7 @@ def _build_labeling_result(
     data: pl.DataFrame,
     event_indices: npt.NDArray[np.intp],
     labels: npt.NDArray[np.int32],
-    label_times: list[Any],
+    label_times: pl.Series,
     label_prices: npt.NDArray[np.float64],
     label_returns: npt.NDArray[np.float64],
     bar_durations: npt.NDArray[np.int64],
@@ -296,6 +297,11 @@ def _build_labeling_result(
 ) -> pl.DataFrame:
     """Build the result DataFrame from labeling outputs."""
     calc_uniq = uniqueness is not None
+    duration_series = (
+        pl.Series(time_durations.tolist())
+        if time_durations.dtype.kind == "O"
+        else pl.Series(time_durations)
+    )
 
     if "event_time" in data.columns:
         label_dict: dict[str, Any] = {
@@ -305,7 +311,7 @@ def _build_labeling_result(
             "label_price": label_prices,
             "label_return": label_returns,
             "label_bars": bar_durations,
-            "label_duration": time_durations,
+            "label_duration": duration_series,
             "barrier_hit": barrier_hit,
         }
         if calc_uniq:
@@ -325,8 +331,8 @@ def _build_labeling_result(
             "label_price": pl.Series(label_prices, dtype=pl.Float64),
             "label_return": pl.Series(label_returns, dtype=pl.Float64),
             "label_bars": pl.Series(bar_durations, dtype=pl.Int64),
-            "label_duration": pl.Series(time_durations),
-            "barrier_hit": pl.Series(barrier_hit),
+            "label_duration": duration_series,
+            "barrier_hit": pl.Series(barrier_hit, dtype=pl.String),
         }
         if calc_uniq:
             columns_to_add["label_uniqueness"] = pl.Series(uniqueness, dtype=pl.Float64)
@@ -349,6 +355,8 @@ def _triple_barrier_labels_single_group(
     uniqueness_weight_scheme: Literal[
         "returns_uniqueness", "uniqueness_only", "returns_only", "equal"
     ],
+    *,
+    max_holding_bars: npt.NDArray[np.int64] | None = None,
 ) -> pl.DataFrame:
     """Apply triple barrier labeling to a single asset/group."""
     if timestamp_col is not None:
@@ -358,15 +366,27 @@ def _triple_barrier_labels_single_group(
         event_mask = data["event_time"].is_not_null()
         event_indices = np.where(event_mask.to_numpy())[0]
         if len(event_indices) == 0:
-            return data.with_columns(
+            time_dtype = data.schema[timestamp_col] if timestamp_col is not None else pl.Int64
+            duration_dtype = (
+                pl.Duration(time_dtype.time_unit if isinstance(time_dtype, pl.Datetime) else "ms")
+                if timestamp_col is not None
+                else pl.Null
+            )
+            result = data.with_columns(
                 label=pl.lit(None, dtype=pl.Int32),
-                label_time=pl.lit(None, dtype=pl.Int64),
+                label_time=pl.lit(None, dtype=time_dtype),
                 label_price=pl.lit(None, dtype=pl.Float64),
                 label_return=pl.lit(None, dtype=pl.Float64),
                 label_bars=pl.lit(None, dtype=pl.Int64),
-                label_duration=pl.lit(None, dtype=pl.Utf8),
+                label_duration=pl.Series([None] * data.height, dtype=duration_dtype),
                 barrier_hit=pl.lit(None, dtype=pl.Utf8),
             )
+            if calculate_uniqueness:
+                result = result.with_columns(
+                    label_uniqueness=pl.lit(None, dtype=pl.Float64),
+                    sample_weight=pl.lit(None, dtype=pl.Float64),
+                )
+            return result
     else:
         event_indices = np.arange(len(data))
 
@@ -381,6 +401,8 @@ def _triple_barrier_labels_single_group(
     upper_barriers, lower_barriers, max_periods, sides, trailing_stops = _prepare_barrier_arrays(
         data, config, event_indices, timestamp_col=timestamp_col
     )
+    if max_holding_bars is not None:
+        max_periods = max_holding_bars[event_indices]
     labels, label_indices, label_prices, label_returns, bar_durations = _apply_triple_barrier_nb(
         closes,
         opens,
@@ -521,7 +543,7 @@ def triple_barrier_labels(
     if group_cols:
         sort_cols = group_cols + ([resolved_ts_col] if resolved_ts_col else [])
         sorted_data = data.sort(sort_cols)
-        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True)
+        grouped_frames = sorted_data.partition_by(group_cols, maintain_order=True) or [sorted_data]
 
         grouped_results = [
             _triple_barrier_labels_single_group(
