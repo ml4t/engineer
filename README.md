@@ -1,6 +1,6 @@
 # ml4t-engineer
 
-[![Python 3.12-3.14](https://img.shields.io/badge/python-3.12--3.14-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12-3.15](https://img.shields.io/badge/python-3.12--3.15-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/ml4t-engineer)](https://pypi.org/project/ml4t-engineer/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ml4t/engineer/blob/main/LICENSE)
 
@@ -13,11 +13,18 @@ The core interface uses Polars DataFrames.
 
 ## Installation
 
-`ml4t-engineer` supports Python 3.12, 3.13, and 3.14 on Linux, macOS, and Windows.
+Development source supports Python 3.12, 3.13, 3.14, and 3.15 on Linux, macOS, and Windows.
+Python 3.15 support and the calendar API used below are intended for the 0.2 release.
+Release 0.1.6 supports Python 3.12-3.14; use its
+[version-matched quick start](https://github.com/ml4t/engineer/tree/v0.1.6#quick-start)
+instead of passing the new `calendar` argument to that release.
 
 ```bash
 pip install ml4t-engineer
 ```
+
+Until 0.2 is available from PyPI, run the examples below from a
+[source checkout](#development) with `uv sync --no-dev`, using that environment's Python.
 
 The quick start uses only core dependencies. Optional extras provide TA-Lib validation,
 DuckDB and PyArrow storage, market calendars, visualization, statistics, and ML tools:
@@ -31,9 +38,10 @@ pip install "ml4t-engineer[stats]"
 pip install "ml4t-engineer[ml]"
 ```
 
-TA-Lib requires its native library. The core package does not require an external
-service, credentials, or special hardware. Python 3.15 is not supported while the
-active Polars compatibility exception applies.
+The development `ta` extra uses TA-Lib 0.8.2 or later in the 0.8 series; its wheels
+include the native library. For source builds, follow the
+[upstream installation guide](https://github.com/TA-Lib/ta-lib-python#installation).
+The core package does not require an external service, credentials, or special hardware.
 
 ## Quick Start
 

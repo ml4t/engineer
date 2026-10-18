@@ -43,7 +43,7 @@ def test_ci_qualifies_required_python_platform_matrix() -> None:
     matrix = workflow["jobs"]["test"]["strategy"]["matrix"]
     actual = set(itertools.product(matrix["os"], matrix["python-version"]))
 
-    stable = {"3.12", "3.13", "3.14"}
+    stable = {"3.12", "3.13", "3.14", "3.15"}
     platforms = {"ubuntu-latest", "macos-latest", "windows-latest"}
     assert actual == set(itertools.product(platforms, stable))
     assert "include" not in matrix
@@ -254,11 +254,11 @@ def test_core_dependency_requires_published_time_contract_v2() -> None:
     assert specs["source"] == {"registry": "https://pypi.org/simple"}
 
 
-def test_package_supports_python_312_through_314() -> None:
+def test_package_supports_python_312_through_315() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     dependencies = project["project"]["dependencies"]
 
-    assert project["project"]["requires-python"] == ">=3.12,<3.15"
+    assert project["project"]["requires-python"] == ">=3.12"
     assert "numba>=0.57.0" in dependencies
     assert "statsmodels>=0.14.0" in project["project"]["optional-dependencies"]["stats"]
     assert "pyarrow>=14.0.0" in project["project"]["optional-dependencies"]["store"]
