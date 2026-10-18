@@ -475,6 +475,9 @@ Pass `feed_spec=FeedSpec(...)` directly or through `LabelingConfig.feed_spec`. S
 Naive feed timestamps require an explicit timezone, and ambiguous/nonexistent local
 times fail. Right-labeled/bar-close observations at a break boundary end the preceding
 tradable interval. Input timestamp representations are retained in the output.
+Instant horizons and `label_duration` use physical elapsed time, including across
+daylight-saving transitions. Shared `session_label` identifiers do not identify instants;
+their `label_time` retains the session identifier and `label_duration` is unset.
 
 Legacy calls without FeedSpec keep naive-UTC handling. Custom protocol objects and
 explicit `calendar="auto"` remain compatibility modes without shared feed metadata.

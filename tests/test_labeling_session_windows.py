@@ -7,7 +7,7 @@ import pytest
 from ml4t.specs import FeedSpec
 
 from ml4t.engineer.config import LabelingConfig
-from ml4t.engineer.labeling import calendar_aware_labels
+from ml4t.engineer.labeling import calendar_aware_labels, triple_barrier_labels
 
 
 def _feed(**kwargs):
@@ -66,6 +66,66 @@ def test_daily_count_horizon_crosses_valid_sessions_instead_of_zero_length_segme
     assert result["label_time"].to_list() == [timestamps[1], timestamps[2], timestamps[2]]
 
 
+@pytest.mark.parametrize("representation", ["date", "naive", "UTC", "Asia/Tokyo"])
+@pytest.mark.parametrize("unit", ["observation", "expected_bar", "session"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_session_identifiers_do_not_fabricate_physical_elapsed_durations(
+    representation, unit, empty
+):
+    days = [date(2025, 7, day) for day in (3, 7)]
+    timestamps = days
+    if representation != "date":
+        zone = None if representation == "naive" else ZoneInfo(representation)
+        timestamps = [datetime.combine(day, time(0, 15), tzinfo=zone) for day in days]
+    prices = pl.DataFrame({"timestamp": timestamps, "close": [100.0, 101.0]})
+    if empty:
+        prices = prices.filter(pl.col("close") > 1000)
+    result = calendar_aware_labels(prices, _config(window_unit=unit), feed_spec=_feed())
+    assert result.select(prices.columns).equals(prices)
+    assert result["label_duration"].is_null().all()
+    assert result.schema["label_duration"] != pl.Object
+    if not empty:
+        assert result["label_time"].to_list() == [timestamps[1], timestamps[1]]
+        assert result["label_bars"].to_list() == [1, 0]
+        assert result["label_return"].to_list() == pytest.approx([0.01, 0.0])
+    buffer = BytesIO()
+    result.write_parquet(buffer)
+    buffer.seek(0)
+    assert pl.read_parquet(buffer).equals(result)
+
+
+@pytest.mark.parametrize("suffix", ["json", "yaml"])
+def test_serialized_session_identifiers_keep_elapsed_duration_unset(tmp_path, suffix):
+    days = [date(2025, 7, day) for day in (3, 7)]
+    first = pl.DataFrame(
+        {"timestamp": days, "close": [100.0, 101.0], "symbol": "A", "event_time": [days[0], None]}
+    )
+    second = first.with_columns((pl.col("close") * 2).alias("close"), pl.lit("B").alias("symbol"))
+    prices = pl.concat([second, first]).sort("timestamp", "symbol")
+    config = _config(feed_spec=_feed(entity_col="symbol"))
+    path = tmp_path / f"labels.{suffix}"
+    getattr(config, f"to_{suffix}")(path)
+    restored = getattr(LabelingConfig, f"from_{suffix}")(path)
+    result = calendar_aware_labels(prices, restored)
+    assert result["label_duration"].is_null().all()
+    for symbol in ("A", "B"):
+        group = result.filter(pl.col("symbol") == symbol)
+        assert group["label_bars"].to_list() == [1, None]
+        assert group["label_return"].to_list() == pytest.approx([0.01, None])
+
+
+def test_standalone_date_labels_keep_legacy_calendar_day_differences():
+    prices = pl.DataFrame(
+        {"timestamp": [date(2025, 7, day) for day in (3, 7)], "close": [100.0, 101.0]}
+    )
+    config = LabelingConfig.triple_barrier(
+        upper_barrier=None, lower_barrier=None, max_holding_period=1
+    )
+    result = triple_barrier_labels(prices, config)
+    assert result["label_duration"][0] == timedelta(days=4)
+    assert result["label_return"][0] == pytest.approx(0.01)
+
+
 def _intraday():
     from ml4t.engineer.core.bar_grid import _expected_bar_labels
     from ml4t.engineer.labeling.calendar import PandasMarketCalendar
@@ -95,6 +155,115 @@ def _intraday():
         partial_bar_policy="include",
     )
     return prices, feed
+
+
+@pytest.mark.parametrize(
+    "unit,expected",
+    [
+        ("observation", timedelta(hours=1)),
+        ("expected_bar", timedelta(hours=1)),
+        ("session", timedelta(hours=26, minutes=30)),
+    ],
+)
+def test_instant_labeling_keeps_real_elapsed_durations(unit, expected):
+    prices, feed = _intraday()
+    result = calendar_aware_labels(prices, _config(window_unit=unit), feed_spec=feed)
+    assert result["label_duration"][0] == expected
+
+
+@pytest.mark.parametrize("representation", ["UTC", "America/New_York", "naive"])
+@pytest.mark.parametrize("unit", ["observation", "expected_bar", "elapsed", "session"])
+@pytest.mark.parametrize("sparse", [False, True])
+def test_declared_local_clocks_use_physical_elapsed_time_through_spring_dst(
+    representation, unit, sparse
+):
+    instants = [datetime(2025, 3, 9, 5, tzinfo=UTC) + timedelta(hours=i) for i in range(6)]
+    timestamps = pl.Series("timestamp", instants)
+    if representation != "UTC":
+        timestamps = timestamps.dt.convert_time_zone("America/New_York")
+    if representation == "naive":
+        timestamps = timestamps.dt.replace_time_zone(None)
+    prices = pl.DataFrame({"timestamp": timestamps, "close": [100.0 + i for i in range(6)]})
+    if sparse:
+        prices = prices.with_columns(
+            pl.when(pl.col("close") == 101).then(pl.col("timestamp")).alias("event_time")
+        )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="24/7",
+        timezone="America/New_York",
+        timestamp_semantics="event_time",
+        data_frequency="1h",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="include",
+    )
+    config = _config("2h" if unit == "elapsed" else 1 if unit == "session" else 2, window_unit=unit)
+    result = calendar_aware_labels(prices, config, feed_spec=feed)
+    assert result.select(prices.columns).equals(prices)
+    assert result.schema["label_time"] == timestamps.dtype
+    exits = [5] * 6 if unit == "session" else [2, 3, 4, 5, 5, 5]
+    for entry, exit_index in enumerate(exits):
+        if sparse and entry != 1:
+            assert result["label_time"][entry] is None
+            assert result["label_duration"][entry] is None
+            continue
+        assert result["label_time"][entry] == timestamps[exit_index]
+        assert result["label_bars"][entry] == exit_index - entry
+        assert result["label_return"][entry] == pytest.approx(
+            (100 + exit_index) / (100 + entry) - 1
+        )
+        assert result["label_duration"][entry] == instants[exit_index] - instants[entry]
+
+
+@pytest.mark.parametrize("suffix", ["json", "yaml"])
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_serialized_local_clock_labels_preserve_panel_columns_and_timestamp_precision(
+    tmp_path, suffix, time_unit, empty
+):
+    instants = [datetime(2025, 3, 9, 5, tzinfo=UTC) + timedelta(hours=i) for i in range(6)]
+    timestamps = (
+        pl.Series("ts", instants, dtype=pl.Datetime(time_unit, "UTC"))
+        .dt.convert_time_zone("America/New_York")
+        .dt.replace_time_zone(None)
+    )
+    first = pl.DataFrame({"ts": timestamps, "price": [100.0 + i for i in range(6)], "asset": "A"})
+    second = first.with_columns((pl.col("price") * 2).alias("price"), pl.lit("B").alias("asset"))
+    prices = pl.concat([first, second]).sort("ts", "asset")
+    if empty:
+        prices = prices.filter(pl.col("price") > 1000)
+    config = _config(
+        "2h",
+        window_unit="elapsed",
+        feed_spec=FeedSpec(
+            time_contract_version=2,
+            calendar="24/7",
+            timezone="America/New_York",
+            timestamp_semantics="event_time",
+            timestamp_col="ts",
+            price_col="price",
+            entity_col="asset",
+        ),
+    )
+    path = tmp_path / f"labels.{suffix}"
+    getattr(config, f"to_{suffix}")(path)
+    restored = getattr(LabelingConfig, f"from_{suffix}")(path)
+    result = calendar_aware_labels(prices, restored)
+    assert result.select(prices.columns).equals(prices.sort("asset", "ts"))
+    assert result.schema["label_time"] == pl.Datetime(time_unit)
+    assert result.schema["label_duration"] == pl.Duration(time_unit)
+    if not empty:
+        for asset in ("A", "B"):
+            group = result.filter(pl.col("asset") == asset)
+            assert group["label_time"][1] == datetime(2025, 3, 9, 4)
+            assert group["label_duration"][0] == timedelta(hours=2)
+            assert group["label_return"][1] == pytest.approx(2 / 101)
+    buffer = BytesIO()
+    result.write_parquet(buffer)
+    buffer.seek(0)
+    assert pl.read_parquet(buffer).equals(result)
 
 
 def test_intraday_session_horizon_reaches_next_session_close_not_lunch_or_overnight_break():
@@ -305,6 +474,7 @@ def test_session_horizons_retain_actual_exchange_close_through_spring_dst(repres
     assert actual.dt.convert_time_zone("UTC")[0] == expected
     assert result["label_bars"][0] == 13
     assert result["label_return"][0] == pytest.approx(0.13)
+    assert result["label_duration"][0] == timedelta(hours=76, minutes=30)
     assert result.select(prices.columns).equals(prices)
 
 

@@ -83,6 +83,9 @@ Session-count horizons expire at the last available bar of the Nth following sch
 session, censored at observed coverage end. They must not be split at lunch or overnight.
 Daily session-label rows preserve date identifiers and can span whole-session rows;
 elapsed durations need instants and must reject session-label identifiers.
+Shared session-label outputs leave physical label_duration unset. For instant inputs,
+use the declared timezone for both elapsed-horizon targeting and duration arithmetic,
+including DST, while preserving input timestamp and label-time representations.
 Right-labeled bars can end at a break start; event timestamps at that instant are off-session.
 
 Standalone numerical labeling functions retain their legacy chronological row/duration

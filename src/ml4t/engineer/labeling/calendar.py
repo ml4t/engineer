@@ -14,6 +14,7 @@ from inspect import signature
 from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec, TimestampSemantics, WindowUnit
 
@@ -372,12 +373,55 @@ def _calendar_session_ids(
     return sorted_data, session_ids
 
 
+def _calendar_group_labels(
+    data: pl.DataFrame,
+    config: LabelingConfig,
+    price_col: str,
+    timestamp_col: str | None,
+    timezone: str | None = None,
+    *,
+    max_holding_bars: npt.NDArray[np.int64] | None = None,
+) -> pl.DataFrame:
+    dtype = data.schema[timestamp_col] if timestamp_col is not None else None
+    local_clock = (
+        isinstance(dtype, pl.Datetime) and dtype.time_zone is None and timezone is not None
+    )
+    if local_clock:
+        assert timestamp_col is not None
+        data = data.with_columns(
+            pl.col(timestamp_col)
+            .dt.replace_time_zone(timezone, ambiguous="raise", non_existent="raise")
+            .dt.convert_time_zone("UTC")
+        )
+    result = _triple_barrier_labels_single_group(
+        data,
+        config,
+        price_col,
+        None,
+        None,
+        None,
+        timestamp_col,
+        False,
+        "returns_uniqueness",
+        max_holding_bars=max_holding_bars,
+    )
+    if local_clock:
+        assert timestamp_col is not None
+        result = result.with_columns(
+            pl.col(timestamp_col, "label_time")
+            .dt.convert_time_zone(timezone)
+            .dt.replace_time_zone(None)
+        )
+    return result
+
+
 def _segment_labels(
     data: pl.DataFrame,
     config: LabelingConfig,
     price_col: str,
     group_cols: list[str],
     timestamp_col: str | None = None,
+    timezone: str | None = None,
 ) -> pl.DataFrame:
     validate_price_no_nans(data, price_col)
     row_col = _temporary_column_name(data.columns, "__ml4t_observation_row")
@@ -385,9 +429,7 @@ def _segment_labels(
     frames = indexed.partition_by(group_cols, maintain_order=True) if group_cols else [indexed]
     frames = frames or [indexed]
     results = [
-        _triple_barrier_labels_single_group(
-            frame, config, price_col, None, None, None, timestamp_col, False, "returns_uniqueness"
-        )
+        _calendar_group_labels(frame, config, price_col, timestamp_col, timezone)
         for frame in frames
     ]
     result = pl.concat(results, how="vertical").sort(row_col).drop(row_col)
@@ -441,20 +483,21 @@ def _session_window_labels(
         exits = np.searchsorted(session_ids, session_ids + bounded_counts, side="right") - 1
         periods = np.asarray(exits - np.arange(frame.height), dtype=np.int64)
         results.append(
-            _triple_barrier_labels_single_group(
+            _calendar_group_labels(
                 frame,
                 config,
                 price_col,
-                None,
-                None,
-                None,
                 timestamp_col,
-                False,
-                "returns_uniqueness",
+                None
+                if feed.timestamp_semantics == TimestampSemantics.SESSION_LABEL
+                else feed.timezone,
                 max_holding_bars=periods,
             )
         )
-    return pl.concat(results, how="vertical")
+    result = pl.concat(results, how="vertical")
+    if feed.timestamp_semantics == TimestampSemantics.SESSION_LABEL:
+        result = result.with_columns(pl.lit(None).alias("label_duration"))
+    return result
 
 
 def calendar_aware_labels(
@@ -547,6 +590,8 @@ def calendar_aware_labels(
     - Rows outside an explicit calendar's trading times are rejected
     - Without FeedSpec, legacy naive calendar timestamps are interpreted as UTC
     - FeedSpec naive timestamps use its declared timezone; ambiguous times fail
+    - Instant horizons and label_duration use physical elapsed time across DST;
+      session-label identifiers retain label_time but leave label_duration unset
     - Explicit None preserves per-asset observation order and global row order;
       label_time contains per-asset row offsets and label_duration is unset
     - A named 24/7 schedule still segments daily sessions; it is not row mode
@@ -662,7 +707,7 @@ def calendar_aware_labels(
             resolved_price_col,
             resolved_group_cols,
             resolved_ts_col,
-        )
+        ).with_columns(pl.lit(None).alias("label_duration"))
 
     # Create calendar instance if string provided
     if isinstance(selected, str):
@@ -726,6 +771,7 @@ def calendar_aware_labels(
         resolved_price_col,
         session_group_cols,
         resolved_ts_col,
+        timezone=feed.timezone,
     )
     return labeled.drop(session_col)
 
