@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
+import importlib.metadata
 import json
+import os
+import subprocess
+import sys
 import tarfile
 import zipfile
 from email.message import Message
@@ -178,6 +183,53 @@ def verify(
         raise ValueError("candidate public metadata does not match the manifest")
 
 
+def verify_installed(candidate_dir: Path, source_root: Path | None = None) -> None:
+    """Bind the imported package and installed bytes to the verified wheel."""
+    verify(candidate_dir)
+    manifest = _load_manifest(candidate_dir)
+    if manifest["name"] != "ml4t-engineer":
+        raise ValueError("installed candidate must be ml4t-engineer")
+    distribution = importlib.metadata.distribution(manifest["name"])
+    if distribution.version != manifest["version"]:
+        raise ValueError("installed candidate version does not match the manifest")
+    module = importlib.import_module("ml4t.engineer")
+    if module.__file__ is None:
+        raise ValueError("candidate import origin has no package file")
+    origin = Path(module.__file__).resolve()
+    prefix = Path(sys.prefix).resolve()
+    installed = Path(distribution.locate_file("ml4t/engineer/__init__.py")).resolve()
+    if origin != installed or not origin.is_relative_to(prefix):
+        raise ValueError(f"candidate import origin is not the installed wheel: {origin}")
+    wheel, _ = _distribution_files(candidate_dir)
+    with zipfile.ZipFile(wheel) as archive:
+        members = [
+            item
+            for item in archive.infolist()
+            if item.filename.startswith("ml4t/engineer/") and not item.is_dir()
+        ]
+        if not any(item.filename == "ml4t/engineer/__init__.py" for item in members):
+            raise ValueError("candidate wheel does not contain ml4t.engineer")
+        for item in members:
+            path = Path(distribution.locate_file(item.filename)).resolve()
+            if not path.is_relative_to(prefix) or path.read_bytes() != archive.read(item):
+                raise ValueError(f"installed candidate bytes differ from wheel: {item.filename}")
+    print(
+        json.dumps({"version": distribution.version, "origin": str(origin), "files": len(members)})
+    )
+    if source_root is not None:
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "verify-installed", str(candidate_dir)],
+            env={**os.environ, "PYTHONPATH": str(source_root.resolve())},
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if result.returncode == 0 or "candidate import origin" not in result.stderr:
+            raise ValueError("source-tree contamination was not rejected by the installed check")
+        print("Source-tree import contamination rejected")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -193,6 +245,10 @@ def _parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--expected-tree")
     verify_parser.add_argument("--expected-tag")
 
+    installed_parser = subparsers.add_parser("verify-installed")
+    installed_parser.add_argument("candidate_dir", type=Path)
+    installed_parser.add_argument("--source-root", type=Path)
+
     return parser
 
 
@@ -200,13 +256,15 @@ def main() -> None:
     args = _parser().parse_args()
     if args.command == "create":
         create(args.candidate_dir, args.commit_sha, args.git_tree)
-    else:
+    elif args.command == "verify":
         verify(
             args.candidate_dir,
             expected_commit=args.expected_commit,
             expected_tree=args.expected_tree,
             expected_tag=args.expected_tag,
         )
+    else:
+        verify_installed(args.candidate_dir, args.source_root)
 
 
 if __name__ == "__main__":

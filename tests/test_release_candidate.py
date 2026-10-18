@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tarfile
+import tempfile
 import zipfile
+from collections.abc import Iterator
 from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError
@@ -40,6 +43,124 @@ def test_candidate_manifest_binds_both_artifacts_to_source(candidate_dir: Path) 
     assert manifest["metadata"]["maintainer_email"] == "Stefan Jansen <pm@ml4trading.io>"
     assert len(manifest["artifacts"]) == 2
     assert all(len(record["sha256"]) == 64 for record in manifest["artifacts"])
+
+
+@pytest.fixture(scope="module")
+def installed_candidate(candidate_dir: Path) -> Iterator[Path]:
+    root = os.environ.get("RUNNER_TEMP") or os.environ.get("TMPDIR")
+    if root is None:
+        cache = Path(__file__).parents[1] / ".pytest_cache"
+        cache.mkdir(exist_ok=True)
+        root = str(cache)
+    with tempfile.TemporaryDirectory(prefix="engineer-installed-check-", dir=root) as directory:
+        environment = Path(directory) / "environment"
+        subprocess.run(
+            ["uv", "venv", "--python", sys.executable, str(environment)],
+            check=True,
+            capture_output=True,
+        )
+        wheel, _ = candidate._distribution_files(candidate_dir)
+        subprocess.run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(environment),
+                "--link-mode",
+                "copy",
+                str(wheel),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        yield environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def _installed_check(python: Path, directory: Path, **environment: str):
+    return subprocess.run(
+        [str(python), str(Path(candidate.__file__).resolve()), "verify-installed", str(directory)],
+        env={**os.environ, **environment},
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def test_installed_candidate_rejects_real_source_tree_shadowing(
+    candidate_dir: Path, installed_candidate: Path
+) -> None:
+    valid = _installed_check(installed_candidate, candidate_dir)
+    assert valid.returncode == 0, valid.stderr
+    source = Path(__file__).parents[1] / "src"
+    legacy = subprocess.run(
+        [str(installed_candidate), "-c", "import ml4t.engineer; print(ml4t.engineer.__file__)"],
+        env={**os.environ, "PYTHONPATH": str(source)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert legacy.returncode == 0, legacy.stderr
+    assert Path(legacy.stdout.strip()).is_relative_to(source)
+    rejected = _installed_check(installed_candidate, candidate_dir, PYTHONPATH=str(source))
+    assert rejected.returncode != 0
+    assert "candidate import origin" in rejected.stderr
+
+
+def test_installed_candidate_rejects_modified_installed_package_bytes(
+    candidate_dir: Path, installed_candidate: Path
+) -> None:
+    location = subprocess.run(
+        [str(installed_candidate), "-c", "import ml4t.engineer; print(ml4t.engineer.__file__)"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    path = Path(location.stdout.strip()).parent / "features/trend/sma.py"
+    original = path.read_bytes()
+    try:
+        path.write_bytes(original + b"\n# Unexpected installed-file modification.\n")
+        legacy = subprocess.run(
+            [str(installed_candidate), "-c", "import ml4t.engineer"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert legacy.returncode == 0, legacy.stderr
+        rejected = _installed_check(installed_candidate, candidate_dir)
+        assert rejected.returncode != 0
+        assert "installed candidate bytes differ" in rejected.stderr
+    finally:
+        path.write_bytes(original)
+
+
+def test_installed_candidate_rejects_another_real_wheel_version(
+    candidate_dir: Path, installed_candidate: Path, tmp_path: Path
+) -> None:
+    subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(tmp_path)],
+        env={**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.0"},
+        check=True,
+        capture_output=True,
+    )
+    original, _ = candidate._distribution_files(candidate_dir)
+    other = next(tmp_path.glob("*.whl"))
+    install = ["uv", "pip", "install", "--python", str(installed_candidate), "--link-mode", "copy"]
+    try:
+        subprocess.run([*install, str(other)], check=True, capture_output=True)
+        legacy = subprocess.run(
+            [str(installed_candidate), "-c", "import ml4t.engineer"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert legacy.returncode == 0, legacy.stderr
+        rejected = _installed_check(installed_candidate, candidate_dir)
+        assert rejected.returncode != 0
+        assert "installed candidate version does not match" in rejected.stderr
+    finally:
+        subprocess.run([*install, str(original)], check=True, capture_output=True)
 
 
 @pytest.mark.parametrize("source_dependency", [False, True])
