@@ -47,6 +47,21 @@ Use the [upstream installation guide](https://github.com/TA-Lib/ta-lib-python#in
 when your platform requires a source build. Comparisons must declare matching moving-average
 types: Engineer's APO/PPO default remains SMA (`matype=0`), while TA-Lib 0.8 defaults to EMA.
 
+### Feature store
+
+The `store` extra adds DuckDB and PyArrow; the core quick start does not need it.
+Our Python 3.15 qualification used DuckDB 1.5.6 source builds on Linux, macOS and Windows.
+If no matching wheel is available, install the
+[upstream native build prerequisites](https://duckdb.org/docs/current/dev/building/python)
+before enabling the extra. Source builds need a C++ toolchain and can take tens of minutes.
+
+Within the source checkout, enable the extra and verify both imports:
+
+```bash
+uv sync --no-dev --extra store
+uv run --no-sync python -c "import duckdb; import ml4t.engineer.store; print(duckdb.__version__)"
+```
+
 ### Statistical diagnostics
 
 `find_optimal_d()` and `fdiff_diagnostics()` use Statsmodels for the augmented
