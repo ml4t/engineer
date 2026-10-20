@@ -85,6 +85,44 @@ result = compute_features(df, [
 Unknown parameters, repeated output names, and output names that replace input columns
 raise `ValueError` before feature execution.
 
+### Derive precise price returns
+
+The next minor version requires Polars 2.0 or newer. Return expressions select their
+native arithmetic from the column dtype while planning a query, without collecting
+lazy data. Keep integer ticks as integers until after the expression evaluates;
+casting large prices to floating point first can erase a one-tick change.
+
+<!-- ml4t-exec -->
+```python
+import polars as pl
+from ml4t.engineer.features.utils.arithmetic import returns, log_returns
+
+prices = pl.DataFrame({
+    "asset": ["A", "A", "A"],
+    "close": pl.Series([2**53, 2**53 + 1, 2**53 + 2], dtype=pl.Int64),
+})
+result = prices.lazy().with_columns(
+    returns("close").over("asset").alias("return"),
+    log_returns("close").over("asset").alias("log_return"),
+).collect()
+assert result["return"][0] is None
+assert result["return"][1] == 1 / 2**53
+assert result["log_return"][1] > 0
+```
+
+Both expressions retain the input row count and leave the first `periods` rows
+undefined in each asset. Integer differences are computed before floating division;
+floating input keeps its existing ratio formula and dtype. Log returns retain tiny
+changes without turning a near-total loss into an artificial negative infinity.
+`percentage_change` uses the same simple-return calculation multiplied by 100.
+
+When replacing an Empyrical price-return call, note that its output omits the first
+undefined observation. Trim that documented leading row only if the consuming
+workflow needs that shape; do not drop every null or compress gaps. These are price
+expressions, not portfolio statistics. Use explicit grouping for multiple assets and
+validate the declared bar grid before deriving returns as described below. Row-only
+data must already have the intended observation order.
+
 ### Calendar and bar grid
 
 The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.
