@@ -133,6 +133,7 @@ defaults. These additions do not provide a Pipeline graph interpreter.
 | Feature | Definition and missingness |
 |---|---|
 | `rsi_cutler` | Simple gains/losses over `period` changes (`period + 1` prices). Omit changes adjacent to missing quotes; a flat window is undefined. |
+| `absolute_percent_change` | Fractional change over `period` changes with an absolute reference denominator. This accepts signed values and does not multiply by 100. |
 | `finite_mean` | Require `period` rows, then divide by the count of nonmissing prices. |
 | `finite_weighted_mean` | Sum valid price-times-volume products, divided by the independently summed volume. Missing prices do not remove denominator weights. |
 | `average_dollar_volume` | Sum valid price-times-volume products, divided by the fixed `period` row count. Input price, share and currency basis must already agree. |
@@ -148,7 +149,7 @@ defaults. These additions do not provide a Pipeline graph interpreter.
 | `finite_macd_signal` | Finite normalized fast/slow exponential means, followed by a finite signal mean. Length-one means use their sole observation. |
 | `finite_true_range` | Two-price true range with NaN-omitting high/low/previous-close components. There is no implicit larger-window reduction. |
 
-Except for Cutler RSI and the composed MACD signal, `period` counts input rows and the
+Except for Cutler RSI, absolute percent change and the composed MACD signal, `period` counts input rows and the
 first structurally usable row is `period - 1`. Missing observations still occupy their
 original row positions. Numeric results are Float64 and retain every input row;
 Ichimoku's selected `chikou_span` price retains its original dtype. Multi-output
@@ -186,6 +187,45 @@ eligible. They currently support observation/expected-bar windows; do not reinte
 their kernels as session or elapsed windows. Variance methods subtract an original
 window-local typed price anchor before floating conversion, so adjacent large integer ticks do
 not collapse to zero variance. Output remains Float64.
+
+### Factor-name expression recipes
+
+`compat.zipline.factor_expression` translates supported built-in names into the
+native methods above. It returns a Polars expression or a dictionary of named output
+expressions, not a Pipeline Term. It never imports Zipline or evaluates an opaque
+legacy graph. Use native column operators for arithmetic/comparisons and the existing
+feature decorator for custom calculations.
+
+Recipe `window_length` counts prices/inputs as in Pipeline. Return and Cutler recipes
+translate N prices into N-1 changes. The default annualized-volatility recipe derives
+daily returns from `close` and keeps that extra dependency row of warmup. Explicit
+`inputs=["returns"]` instead consumes supplied returns. EWMA/EWMSTD accept one explicit
+`decay_rate`, `span`, `halflife` or `center_of_mass`, including the three legacy
+constructor suffixes. Statistical recipes can consume already aligned column pairs;
+their legacy correlation/regression lengths and beta missing percentage are explicit.
+
+<!-- ml4t-exec -->
+```python
+import math
+import polars as pl
+from ml4t.engineer.compat.zipline import factor_expression
+
+frame = pl.DataFrame({"close": [1.0, 3.0, 9.0], "eligible": [True, False, True]})
+expression = factor_expression(
+    "EWMA.from_span", inputs=["close"], window_length=3, span=3, mask="eligible",
+)
+result = frame.lazy().with_columns(expression.alias("finite_mean")).collect()
+assert math.isclose(result["finite_mean"][2], 43 / 7, rel_tol=1e-14)
+assert result.height == frame.height
+```
+
+The output mask in this example does not erase the middle observation from history.
+Apply `.over(entity_col)` for independent asset histories. These expression recipes
+do not validate a market schedule. For bar data, validate the declared grid once with
+`compute_features(data, [], feed_spec=...)` before deriving returns/features, or
+explicitly choose `calendar=None` for observation rows. Recipe output masks are not
+dated universe/knowledge selection or final output screens. Named fields stay explicit;
+for example, select `factor_expression("BollingerBands", window_length=20)["middle"]`.
 
 ### Paired relationships and supplied event dates
 

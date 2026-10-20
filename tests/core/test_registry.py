@@ -555,7 +555,7 @@ def test_registry_with_real_features():
 
     # Test category queries work
     momentum = registry.list_by_category("momentum")
-    assert len(momentum) == 35
+    assert len(momentum) == 36
 
     volatility = registry.list_by_category("volatility")
     assert len(volatility) == 18

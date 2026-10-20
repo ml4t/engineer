@@ -6,6 +6,7 @@ must be applied within the caller's asset groups, as compute_features does.
 """
 
 import math
+from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -60,6 +61,62 @@ def _paired_difference(left: pl.Expr, right: pl.Expr) -> pl.Expr:
         return right.pipe_with_dtype(right_type)
 
     return left.pipe_with_dtype(left_type)
+
+
+@feature(
+    name="absolute_percent_change",
+    category="momentum",
+    description="Fractional change with absolute reference denominator",
+    normalized=True,
+    value_range=(float("-inf"), float("inf")),
+    formula="(value - previous) / abs(previous)",
+)
+def absolute_percent_change(close: str, period: int = 1) -> pl.Expr:
+    """Fractional change of signed values; not percentage points or signed-denominator returns."""
+    _period(period)
+    value = pl.col(close)
+    previous = value.shift(period)
+    return _paired_difference(value, previous) / previous.cast(pl.Float64).abs()
+
+
+def exponential_decay(
+    *,
+    decay_rate: float | None = None,
+    span: float | None = None,
+    halflife: float | None = None,
+    center_of_mass: float | None = None,
+) -> float:
+    """Resolve exactly one finite-weight selector, with no implicit recursive-EMA substitution."""
+    choices = {
+        "decay_rate": decay_rate,
+        "span": span,
+        "halflife": halflife,
+        "center_of_mass": center_of_mass,
+    }
+    supplied = [(name, value) for name, value in choices.items() if value is not None]
+    if len(supplied) != 1:
+        raise ValueError("Declare exactly one of decay_rate, span, halflife, center_of_mass")
+    name, value = supplied[0]
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"{name} must be a finite real scalar")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite real scalar")
+    if name == "span":
+        if value <= 1:
+            raise ValueError("span must be > 1")
+        value = 1 - 2 / (1 + value)
+    elif name == "halflife":
+        if value <= 0:
+            raise ValueError("halflife must be positive")
+        value = math.exp(math.log(0.5) / value)
+    elif name == "center_of_mass":
+        if value <= 0:
+            raise ValueError("center_of_mass must be positive")
+        value = 1 - 1 / (1 + value)
+    if not 0 < value <= 1:
+        raise ValueError("Resolved decay_rate must be in (0, 1]")
+    return value
 
 
 @feature(
@@ -323,7 +380,7 @@ def finite_ewm_std(close: str, period: int = 20, decay_rate: float = 0.9) -> pl.
     formula="nanstd(returns, ddof=0) * sqrt(annualization_factor)",
 )
 def annualized_volatility(
-    returns: str, period: int = 252, annualization_factor: float = 252.0
+    returns: str | pl.Expr, period: int = 252, annualization_factor: float = 252.0
 ) -> pl.Expr:
     """Full-window population volatility; period counts supplied return observations."""
     _period(period)

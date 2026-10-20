@@ -7,7 +7,7 @@ This directory contains the registry-backed indicator implementations used by
 
 | Category | Count | Location | Examples |
 |----------|-------|----------|----------|
-| momentum | 35 | `momentum/`, `rolling.py` | `rsi`, `rsi_cutler`, `macd`, `finite_macd_signal` |
+| momentum | 36 | `momentum/`, `rolling.py` | `rsi`, `rsi_cutler`, `absolute_percent_change`, `finite_macd_signal` |
 | trend | 15 | `trend/`, `rolling.py` | `sma`, `ema`, `finite_mean`, `finite_ewma` |
 | volatility | 18 | `volatility/`, `rolling.py` | `atr`, `bollinger_bands`, `annualized_volatility` |
 | microstructure | 15 | `microstructure/` | `kyle_lambda`, `amihud_illiquidity`, `realized_spread` |
@@ -72,6 +72,6 @@ durations. Do not resample, infer missing sessions or reinterpret recursive indi
 
 ## Trust Signals
 
-- 135 total features across 11 categories
+- 136 total features across 11 categories
 - 60 TA-Lib validated indicators at `1e-6` tolerance
 - registry metadata supports discovery by category, normalization, and TA-Lib parity

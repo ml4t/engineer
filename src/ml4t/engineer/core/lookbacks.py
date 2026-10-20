@@ -70,6 +70,7 @@ def _ulcer_index(params: Mapping[str, Any]) -> int:
 
 
 FEATURE_LOOKBACKS: dict[str, LookbackCalculator] = {
+    "absolute_percent_change": _parameter("period"),
     # Explicit finite-window methods, independent of the native TA-Lib defaults.
     "rsi_cutler": _parameter("period"),
     "finite_mean": _parameter("period", -1),
