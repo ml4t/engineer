@@ -19,23 +19,25 @@ def _price_return(
 ) -> pl.Expr:
     def build(price: pl.Expr, dtype: pl.DataType) -> pl.Expr:
         previous = price.shift(periods) if reference is None else reference
-        ratio = price / previous
-        if not dtype.is_integer():
+        decimal = isinstance(dtype, pl.Decimal)
+        divisor = previous.cast(pl.Float64) if decimal else previous
+        ratio = price.cast(pl.Float64) / divisor if decimal else price / previous
+        if not dtype.is_integer() and not decimal:
             if logarithmic:
                 return ratio.log()
             return (price - previous) / previous if float_difference else ratio - 1
 
-        wide = price.cast(pl.Int128)
-        lagged = previous.cast(pl.Int128)
-        if dtype == pl.Int128:
-            # Opposite-sign Int128 differences can exceed even the widest native integer.
+        wide = price if decimal else price.cast(pl.Int128)
+        lagged = previous if decimal else previous.cast(pl.Int128)
+        if dtype == pl.Int128 or decimal:
+            # Opposite-sign differences can exceed the widest integer/decimal representation.
             same_sign = ((wide >= 0) & (lagged >= 0)) | ((wide <= 0) & (lagged <= 0))
             safe_price = pl.when(same_sign).then(wide).otherwise(0)
             safe_previous = pl.when(same_sign).then(lagged).otherwise(0)
             difference = (safe_price - safe_previous).cast(pl.Float64)
-            gain = pl.when(same_sign).then(difference / previous).otherwise(ratio - 1)
+            gain = pl.when(same_sign).then(difference / divisor).otherwise(ratio - 1)
         else:
-            gain = (wide - lagged).cast(pl.Float64) / previous
+            gain = (wide - lagged).cast(pl.Float64) / divisor
         if not logarithmic:
             return gain
         # log1p retains tiny ticks, while the ratio retains near-total losses and domains.
@@ -54,8 +56,8 @@ def returns(column: str, periods: int = 1) -> pl.Expr:
     Formula:
         Return = (Price[t] - Price[t-periods]) / Price[t-periods]
 
-    Integer differences are retained before floating conversion. Floating inputs
-    retain their existing ratio calculation and output dtype.
+    Integer and Decimal differences are retained before Float64 conversion.
+    Floating inputs retain their existing ratio calculation and output dtype.
 
     Args:
         column: Name of the column containing price data

@@ -69,14 +69,17 @@ def _utc_instants(frame: pl.DataFrame, name: str, timezone: str | None) -> pl.Da
 
 def _session_requests(
     frame: pl.DataFrame, count: int, feed: FeedSpec, calendar: str, timestamp_col: str
-) -> pl.Series:
+) -> tuple[pl.Series, pl.Series]:
     import pandas as pd
 
     from ml4t.engineer.labeling.calendar import PandasMarketCalendar
 
     dtype = frame.schema[timestamp_col]
     if frame.is_empty():
-        return pl.Series("requested_exit_time", [], dtype=dtype)
+        return (
+            pl.Series("requested_exit_time", [], dtype=dtype),
+            pl.Series("_out_session_in_coverage", [], dtype=pl.Boolean),
+        )
     ids = scheduled_session_indices(
         frame, feed_spec=feed, calendar=calendar, timestamp_col=timestamp_col
     )
@@ -108,13 +111,12 @@ def _session_requests(
                 )
             )
             endpoints.append(labels[-1] if labels else None)
-    requested = [
-        endpoints[int(index) + count] if int(index) + count < len(endpoints) else None
-        for index in ids
-    ]
+    target_ids = [int(index) + count for index in ids]
+    requested = [endpoints[index] if index < len(endpoints) else None for index in target_ids]
+    covered = pl.Series("_out_session_in_coverage", [index <= int(ids[-1]) for index in target_ids])
     if feed.timestamp_semantics == TimestampSemantics.SESSION_LABEL:
-        return pl.Series("requested_exit_time", requested, dtype=dtype)
-    return pl.Series("requested_exit_time", requested, dtype=pl.Int64).cast(dtype)
+        return pl.Series("requested_exit_time", requested, dtype=dtype), covered
+    return pl.Series("requested_exit_time", requested, dtype=pl.Int64).cast(dtype), covered
 
 
 def forward_returns(
@@ -458,8 +460,12 @@ def forward_returns(
                         pl.col("_out_row_observed").alias("reference_row_observed"),
                         pl.col("_out_price_observed").alias("reference_price_observed"),
                     )
-                within = pl.col("requested_exit_time").is_not_null() & (
-                    pl.col("requested_exit_time") <= pl.col(ts).max()
+                before_end = pl.col("requested_exit_time") <= pl.col(ts).max()
+                within = (
+                    pl.col("_out_session_in_coverage")
+                    & (pl.col("requested_exit_time").is_null() | before_end)
+                    if unit == WindowUnit.SESSION
+                    else pl.col("requested_exit_time").is_not_null() & before_end
                 )
             status = (
                 pl.when(~within.fill_null(False))

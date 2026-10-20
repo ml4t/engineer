@@ -742,3 +742,242 @@ def test_input_role_cannot_shadow_an_internal_outcome_working_column():
     with pytest.raises(ValueError, match="reserved _out_"):
         _run(frame, price_col="_out_available")
     assert frame.equals(before)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_session_with_no_full_bar_is_not_skipped_or_misreported_as_outside_tail(lazy):
+    times = [
+        pd.Timestamp(stamp).value for stamp in ["2025-07-02T13:30:00Z", "2025-07-07T13:30:00Z"]
+    ]
+    frame = pl.DataFrame({"timestamp": times, "asset": "A", "close": [100, 121]}).with_columns(
+        pl.col("timestamp").cast(pl.Datetime("ns", "UTC"))
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="NYSE",
+        entity_col="asset",
+        data_frequency="4h",
+        timestamp_semantics="event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="exclude",
+    )
+    output = labeling.forward_returns(
+        frame.lazy() if lazy else frame,
+        horizons={"one_session": 1, "two_sessions": 2},
+        window_unit="session",
+        price_basis="raw",
+        feed_spec=feed,
+        entries=frame.select("timestamp", "asset").head(1),
+    )
+    output = output.collect() if lazy else output
+    # July3 is a real3.5-hour session, with no full4-hour bar under exclusion.
+    assert output["outcome_status"].to_list() == ["missing_endpoint", "ok"]
+    assert output["requested_exit_time"].to_list() == [None, frame["timestamp"][1]]
+    assert output["forward_return"].to_list() == [None, pytest.approx(0.21)]
+    with pytest.raises(ValueError, match="missing scheduled bar"):
+        labeling.forward_returns(
+            frame,
+            horizons={"one": 1},
+            window_unit="session",
+            price_basis="raw",
+            feed_spec=feed.with_overrides(partial_bar_policy="include"),
+        )
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_overnight_session_is_selected_by_exchange_open_not_utc_civil_date(lazy):
+    times = [pd.Timestamp("2025-01-06T21:00:00Z").value]
+    times += pd.date_range("2025-01-06T23:00:00Z", periods=23, freq="h").as_unit("ns").asi8.tolist()
+    frame = pl.DataFrame(
+        {"timestamp": times, "asset": "A", "close": [100 + i for i in range(24)]}
+    ).with_columns(pl.col("timestamp").cast(pl.Datetime("ns", "UTC")))
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="CME_Equity",
+        entity_col="asset",
+        data_frequency="1h",
+        timestamp_semantics="event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="exclude",
+    )
+    result = labeling.forward_returns(
+        frame.lazy() if lazy else frame,
+        horizons={"next_session": 1},
+        feed_spec=feed,
+        window_unit="session",
+        price_basis="raw",
+    )
+    result = result.collect() if lazy else result
+    assert result["exit_time"][0] == pd.Timestamp("2025-01-07T21:00:00Z")
+    assert result["forward_return"][0] == pytest.approx(0.23)
+    # 23UTC on Jan6 already belongs to the Jan7 session, not the Jan6 session.
+    assert result["outcome_status"][1] == "insufficient_tail"
+
+
+@pytest.mark.parametrize(
+    "unit,horizon,exit_stamp,expected",
+    [
+        ("session", 1, "2025-03-10T19:30:00Z", 0.07),
+        ("expected_bar", 1, "2025-03-10T13:30:00Z", 0.01),
+        ("elapsed", "1h", "2025-03-10T13:30:00Z", 0.01),
+    ],
+)
+def test_real_nyse_dst_weekend_distinguishes_bar_session_and_elapsed_targets(
+    unit, horizon, exit_stamp, expected
+):
+    times = [pd.Timestamp("2025-03-07T20:30:00Z").value]
+    times += pd.date_range("2025-03-10T13:30:00Z", periods=7, freq="h").as_unit("ns").asi8.tolist()
+    frame = pl.DataFrame(
+        {"timestamp": times, "asset": "A", "close": [100 + i for i in range(8)]}
+    ).with_columns(pl.col("timestamp").cast(pl.Datetime("ns", "UTC")))
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="NYSE",
+        entity_col="asset",
+        data_frequency="1h",
+        timestamp_semantics="event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="include",
+    )
+    result = labeling.forward_returns(
+        frame, horizons={"future": horizon}, window_unit=unit, feed_spec=feed, price_basis="raw"
+    )
+    assert result["exit_time"][0] == pd.Timestamp(exit_stamp)
+    assert result["forward_return"][0] == pytest.approx(expected)
+    if unit == "elapsed":
+        assert result["requested_exit_time"][0] == pd.Timestamp("2025-03-07T21:30:00Z")
+    if unit == "session":
+        assert (
+            result["exit_time"].cast(pl.Int64)[0] - result["timestamp"].cast(pl.Int64)[0]
+            == 71 * 3600 * 10**9
+        )
+
+
+@pytest.mark.parametrize("selector", ["omitted", None, "24/7", "override", "disable"])
+def test_calendar_precedence_is_applied_to_actual_outcomes_without_losing_presence(selector):
+    from ml4t.specs import UNSET_CALENDAR
+
+    times = [pd.Timestamp("2025-07-03T13:30:00Z").value + i * 1800 * 10**9 for i in range(3)]
+    frame = _prices().with_columns(
+        pl.Series("timestamp", times, dtype=pl.Int64).cast(pl.Datetime("ns", "UTC"))
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar=UNSET_CALENDAR
+        if selector == "omitted"
+        else (None if selector is None else "24/7"),
+        entity_col="asset",
+        data_frequency="30m",
+        timestamp_semantics="event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="exclude",
+    )
+    kwargs = (
+        {"calendar": "NYSE"}
+        if selector == "override"
+        else ({"calendar": None} if selector == "disable" else {})
+    )
+    before = feed.to_dict()
+    result = labeling.forward_returns(
+        frame, horizons={"two": 2}, feed_spec=feed, price_basis="raw", **kwargs
+    )
+    assert result["forward_return"][0] == pytest.approx(0.21)
+    assert result["calendar"].unique().to_list() == [
+        "NYSE"
+        if selector in {"omitted", "override"}
+        else (None if selector in {None, "disable"} else "24/7")
+    ]
+    assert result["calendar_declared"].unique().to_list() == [selector != "omitted"]
+    assert feed.to_dict() == before
+
+
+def test_no_calendar_observation_returns_are_invariant_to_timestamp_spacing():
+    regular = _prices()
+    sparse = _prices(offsets=[0, 24, 24 * 30])
+    assert _run(regular)["forward_return"].equals(_run(sparse)["forward_return"])
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="24/7",
+        entity_col="asset",
+        data_frequency="1h",
+        timestamp_semantics="event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="exclude",
+    )
+    with pytest.raises(ValueError, match="missing scheduled bar"):
+        labeling.forward_returns(sparse, horizons={"two": 2}, feed_spec=feed, price_basis="raw")
+    assert _run(sparse, feed_spec=feed)["forward_return"].equals(_run(regular)["forward_return"])
+
+
+@pytest.mark.parametrize("route", ["native_outcome", "fixed_label", "price_expression"])
+@pytest.mark.parametrize("method", ["returns", "log_returns"])
+@pytest.mark.parametrize(
+    "start,tick", [("9007199254740992", "1"), ("12345678901234.12345678901234", "0.00000000000001")]
+)
+def test_decimal_price_scale_is_preserved_before_fractional_return_conversion(
+    route, method, start, tick
+):
+    import math
+    from decimal import Decimal, localcontext
+
+    from ml4t.engineer.features.utils import arithmetic
+
+    with localcontext() as context:
+        context.prec = 50
+        initial, change = Decimal(start), Decimal(tick)
+        prices = [initial + change * index for index in range(3)]
+        expected = float(Fraction(prices[2] - prices[0]) / Fraction(prices[0]))
+    if method == "log_returns":
+        expected = math.log1p(expected)
+    frame = _prices(prices)
+    before = frame.clone()
+    if route == "native_outcome":
+        values = _run(frame, return_method=method)["forward_return"]
+        actual = values[0]
+    elif route == "fixed_label":
+        output = labeling.fixed_time_horizon_labels(
+            frame, horizon=2, method=method, timestamp_col="timestamp"
+        )
+        values = output["label_log_return_2p" if method == "log_returns" else "label_return_2p"]
+        actual = values[0]
+    else:
+        values = frame.select(getattr(arithmetic, method)("close", periods=2)).to_series()
+        actual = values[2]
+    assert float(actual) == pytest.approx(expected, rel=2e-15, abs=0)
+    assert values.dtype == pl.Float64
+    assert frame.equals(before)
+
+
+@pytest.mark.parametrize("positive_first", [False, True])
+@pytest.mark.parametrize("method", ["returns", "log_returns"])
+def test_decimal_opposite_sign_limits_do_not_overflow_before_domain_selection(
+    positive_first, method
+):
+    import math
+    from decimal import Decimal
+
+    from ml4t.engineer.features.utils import arithmetic
+
+    maximum = Decimal("9" * 38)
+    prices = (
+        [maximum, maximum.copy_negate()] if positive_first else [maximum.copy_negate(), maximum]
+    )
+    values = (
+        pl.DataFrame({"price": prices}).select(getattr(arithmetic, method)("price")).to_series()
+    )
+    assert values.dtype == pl.Float64
+    assert values[0] is None
+    if method == "returns":
+        assert values[1] == -2.0
+    else:
+        assert math.isnan(values[1])

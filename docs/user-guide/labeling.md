@@ -329,6 +329,9 @@ The unreleased `forward_returns` API prepares realized outcomes for training or 
 analysis. It requires Polars 2 and Specs 0.2. It does not replace barrier labels or Diagnostic's
 Alphalens cleaner. Existing fixed-horizon defaults and output names remain unchanged. Integer
 fixed-horizon arithmetic now avoids unsigned subtraction wrap and preserves small integer ticks.
+Decimal price differences also retain their original scale until conversion to fractional returns.
+Decimal inputs now produce Float64 returns rather than a scale-truncated Decimal ratio; price
+columns are unchanged. Float32/Float64 calculations retain their established formula and dtype.
 
 Use exact entry keys, declare the price basis, and select the horizon unit. This example counts
 observations with `calendar=None`; it makes no schedule-completeness claim.
@@ -423,8 +426,10 @@ The default missing-price policy raises for null, nonfinite or nonpositive price
 `missing_price_policy="null"` retains unavailable outcomes and actual keys without filling quotes.
 Absent scheduled rows still fail completeness validation. `tail_policy="null"` retains tail rows
 with `insufficient_tail`; `drop` excludes those rows, and `raise` rejects the operation.
-Missing in-range endpoints receive `missing_endpoint`, not zero returns. `entries` may select a
-sparse ordered table of exact entity/time keys; missing or duplicate entry keys fail.
+Missing in-range endpoints receive `missing_endpoint`, not zero returns.
+If a covered session has no eligible full bar under the declared partial-bar policy, its outcome
+also has `missing_endpoint`; it is not skipped in the session count.
+`entries` may select a sparse ordered table of exact entity/time keys; missing or duplicate entry keys fail.
 Input role names cannot use the reserved `_out_` prefix or conflict with output key metadata.
 
 Engineer never constructs a filled price view. If a caller supplies an explicit analytical
