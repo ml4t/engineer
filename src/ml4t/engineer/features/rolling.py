@@ -6,6 +6,7 @@ must be applied within the caller's asset groups, as compute_features does.
 """
 
 import math
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -29,6 +30,38 @@ def _numeric(column: str) -> pl.Expr:
     return pl.col(column).cast(pl.Float64).fill_nan(None)
 
 
+def _difference(price: pl.Expr, reference: pl.Expr, dtype: pl.DataType) -> pl.Expr:
+    if dtype.is_integer():
+        price, reference = price.cast(pl.Int128), reference.cast(pl.Int128)
+    if dtype == pl.Int128 or isinstance(dtype, pl.Decimal):
+        same_sign = ((price >= 0) & (reference >= 0)) | ((price <= 0) & (reference <= 0))
+        safe_price = pl.when(same_sign).then(price).otherwise(0)
+        safe_reference = pl.when(same_sign).then(reference).otherwise(0)
+        exact = (safe_price - safe_reference).cast(pl.Float64)
+        return (
+            pl.when(same_sign)
+            .then(exact)
+            .otherwise(price.cast(pl.Float64) - reference.cast(pl.Float64))
+        )
+    if dtype.is_integer():
+        return (price - reference).cast(pl.Float64)
+    return price.cast(pl.Float64) - reference.cast(pl.Float64)
+
+
+def _paired_difference(left: pl.Expr, right: pl.Expr) -> pl.Expr:
+    def left_type(value: pl.Expr, dtype: pl.DataType) -> pl.Expr:
+        def right_type(reference: pl.Expr, reference_dtype: pl.DataType) -> pl.Expr:
+            if dtype.is_integer() and reference_dtype.is_integer():
+                return _difference(value, reference, pl.Int128())
+            if isinstance(dtype, pl.Decimal) and isinstance(reference_dtype, pl.Decimal):
+                return _difference(value, reference, dtype)
+            return value.cast(pl.Float64) - reference.cast(pl.Float64)
+
+        return right.pipe_with_dtype(right_type)
+
+    return left.pipe_with_dtype(left_type)
+
+
 @feature(
     name="rsi_cutler",
     category="momentum",
@@ -47,9 +80,7 @@ def rsi_cutler(close: str, period: int = 14) -> pl.Expr:
     _period(period)
 
     def change(price: pl.Expr, dtype: pl.DataType) -> pl.Expr:
-        if dtype.is_integer() and dtype != pl.Int128:
-            return price.cast(pl.Int128).diff().cast(pl.Float64)
-        return price.diff().cast(pl.Float64)
+        return _difference(price, price.shift(1), dtype)
 
     delta = pl.col(close).pipe_with_dtype(change).fill_nan(None)
     gain = delta.clip(lower_bound=0).rolling_mean(period, min_samples=1)
@@ -106,13 +137,11 @@ def average_dollar_volume(close: str, volume: str, period: int = 20) -> pl.Expr:
 def _weighted_windows(
     values: npt.NDArray[np.float64],
     weights: npt.NDArray[np.float64],
-    variance: bool,
     omit: bool,
 ) -> npt.NDArray[np.float64]:
     width = len(weights)
     result = np.full(len(values), np.nan)
     weight_sum = weights.sum()
-    correction_denominator = weight_sum * weight_sum - (weights * weights).sum()
     for end in range(width - 1, len(values)):
         total = 0.0
         missing = False
@@ -121,19 +150,104 @@ def _weighted_windows(
             if np.isnan(value):
                 missing = True
             else:
-                total += weights[j] * value
+                total += (weights[j] / weight_sum) * value
         if missing and not omit:
             continue
-        mean = total / weight_sum
-        if not variance:
-            result[end] = mean
-        elif correction_denominator > 0:
-            centered = 0.0
-            for j in range(width):
-                delta = values[end - width + 1 + j] - mean
-                centered += weights[j] * delta * delta
-            result[end] = np.sqrt(centered * weight_sum / correction_denominator)
+        result[end] = total
     return result
+
+
+def _variance_windows(
+    values: Any,
+    missing: npt.NDArray[np.bool_],
+    weights: npt.NDArray[np.float64],
+    omit: bool,
+    bias_corrected: bool,
+) -> npt.NDArray[np.float64]:
+    width = len(weights)
+    result = np.full(len(values), np.nan)
+    for end in range(width - 1, len(values)):
+        start = end - width + 1
+        first = -1
+        weight_sum, weight_squares = 0.0, 0.0
+        positive, negative, has_missing = False, False, False
+        for j in range(width):
+            if missing[start + j]:
+                has_missing = True
+                continue
+            if first < 0:
+                first = start + j
+            value = values[start + j]
+            positive = positive or value > 0
+            negative = negative or value < 0
+            weight_sum += weights[j]
+            weight_squares += weights[j] * weights[j]
+        if first < 0 or (has_missing and not omit):
+            continue
+        denominator = weight_sum * weight_sum - weight_squares
+        if bias_corrected and denominator <= 0:
+            continue
+        anchor = values[first]
+        deltas = np.zeros(width)
+        scale = 0.0
+        for j in range(width):
+            if missing[start + j]:
+                continue
+            value = values[start + j]
+            if positive and negative:
+                delta = float(value)
+            elif value >= anchor:
+                delta = float(value - anchor)
+            else:
+                delta = -float(anchor - value)
+            deltas[j] = delta
+            scale = max(scale, abs(delta))
+        if not np.isfinite(scale):
+            continue
+        if scale == 0:
+            result[end] = 0.0
+            continue
+        mean = 0.0
+        for j in range(width):
+            if not missing[start + j]:
+                mean += (weights[j] / weight_sum) * (deltas[j] / scale)
+        variance = 0.0
+        for j in range(width):
+            if not missing[start + j]:
+                residual = deltas[j] / scale - mean
+                variance += (weights[j] / weight_sum) * residual * residual
+        correction = weight_sum * weight_sum / denominator if bias_corrected else 1.0
+        result[end] = scale * np.sqrt(variance * correction)
+    return result
+
+
+_variance_numba = jit(nopython=True, cache=True)(_variance_windows)
+
+
+def _variance_expression(
+    close: str | pl.Expr,
+    weights: npt.NDArray[np.float64],
+    *,
+    omit: bool = False,
+    bias_corrected: bool = True,
+) -> pl.Expr:
+    expression = pl.col(close) if isinstance(close, str) else close
+
+    def compute(values: pl.Series) -> pl.Series:
+        missing = values.is_null().to_numpy()
+        if values.dtype in (pl.Float32, pl.Float64):
+            missing = missing | values.is_nan().fill_null(False).to_numpy()
+        if values.dtype in (pl.Int128, pl.Null) or isinstance(values.dtype, pl.Decimal):
+            result = _variance_windows(values.to_list(), missing, weights, omit, bias_corrected)
+        else:
+            result = _variance_numba(
+                values.fill_null(0).to_numpy(), missing, weights, omit, bias_corrected
+            )
+        return pl.Series(result)
+
+    # Keep raw integer/Decimal values through window-local subtraction. A global
+    # float anchor loses later one-tick variation after a large price-level change.
+    return expression.map_batches(compute, return_dtype=pl.Float64)
 
 
 def _weighted_expression(
@@ -144,8 +258,10 @@ def _weighted_expression(
     omit: bool = False,
 ) -> pl.Expr:
     expression = pl.col(close) if isinstance(close, str) else close
+    if variance:
+        return _variance_expression(expression, weights)
     return expression.cast(pl.Float64).map_batches(
-        lambda values: pl.Series(_weighted_windows(values.to_numpy(), weights, variance, omit)),
+        lambda values: pl.Series(_weighted_windows(values.to_numpy(), weights, omit)),
         return_dtype=pl.Float64,
     )
 
@@ -217,8 +333,8 @@ def annualized_volatility(
         or annualization_factor <= 0
     ):
         raise ValueError("annualization_factor must be positive and finite")
-    volatility = _numeric(returns).rolling_std(period, min_samples=1, ddof=0)
-    return _ready(volatility * math.sqrt(annualization_factor), period)
+    volatility = _variance_expression(returns, np.ones(period), omit=True, bias_corrected=False)
+    return volatility * math.sqrt(annualization_factor)
 
 
 @jit(nopython=True, cache=True)  # type: ignore[misc]
@@ -276,7 +392,7 @@ def finite_bollinger_bands(close: str, period: int = 20, k: float = 2.0) -> dict
     if isinstance(k, bool) or not isinstance(k, int | float) or not math.isfinite(k) or k < 0:
         raise ValueError("k must be finite and nonnegative")
     middle = finite_mean(close, period)
-    distance = _ready(_numeric(close).rolling_std(period, min_samples=1, ddof=0), period) * k
+    distance = _variance_expression(close, np.ones(period), omit=True, bias_corrected=False) * k
     return {"lower": middle - distance, "middle": middle, "upper": middle + distance}
 
 
@@ -315,6 +431,8 @@ def finite_aroon(high: str, low: str, period: int = 25) -> dict[str, pl.Expr]:
     def position(column: str, maximum: bool) -> pl.Expr:
         return (
             pl.col(column)
+            .fill_nan(None)
+            .rank("dense")
             .cast(pl.Float64)
             .map_batches(
                 lambda values: pl.Series(_extreme_position(values.to_numpy(), period, maximum)),
@@ -337,9 +455,11 @@ def finite_aroon(high: str, low: str, period: int = 25) -> dict[str, pl.Expr]:
 def fast_stochastic(high: str, low: str, close: str, period: int = 14) -> pl.Expr:
     """Unsmoothed K; zero ranges stay undefined rather than being replaced by zero."""
     _period(period)
-    upper = _numeric(high).rolling_max(period, min_samples=1)
-    lower = _numeric(low).rolling_min(period, min_samples=1)
-    return _ready(100 * (_numeric(close) - lower) / (upper - lower), period)
+    upper = pl.col(high).fill_nan(None).rolling_max(period, min_samples=1)
+    lower = pl.col(low).fill_nan(None).rolling_min(period, min_samples=1)
+    numerator = _paired_difference(pl.col(close).fill_nan(None), lower)
+    denominator = _paired_difference(upper, lower)
+    return _ready(100 * numerator / denominator, period)
 
 
 @feature(
@@ -431,7 +551,13 @@ def finite_macd_signal(
 )
 def finite_true_range(high: str, low: str, close: str) -> pl.Expr:
     """One-bar true range after its previous price; no arbitrary larger-window reduction."""
-    upper, lower, previous = _numeric(high), _numeric(low), _numeric(close).shift(1)
+    upper, lower = pl.col(high).fill_nan(None), pl.col(low).fill_nan(None)
+    previous = pl.col(close).fill_nan(None).shift(1)
     return _ready(
-        pl.max_horizontal(upper - lower, (upper - previous).abs(), (lower - previous).abs()), 2
+        pl.max_horizontal(
+            _paired_difference(upper, lower),
+            _paired_difference(upper, previous).abs(),
+            _paired_difference(lower, previous).abs(),
+        ),
+        2,
     )

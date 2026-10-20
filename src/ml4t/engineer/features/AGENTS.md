@@ -26,6 +26,8 @@ These are not registry entries but remain important:
 | File | Purpose |
 |------|---------|
 | `cross_asset.py` | multi-asset and panel features such as rolling correlation and beta |
+| `paired.py` | full-window paired correlation/beta/regression with explicit missing-count limits |
+| `events.py` | supplied known event weekday counts, separate from exchange-session counts |
 | `fdiff.py` | fractional differencing utilities such as `ffdiff()` and `find_optimal_d()` |
 | `composite.py` | composite indicators and z-score combinations |
 

@@ -1656,6 +1656,7 @@ ml = [
     { name = "shap" },
 ]
 stats = [
+    { name = "scipy" },
     { name = "statsmodels" },
 ]
 store = [
@@ -1756,6 +1757,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "ruff", marker = "extra == 'all'", specifier = ">=0.1.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "scipy", marker = "extra == 'stats'", specifier = ">=1.14.0" },
     { name = "seaborn", marker = "extra == 'all'", specifier = ">=0.12.0" },
     { name = "seaborn", marker = "extra == 'viz'", specifier = ">=0.12.0" },
     { name = "shap", marker = "extra == 'all'", specifier = ">=0.44.0" },

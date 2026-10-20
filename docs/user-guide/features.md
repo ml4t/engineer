@@ -150,8 +150,9 @@ defaults. These additions do not provide a Pipeline graph interpreter.
 
 Except for Cutler RSI and the composed MACD signal, `period` counts input rows and the
 first structurally usable row is `period - 1`. Missing observations still occupy their
-original row positions. All methods return Float64 expressions and retain every input
-row. Multi-output features use the usual `<output>_<field>` column names. Ichimoku
+original row positions. Numeric results are Float64 and retain every input row;
+Ichimoku's selected `chikou_span` price retains its original dtype. Multi-output
+features use the usual `<output>_<field>` column names. Ichimoku
 propagates missing high/low values within each field's subwindow; all fields require
 the declared full window. Its zero tenkan/kijun lengths select that full window,
 matching the legacy `[-0:]` slice, while `chikou_position` must be in `[0, period)`.
@@ -182,7 +183,68 @@ call counts the supplied observation rows without checking schedules. With a nam
 calendar, declare the complete grid before computing any feature. The finite methods
 do not infer frequency, select source revisions, fill gaps or make future information
 eligible. They currently support observation/expected-bar windows; do not reinterpret
-their kernels as session or elapsed windows.
+their kernels as session or elapsed windows. Variance methods subtract an original
+window-local typed price anchor before floating conversion, so adjacent large integer ticks do
+not collapse to zero variance. Output remains Float64.
+
+### Paired relationships and supplied event dates
+
+`features.paired.rolling_pearson`, `rolling_spearman`, `rolling_beta` and
+`rolling_regression` take explicit dependent/independent columns or expressions.
+Align their actual time/entity keys before computing and apply `.over(entity_col)`
+for asset-isolated windows. `period` counts original rows. `allowed_missing` is a
+count, not a percentage; a missing pair is removed from both sides without
+compressing the timeline. At least two valid pairs remain necessary. Spearman
+recomputes average tie ranks inside each window. Pearson/beta/regression propagate
+undefined nonmissing infinities. Constant independent regression windows produce
+NaN fields instead of aborting the whole asset panel.
+
+Regression returns a Struct with `alpha`, `beta`, `r_value`, `p_value`, `stderr`.
+Its inferential fields require the optional `stats` extra (`uv add
+'ml4t-engineer[stats]'`). The other paired methods and base imports do not need SciPy.
+This is predictive rolling regression on supplied observations, not trend-on-time
+regression or portfolio attribution.
+
+<!-- ml4t-exec -->
+```python
+import math
+import polars as pl
+from ml4t.engineer.features.paired import rolling_regression
+
+paired = pl.DataFrame({"market": [1.0, 2.0, 3.0, 4.0], "feature": [1.0, 2.0, 2.0, 4.0]})
+result = paired.lazy().select(
+    rolling_regression("feature", "market", period=4).alias("regression")
+).unnest("regression").collect()
+assert math.isclose(result["beta"][3], 0.9, rel_tol=1e-14)
+assert math.isclose(result["stderr"][3], math.sqrt(0.07), rel_tol=1e-14)
+assert math.isclose(result["p_value"][3], 1 - 9 / math.sqrt(95), rel_tol=1e-14)
+```
+
+`features.events.event_business_days` counts Monday through Friday, including
+exchange holidays, with the end date excluded. Supply separate event/reference
+Date labels and timezone-aware publication/decision instants. Unknown publication
+or publication after the decision yields null. This method neither selects an
+event provider nor infers exchange sessions. `direction="until"` permits a known
+future event; `direction="since"` uses the same supplied date with reversed endpoints.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date, datetime, timezone
+import polars as pl
+from ml4t.engineer.features.events import event_business_days
+
+events = pl.DataFrame({
+    "event_date": [date(2025, 7, 4)],
+    "session": [date(2025, 7, 7)],
+    "known_at": [datetime(2025, 7, 1, tzinfo=timezone.utc)],
+    "decision": [datetime(2025, 7, 7, 14, tzinfo=timezone.utc)],
+})
+result = events.select(event_business_days(
+    "event_date", reference_date_col="session", known_at_col="known_at",
+    decision_time_col="decision", direction="since",
+).alias("weekdays"))
+assert result["weekdays"][0] == 1.0  # July 4 is a weekday, despite the NYSE closure.
+```
 
 ### Calendar and bar grid
 

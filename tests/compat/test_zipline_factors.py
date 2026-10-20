@@ -306,3 +306,52 @@ def test_population_volatility_requires_explicit_positive_scale(factor: float) -
             period=3,
             annualization_factor=factor,
         )
+
+
+@pytest.mark.parametrize("dtype,base", [(pl.Int64, 2**53), (pl.UInt64, 2**63), (pl.Int128, 2**126)])
+def test_finite_weighted_std_preserves_tiny_integer_price_variation(dtype, base) -> None:
+    frame = pl.DataFrame({"close": pl.Series([base, base + 1, base + 2], dtype=dtype)})
+    frame = frame.with_columns(
+        *(pl.col("close").alias(c) for c in ("open", "high", "low")), pl.lit(1.0).alias("volume")
+    )
+    assert calculate(frame, "finite_ewm_std", period=3, decay_rate=1.0)["factor"][-1] == 1.0
+
+
+def test_local_variance_does_not_lose_ticks_after_an_earlier_price_level_change() -> None:
+    frame = pl.DataFrame({"close": pl.Series([1, 2**63, 2**63 + 1, 2**63 + 2], dtype=pl.UInt64)})
+    from ml4t.engineer.features.rolling import finite_ewm_std
+
+    assert frame.select(finite_ewm_std("close", period=3, decay_rate=1.0)).item(-1, 0) == 1.0
+
+
+def test_finite_weighted_moments_do_not_overflow_representable_float_results() -> None:
+    from ml4t.engineer.features.rolling import finite_ewm_std, finite_ewma
+
+    constant = pl.DataFrame({"close": [1e308] * 3})
+    assert constant.select(finite_ewma("close", period=3, decay_rate=1)).item(
+        -1, 0
+    ) == pytest.approx(1e308)
+    spread = pl.DataFrame({"close": [-1e300, 1e300]})
+    assert spread.select(finite_ewm_std("close", period=2, decay_rate=1)).item(
+        -1, 0
+    ) == pytest.approx(math.sqrt(2) * 1e300)
+
+
+@pytest.mark.parametrize("name", ["finite_true_range", "fast_stochastic", "finite_aroon"])
+def test_normalized_and_range_methods_do_not_collapse_integer_price_ticks(name: str) -> None:
+    base = 2**63
+    frame = pl.DataFrame(
+        {
+            "close": pl.Series([base + 2, base + 3, base + 4], dtype=pl.UInt64),
+            "high": pl.Series([base + 3, base + 4, base + 5], dtype=pl.UInt64),
+            "low": pl.Series([base, base + 1, base + 2], dtype=pl.UInt64),
+        }
+    ).with_columns(pl.col("close").alias("open"), pl.lit(1.0).alias("volume"))
+    result = calculate(frame, name, **({} if name == "finite_true_range" else {"period": 3}))
+    if name == "finite_true_range":
+        np.testing.assert_allclose(result["factor"].to_numpy(), [np.nan, 3, 3], equal_nan=True)
+    elif name == "fast_stochastic":
+        assert result["factor"][-1] == 80
+    else:
+        assert result["factor_up"][-1] == 100
+        assert result["factor_down"][-1] == 0
