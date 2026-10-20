@@ -123,6 +123,67 @@ expressions, not portfolio statistics. Use explicit grouping for multiple assets
 validate the declared bar grid before deriving returns as described below. Row-only
 data must already have the intended observation order.
 
+### Explicit finite-window methods
+
+The next minor version adds the following registered methods for workflows that need
+finite observation windows rather than the native recursive or TA-Lib definitions.
+Existing `rsi`, `ema`, `macd`, `aroon`, `bollinger_bands` and risk features keep their
+defaults. These additions do not provide a Pipeline graph interpreter.
+
+| Feature | Definition and missingness |
+|---|---|
+| `rsi_cutler` | Simple gains/losses over `period` changes (`period + 1` prices). Omit changes adjacent to missing quotes; a flat window is undefined. |
+| `finite_mean` | Require `period` rows, then divide by the count of nonmissing prices. |
+| `finite_weighted_mean` | Sum valid price-times-volume products, divided by the independently summed volume. Missing prices do not remove denominator weights. |
+| `average_dollar_volume` | Sum valid price-times-volume products, divided by the fixed `period` row count. Input price, share and currency basis must already agree. |
+| `linear_weighted_mean` | Weights `1..period`, oldest to newest. Omit missing products but retain every denominator weight. |
+| `finite_ewma` | Normalize `decay_rate**age` over exactly `period` prices. Missing prices propagate; this is not recursive EMA. |
+| `finite_ewm_std` | The same finite weights, with weighted bias correction. Insufficient effective degrees of freedom yield NaN. |
+| `annualized_volatility` | Population standard deviation (`ddof=0`) of supplied `returns`, omitting missing values after the full window. Multiply by `sqrt(annualization_factor)`, default 252. Calendar choice does not set this scale. |
+| `finite_max_drawdown` | Select the first largest absolute price drop, then divide by its trough price. This explicit legacy definition is not a peak-denominator portfolio drawdown. |
+| `finite_bollinger_bands` | NaN-omitting mean and population standard deviation; fields `lower`, `middle`, `upper`, with multiplier `k`. |
+| `finite_aroon` | First extreme wins ties; fields `down`, `up`. Scale the position in `period` prices by `100 / (period - 1)`. |
+| `fast_stochastic` | Unsmoothed K from the latest close and NaN-omitting high/low extrema. Zero range remains undefined. |
+| `finite_ichimoku` | Unshifted `tenkan_sen`, `kijun_sen`, `senkou_span_a`, `senkou_span_b`. `chikou_position` indexes from the oldest price in the window, unlike a chart displacement. |
+| `finite_macd_signal` | Finite normalized fast/slow exponential means, followed by a finite signal mean. Length-one means use their sole observation. |
+| `finite_true_range` | Two-price true range with NaN-omitting high/low/previous-close components. There is no implicit larger-window reduction. |
+
+Except for Cutler RSI and the composed MACD signal, `period` counts input rows and the
+first structurally usable row is `period - 1`. Missing observations still occupy their
+original row positions. All methods return Float64 expressions and retain every input
+row. Multi-output features use the usual `<output>_<field>` column names. Ichimoku
+propagates missing high/low values within each field's subwindow; all fields require
+the declared full window. Its zero tenkan/kijun lengths select that full window,
+matching the legacy `[-0:]` slice, while `chikou_position` must be in `[0, period)`.
+
+<!-- ml4t-exec -->
+```python
+import math
+import polars as pl
+from ml4t.engineer import compute_features
+
+prices = pl.DataFrame({"close": [10.0, 13.0, 12.0, 14.0, 13.0]}).with_columns(
+    pl.col("close").alias("open"),
+    pl.col("close").alias("high"),
+    pl.col("close").alias("low"),
+    pl.lit(100.0).alias("volume"),
+)
+result = compute_features(prices.lazy(), [
+    {"name": "rsi_cutler", "params": {"period": 3}, "output": "cutler"},
+    {"name": "rsi", "params": {"period": 3}, "output": "wilder"},
+], calendar=None).collect()
+assert math.isclose(result["cutler"][4], 50.0, rel_tol=1e-14, abs_tol=0.0)
+assert result["wilder"][4] != result["cutler"][4]
+assert result.height == prices.height
+```
+
+Use explicit grouping or `compute_features` for multiple assets. A `calendar=None`
+call counts the supplied observation rows without checking schedules. With a named
+calendar, declare the complete grid before computing any feature. The finite methods
+do not infer frequency, select source revisions, fill gaps or make future information
+eligible. They currently support observation/expected-bar windows; do not reinterpret
+their kernels as session or elapsed windows.
+
 ### Calendar and bar grid
 
 The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.

@@ -7,17 +7,17 @@ This directory contains the registry-backed indicator implementations used by
 
 | Category | Count | Location | Examples |
 |----------|-------|----------|----------|
-| momentum | 31 | `momentum/` | `rsi`, `macd`, `stoch`, `adx`, `mfi` |
-| trend | 10 | `trend/` | `sma`, `ema`, `wma`, `kama`, `donchian_channels` |
-| volatility | 15 | `volatility/` | `atr`, `bollinger_bands`, `yang_zhang_volatility`, `garch_forecast` |
+| momentum | 35 | `momentum/`, `rolling.py` | `rsi`, `rsi_cutler`, `macd`, `finite_macd_signal` |
+| trend | 15 | `trend/`, `rolling.py` | `sma`, `ema`, `finite_mean`, `finite_ewma` |
+| volatility | 18 | `volatility/`, `rolling.py` | `atr`, `bollinger_bands`, `annualized_volatility` |
 | microstructure | 15 | `microstructure/` | `kyle_lambda`, `amihud_illiquidity`, `realized_spread` |
 | ml | 14 | `ml/` plus `fdiff.py` | lag features, entropy, Fourier, percentile-rank features |
-| statistics | 14 | `statistics/` | `stddev`, `var`, `linearreg`, `structural_break` |
-| volume | 3 | `volume/` | `obv`, `ad`, `adosc` |
+| statistics | 15 | `statistics/`, `rolling.py` | `stddev`, `var`, `finite_ewm_std`, `structural_break` |
+| volume | 4 | `volume/`, `rolling.py` | `obv`, `ad`, `adosc`, `average_dollar_volume` |
 | price_transform | 5 | `price_transform/` | `avgprice`, `typprice`, `medprice`, `wclprice`, `midprice` |
 | math | 3 | `math/` | rolling `max_`, `min_`, `sum_` |
 | regime | 4 | `regime.py` | `hurst_exponent`, `choppiness_index`, `fractal_efficiency` |
-| risk | 6 | `risk.py` | drawdown, downside deviation, tail ratio |
+| risk | 7 | `risk.py`, `rolling.py` | drawdown, downside deviation, tail ratio |
 
 ## Standalone Helpers
 
@@ -70,6 +70,6 @@ durations. Do not resample, infer missing sessions or reinterpret recursive indi
 
 ## Trust Signals
 
-- 120 total features across 11 categories
+- 135 total features across 11 categories
 - 60 TA-Lib validated indicators at `1e-6` tolerance
 - registry metadata supports discovery by category, normalization, and TA-Lib parity

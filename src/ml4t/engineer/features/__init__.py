@@ -37,6 +37,7 @@ from ml4t.engineer.features import (
     price_transform,  # noqa: F401
     regime,
     risk,
+    rolling,
     statistics,  # noqa: F401
     trend,  # noqa: F401
     volatility,  # noqa: F401
@@ -50,4 +51,5 @@ __all__ = [
     "fdiff",
     "regime",
     "risk",
+    "rolling",
 ]
