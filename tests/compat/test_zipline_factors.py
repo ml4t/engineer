@@ -108,10 +108,7 @@ def test_finite_methods_preserve_nan_denominators_weights_and_scale(
 def test_finite_weights_do_not_overflow_or_underflow_with_legacy_common_power(name: str) -> None:
     frame = prices([4.0, 4.0, 4.0, 4.0])
     result = calculate(frame, name, period=4, decay_rate=1e-100)["factor"][-1]
-    if name == "finite_ewma":
-        assert result == 4.0
-    else:
-        assert math.isnan(result)
+    assert result == (4.0 if name == "finite_ewma" else 0.0)
 
 
 @pytest.mark.parametrize(
@@ -355,3 +352,10 @@ def test_normalized_and_range_methods_do_not_collapse_integer_price_ticks(name: 
     else:
         assert result["factor_up"][-1] == 100
         assert result["factor_down"][-1] == 0
+
+
+@pytest.mark.parametrize("decay", [1e-10, 1e-50, 1e-100])
+def test_two_observation_weighted_std_retains_exact_degrees_of_freedom(decay: float) -> None:
+    # For any two positive weights, the unbiased variance is (x1-x0)**2/2.
+    actual = calculate(prices([1.0, 5.0]), "finite_ewm_std", period=2, decay_rate=decay)
+    assert actual["factor"][-1] == pytest.approx(math.sqrt(8), rel=1e-14, abs=0)

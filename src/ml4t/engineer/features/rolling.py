@@ -169,7 +169,7 @@ def _variance_windows(
     for end in range(width - 1, len(values)):
         start = end - width + 1
         first = -1
-        weight_sum, weight_squares = 0.0, 0.0
+        weight_sum, denominator = 0.0, 0.0
         positive, negative, has_missing = False, False, False
         for j in range(width):
             if missing[start + j]:
@@ -180,11 +180,11 @@ def _variance_windows(
             value = values[start + j]
             positive = positive or value > 0
             negative = negative or value < 0
+            # This equals W**2 - sum(w**2), without subtracting nearly equal numbers.
+            denominator += 2 * weight_sum * weights[j]
             weight_sum += weights[j]
-            weight_squares += weights[j] * weights[j]
         if first < 0 or (has_missing and not omit):
             continue
-        denominator = weight_sum * weight_sum - weight_squares
         if bias_corrected and denominator <= 0:
             continue
         anchor = values[first]
@@ -216,8 +216,9 @@ def _variance_windows(
             if not missing[start + j]:
                 residual = deltas[j] / scale - mean
                 variance += (weights[j] / weight_sum) * residual * residual
-        correction = weight_sum * weight_sum / denominator if bias_corrected else 1.0
-        result[end] = scale * np.sqrt(variance * correction)
+        if bias_corrected:
+            variance = variance * weight_sum * weight_sum / denominator
+        result[end] = scale * np.sqrt(variance)
     return result
 
 
