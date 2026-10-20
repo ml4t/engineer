@@ -415,7 +415,8 @@ validates continuous scheduled bars; `None` disables schedule validation. Expect
 units require a named calendar. No frequency or holiday is inferred from observed gaps.
 For intraday grids declare frequency, timezone, timestamp meaning, session-open anchoring, label
 side and partial-bar policy using FeedSpec. Durations support composite and subsecond targets,
-including `30m`, `1h30m`, `1ms` and `1ns`. Instants normalize to UTC nanoseconds. Naive inputs need
+including `30m`, `1h30m`, `1d1h1ns`, `1ms` and `1ns`. Instants normalize to UTC nanoseconds.
+Out-of-range inputs or targets fail explicitly rather than wrapping into another date. Naive inputs need
 an explicit feed timezone; ambiguous/nonexistent local times fail.
 
 The default missing-price policy raises for null, nonfinite or nonpositive prices. Explicit

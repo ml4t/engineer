@@ -327,6 +327,8 @@ def _get_future_price_lookup(
         unit = "ns" if dtype.time_unit == "ns" or total_ns % 1000 else "us"
         timestamp = timestamp.cast(pl.Datetime(unit, dtype.time_zone))
     target_ts = timestamp + pl.duration(nanoseconds=total_ns, time_unit=unit)
+    if total_ns > 0 and data.select((target_ts < timestamp).any()).item():
+        raise ValueError("Future horizon exceeds the supported timestamp range (overflow)")
 
     # Create future lookup table
     lookup = data.with_row_index("_future_row_index").select(

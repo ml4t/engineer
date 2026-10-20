@@ -92,9 +92,13 @@ def test_common_clock_missing_row_is_not_an_asset_shift_or_filled_quote(lazy, in
 
 
 @pytest.mark.parametrize("lazy", [False, True])
-@pytest.mark.parametrize("duration", ["1ns", "500ns", "1ms", "30m", "1h30m"])
+@pytest.mark.parametrize("duration", ["1ns", "500ns", "1ms", "30m", "1h30m", "1d", "1d1h1ns"])
 def test_elapsed_targets_and_selected_exit_preserve_exact_declared_duration(lazy, duration):
-    step = pd.Timedelta(duration).value
+    step = (
+        (25 * 3600 * 10**9 + 1)
+        if duration == "1d1h1ns"
+        else pd.Timedelta("1D" if duration == "1d" else duration).value
+    )
     frame = _prices(offsets=[0, step, 2 * step], unit="ns")
     result = labeling.forward_returns(
         frame.lazy() if lazy else frame,
@@ -439,3 +443,166 @@ def test_existing_fixed_time_labels_do_not_wrap_declining_unsigned_prices(time_b
     result = labeling.fixed_time_horizon_labels(frame, horizon="1h" if time_based else 1)
     column = "label_return_1h" if time_based else "label_return_1p"
     assert result[column].to_list() == [pytest.approx(-0.1), pytest.approx(-0.1), None]
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_positive_elapsed_horizon_never_wraps_into_past_at_ns_range_limit(lazy):
+    upper = 2**63 - 1
+    frame = _prices().with_columns(
+        pl.Series("timestamp", [upper - 2, upper - 1, upper], dtype=pl.Int64).cast(
+            pl.Datetime("ns", "UTC")
+        )
+    )
+    before = frame.clone()
+    with pytest.raises(ValueError, match="range|overflow"):
+        result = labeling.forward_returns(
+            frame.lazy() if lazy else frame,
+            horizons={"future": "10ns"},
+            window_unit="elapsed",
+            calendar=None,
+            price_basis="raw",
+        )
+        if lazy:
+            result.collect()
+    assert frame.equals(before)
+
+
+def test_input_outside_nanosecond_range_is_not_silently_moved_to_another_century():
+    from datetime import UTC, datetime
+
+    frame = _prices().with_columns(
+        pl.Series("timestamp", [datetime(1500, 1, day, tzinfo=UTC) for day in [1, 2, 3]])
+    )
+    before = frame.clone()
+    with pytest.raises(ValueError, match="range"):
+        _run(frame)
+    assert frame.equals(before)
+
+
+@pytest.mark.parametrize(
+    "options,match",
+    [
+        ({"horizons": {}}, "horizons"),
+        ({"horizons": None}, "horizons"),
+        ({"horizons": {"": 1}}, "names"),
+        ({"horizons": {7: 1}}, "names"),
+        ({"price_basis": ""}, "price_basis"),
+        ({"window_unit": "days"}, "days"),
+        ({"horizons": {"bad": True}}, "positive integers"),
+        ({"horizons": {"bad": 0}}, "positive integers"),
+        ({"horizons": {"bad": 1.5}}, "positive integers"),
+        ({"horizons": {"bad": 1}, "window_unit": "elapsed"}, "fixed durations"),
+        ({"horizons": {"bad": "0ns"}, "window_unit": "elapsed"}, "fixed durations"),
+        ({"horizons": {"bad": "-1ns"}, "window_unit": "elapsed"}, "fixed durations"),
+        ({"horizons": {"bad": "NaT"}, "window_unit": "elapsed"}, "fixed durations"),
+        ({"horizons": {"bad": "banana"}, "window_unit": "elapsed"}, "fixed durations"),
+        ({"horizons": {"bad": "1M"}, "window_unit": "elapsed"}, "fixed durations"),
+        ({"horizons": {"bad": "999999d"}, "window_unit": "elapsed"}, "fixed durations"),
+        ({"tolerance": "1h"}, "only to elapsed"),
+        ({"window_unit": "session"}, "named calendar"),
+        ({"window_unit": "expected_bar"}, "named calendar"),
+        ({"entity_col": "horizon"}, "key names"),
+        ({"entity_col": "_out_private"}, "key names"),
+        ({"entity_col": "timestamp"}, "key names"),
+    ],
+)
+def test_invalid_horizon_and_boundary_options_fail_atomically(options, match):
+    frame = _prices()
+    before = frame.clone()
+    kwargs = {"horizons": {"one": 1}, "calendar": None, "price_basis": "raw", **options}
+    with pytest.raises(ValueError, match=match):
+        labeling.forward_returns(frame, **kwargs)
+    assert frame.equals(before)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "missing_price",
+        "null_key",
+        "duplicate_prices",
+        "text_price",
+        "string_time",
+        "naive_time",
+        "duplicate_entries",
+        "absent_entries",
+        "wrong_session_type",
+    ],
+)
+def test_bad_public_tables_are_rejected_without_mutation(kind):
+    frame = _prices()
+    options = {}
+    match = "."
+    if kind == "missing_price":
+        frame = frame.drop("close")
+    elif kind == "null_key":
+        frame = frame.with_columns(pl.lit(None, dtype=pl.String).alias("asset"))
+    elif kind == "duplicate_prices":
+        frame = pl.concat([frame, frame.head(1)])
+    elif kind == "text_price":
+        frame = frame.with_columns(pl.col("close").cast(pl.String))
+    elif kind == "string_time":
+        frame = frame.with_columns(pl.col("timestamp").cast(pl.String))
+    elif kind == "naive_time":
+        frame = frame.with_columns(pl.col("timestamp").dt.replace_time_zone(None))
+    elif kind == "duplicate_entries":
+        options = {"entries": pl.concat([frame.select("timestamp", "asset")] * 2)}
+    elif kind == "absent_entries":
+        options = {
+            "entries": frame.select("timestamp", "asset").with_columns(
+                pl.lit("missing").alias("asset")
+            )
+        }
+    else:
+        options = {
+            "feed_spec": FeedSpec(
+                time_contract_version=2, calendar=None, timestamp_semantics="session_label"
+            )
+        }
+    before = frame.clone()
+    with pytest.raises(ValueError, match=match):
+        _run(frame, **options)
+    assert frame.equals(before)
+
+
+@pytest.mark.parametrize(
+    "column,value", [("timestamp_col", "event"), ("entity_col", "sid"), ("price_col", "px")]
+)
+def test_explicit_column_names_cannot_contradict_declared_feed_roles(column, value):
+    feed = FeedSpec(time_contract_version=2, calendar=None, entity_col="asset")
+    with pytest.raises(ValueError, match="conflict"):
+        _run(_prices(), feed_spec=feed, **{column: value})
+
+
+def test_daily_session_labels_cannot_be_interpreted_as_elapsed_instants():
+    feed = FeedSpec(time_contract_version=2, calendar=None, timestamp_semantics="session_label")
+    frame = _prices().with_columns(pl.col("timestamp").dt.date())
+    with pytest.raises(ValueError, match="Session labels"):
+        labeling.forward_returns(
+            frame, horizons={"day": "1d"}, window_unit="elapsed", feed_spec=feed, price_basis="raw"
+        )
+
+
+@pytest.mark.parametrize("unit", ["observation", "session"])
+def test_beyond_coverage_arbitrary_precision_count_produces_tail_not_native_integer_overflow(unit):
+    frame = _prices()
+    kwargs = {"calendar": None}
+    if unit == "session":
+        kwargs = {
+            "feed_spec": FeedSpec(
+                time_contract_version=2,
+                calendar="24/7",
+                entity_col="asset",
+                data_frequency="1h",
+                timestamp_semantics="event_time",
+                bar_type="time",
+                bar_grid_anchor="session_open",
+                bar_label="left",
+                partial_bar_policy="exclude",
+            )
+        }
+    result = labeling.forward_returns(
+        frame, horizons={"very_large": 10**100}, window_unit=unit, price_basis="raw", **kwargs
+    )
+    assert result["forward_return"].to_list() == [None] * 3
+    assert result["outcome_status"].to_list() == ["insufficient_tail"] * 3

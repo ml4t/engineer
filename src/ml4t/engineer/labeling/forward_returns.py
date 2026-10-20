@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import warnings
+import re
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -23,9 +23,24 @@ def _fixed_duration(value: str | timedelta, *, zero_allowed: bool = False) -> ti
     import pandas as pd
 
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", FutureWarning)
-            warnings.simplefilter("error", DeprecationWarning)
+        if isinstance(value, str):
+            parts = list(re.finditer(r"(\d+)(ns|us|ms|w|d|h|m|s)", value))
+            if not parts or "".join(part[0] for part in parts) != value:
+                raise ValueError
+            scales = {
+                "w": 604800 * 10**9,
+                "d": 86400 * 10**9,
+                "h": 3600 * 10**9,
+                "m": 60 * 10**9,
+                "s": 10**9,
+                "ms": 10**6,
+                "us": 1000,
+                "ns": 1,
+            }
+            duration = pd.Timedelta(
+                sum(int(part[1]) * scales[part[2]] for part in parts), unit="ns"
+            )
+        else:
             duration = pd.Timedelta(value)
         if not isinstance(duration, timedelta) or duration < timedelta(0):
             raise ValueError
@@ -33,7 +48,7 @@ def _fixed_duration(value: str | timedelta, *, zero_allowed: bool = False) -> ti
             raise ValueError
         # Validate the ns range before building a Polars expression.
         _ = duration.value
-    except (ValueError, TypeError, OverflowError, FutureWarning, DeprecationWarning) as exc:
+    except (ValueError, TypeError, OverflowError) as exc:
         raise ValueError("Elapsed horizons/tolerance require finite fixed durations") from exc
     return duration
 
@@ -43,6 +58,8 @@ def _utc_instants(frame: pl.DataFrame, name: str, timezone: str | None) -> pl.Da
     if not isinstance(dtype, pl.Datetime):
         raise ValueError(f"{name!r} must contain datetime instants")
     value = pl.col(name).cast(pl.Datetime("ns", dtype.time_zone))
+    if frame.select(value.cast(dtype).ne_missing(pl.col(name)).any()).item():
+        raise ValueError(f"{name!r} is outside the supported nanosecond timestamp range")
     if dtype.time_zone is None:
         if timezone is None:
             raise ValueError(f"Naive {name!r} requires explicit FeedSpec.timezone")
@@ -77,7 +94,8 @@ def _session_requests(
         else:
             assert feed.bar_label in {"left", "right"}
             closed = row["market_close"].value
-            frequency = _fixed_duration(feed.data_frequency)
+            frequency = pd.Timedelta("1D" if feed.data_frequency == "1d" else feed.data_frequency)
+            assert isinstance(frequency, timedelta)
             step = pd.Timedelta(frequency).value
             labels = list(
                 _expected_bar_label_ticks(
