@@ -323,7 +323,7 @@ def test_legacy_v1_metadata_is_not_silently_reinterpreted_as_explicit_disable():
 
 
 @pytest.mark.parametrize("frequency", ["NaT", "1ns", "1d", "1month", 3600, "0h"])
-def test_unsupported_frequency_is_not_inferred_from_observation_spacing(frequency):
+def test_invalid_or_incomplete_frequency_is_not_inferred_from_observation_spacing(frequency):
     start = datetime(2025, 7, 11, tzinfo=UTC)
     data = returns(prices([start + timedelta(hours=h) for h in range(8)]))
     with pytest.raises(ValueError, match="frequency"):

@@ -80,8 +80,12 @@ def _window_sizes(
             values = values.dt.replace_time_zone(
                 feed.timezone, ambiguous="raise", non_existent="raise"
             )
-        timestamps = values.dt.convert_time_zone("UTC").dt.epoch("us").to_numpy()
-        duration = (period.days * 86400 + period.seconds) * 1_000_000 + period.microseconds
+        timestamps = values.dt.convert_time_zone("UTC").dt.epoch("ns").to_numpy()
+        duration = (
+            (period.days * 86400 + period.seconds) * 1_000_000_000
+            + period.microseconds * 1000
+            + int(getattr(period, "nanoseconds", 0))
+        )
         if duration > int(timestamps[-1] - timestamps[0]):
             return positions + 1, np.zeros(data.height, dtype=np.bool_)
         starts = np.searchsorted(timestamps, timestamps - duration, side="right")
