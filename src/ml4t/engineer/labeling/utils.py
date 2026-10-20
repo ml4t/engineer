@@ -297,7 +297,7 @@ def _get_future_price_lookup(
     time_horizon: str | timedelta,
     price_col: str,
     timestamp_col: str | None,
-    tolerance: str | None,
+    tolerance: str | timedelta | None,
     group_cols: list[str] | None,
 ) -> pl.DataFrame:
     """Return matched future prices, timestamps, and row indices."""
@@ -315,13 +315,23 @@ def _get_future_price_lookup(
         td = time_horizon
 
     # Compute target timestamps
-    total_us = int(td.total_seconds() * 1_000_000)
-    target_ts = pl.col(ts_col) + pl.duration(microseconds=total_us)
+    total_ns = (
+        (td.days * 86400 + td.seconds) * 1_000_000_000
+        + td.microseconds * 1000
+        + int(getattr(td, "nanoseconds", 0))
+    )
+    dtype = data.schema[ts_col]
+    timestamp = pl.col(ts_col)
+    unit = "us"
+    if isinstance(dtype, pl.Datetime):
+        unit = "ns" if dtype.time_unit == "ns" or total_ns % 1000 else "us"
+        timestamp = timestamp.cast(pl.Datetime(unit, dtype.time_zone))
+    target_ts = timestamp + pl.duration(nanoseconds=total_ns, time_unit=unit)
 
     # Create future lookup table
     lookup = data.with_row_index("_future_row_index").select(
         [
-            pl.col(ts_col).alias("_lookup_ts"),
+            timestamp.alias("_lookup_ts"),
             pl.col(price_col).alias("_future_price"),
             pl.col("_future_row_index"),
             *(pl.col(c) for c in (group_cols or [])),
@@ -339,7 +349,15 @@ def _get_future_price_lookup(
     }
 
     if tolerance is not None:
-        join_kwargs["tolerance"] = tolerance
+        if isinstance(tolerance, timedelta):
+            tolerance_ns = (
+                (tolerance.days * 86400 + tolerance.seconds) * 1_000_000_000
+                + tolerance.microseconds * 1000
+                + int(getattr(tolerance, "nanoseconds", 0))
+            )
+            join_kwargs["tolerance"] = f"{tolerance_ns}ns"
+        else:
+            join_kwargs["tolerance"] = tolerance
 
     if group_cols:
         group_sort_state = data.group_by(group_cols, maintain_order=True).agg(

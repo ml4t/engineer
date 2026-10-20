@@ -60,6 +60,9 @@ class LabelDefinition:
     missing_price_policy: str | None = None
     price_basis: str | None = None
     feed_spec: FeedSpec | None = None
+    index_mode: str | None = None
+    tail_policy: str | None = None
+    endpoint_tolerance: str | None = None
 
     def __post_init__(self) -> None:
         if self.window_unit is not None:
@@ -71,6 +74,8 @@ class LabelDefinition:
             ("endpoint_method", {"cumulative", "exit_bar"}),
             ("return_method", {"returns", "log_returns"}),
             ("missing_price_policy", {"raise", "null"}),
+            ("index_mode", {"per_asset", "common_grid"}),
+            ("tail_policy", {"null", "drop", "raise"}),
         ):
             value = getattr(self, name)
             if value is not None and value not in allowed:
@@ -99,6 +104,9 @@ class LabelDefinition:
             feed_spec=FeedSpec.from_any(mapping["feed_spec"])
             if mapping.get("feed_spec") is not None
             else None,
+            index_mode=optional_str(mapping.get("index_mode")),
+            tail_policy=optional_str(mapping.get("tail_policy")),
+            endpoint_tolerance=optional_str(mapping.get("endpoint_tolerance")),
         )
 
 
@@ -127,6 +135,9 @@ class LabelSpec(ArtifactSpec):
             "missing_price_policy",
             "price_basis",
             "feed_spec",
+            "index_mode",
+            "tail_policy",
+            "endpoint_tolerance",
         ):
             if payload["definition"][name] is None:
                 del payload["definition"][name]

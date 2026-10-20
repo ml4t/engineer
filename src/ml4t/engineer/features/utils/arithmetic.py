@@ -9,15 +9,24 @@ import polars as pl
 from ml4t.engineer.core.exceptions import InvalidParameterError
 
 
-def _price_return(column: str, periods: int, *, logarithmic: bool) -> pl.Expr:
+def _price_return(
+    column: str | pl.Expr,
+    periods: int,
+    *,
+    logarithmic: bool,
+    reference: pl.Expr | None = None,
+    float_difference: bool = False,
+) -> pl.Expr:
     def build(price: pl.Expr, dtype: pl.DataType) -> pl.Expr:
-        previous = price.shift(periods)
+        previous = price.shift(periods) if reference is None else reference
         ratio = price / previous
         if not dtype.is_integer():
-            return ratio.log() if logarithmic else ratio - 1
+            if logarithmic:
+                return ratio.log()
+            return (price - previous) / previous if float_difference else ratio - 1
 
         wide = price.cast(pl.Int128)
-        lagged = wide.shift(periods)
+        lagged = previous.cast(pl.Int128)
         if dtype == pl.Int128:
             # Opposite-sign Int128 differences can exceed even the widest native integer.
             same_sign = ((wide >= 0) & (lagged >= 0)) | ((wide <= 0) & (lagged <= 0))
@@ -32,7 +41,8 @@ def _price_return(column: str, periods: int, *, logarithmic: bool) -> pl.Expr:
         # log1p retains tiny ticks, while the ratio retains near-total losses and domains.
         return pl.when(gain.abs() < 0.5).then(gain.log1p()).otherwise(ratio.log())
 
-    return pl.col(column).pipe_with_dtype(build)
+    price = pl.col(column) if isinstance(column, str) else column
+    return price.pipe_with_dtype(build)
 
 
 def returns(column: str, periods: int = 1) -> pl.Expr:

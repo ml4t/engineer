@@ -20,6 +20,7 @@ import numpy.typing as npt
 import polars as pl
 
 from ml4t.engineer.core.exceptions import DataValidationError
+from ml4t.engineer.features.utils.arithmetic import _price_return
 from ml4t.engineer.labeling.utils import (
     get_future_price_at_time,
     is_duration_string,
@@ -270,14 +271,21 @@ def _bar_based_horizon_labels(
         future_prices = prices.shift(-horizon)
 
     # Compute label based on method
+    precise_return = _price_return(
+        future_prices,
+        1,
+        logarithmic=method == "log_returns",
+        reference=prices,
+        float_difference=True,
+    )
     if method == "returns":
-        label = (future_prices - prices) / prices
+        label = precise_return
         label_name = f"label_return_{horizon}p"
     elif method == "log_returns":
-        label = (future_prices / prices).log()
+        label = precise_return
         label_name = f"label_log_return_{horizon}p"
     elif method == "binary":
-        returns = (future_prices - prices) / prices
+        returns = precise_return
         label = (
             pl.when(future_prices.is_null())
             .then(pl.lit(None))
@@ -332,16 +340,29 @@ def _time_based_horizon_labels(
 
     # Current prices
     current_prices = data[price_col]
+    precise_return = (
+        pl.DataFrame({"future": future_prices, "current": current_prices})
+        .select(
+            _price_return(
+                "future",
+                1,
+                logarithmic=method == "log_returns",
+                reference=pl.col("current"),
+                float_difference=True,
+            )
+        )
+        .to_series()
+    )
 
     # Compute label based on method
     if method == "returns":
-        label = (future_prices - current_prices) / current_prices
+        label = precise_return
         label_name = f"label_return_{label_suffix}"
     elif method == "log_returns":
-        label = (future_prices / current_prices).log()
+        label = precise_return
         label_name = f"label_log_return_{label_suffix}"
     elif method == "binary":
-        returns = (future_prices - current_prices) / current_prices
+        returns = precise_return
         label = (
             pl.when(future_prices.is_null())
             .then(pl.lit(None))

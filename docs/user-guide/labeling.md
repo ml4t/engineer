@@ -323,6 +323,114 @@ Output names identify the method and horizon, such as `label_return_10p`,
 controls the horizon, method, threshold, and column mapping. Conflicting explicit
 arguments fail before calculation.
 
+## Prepare keyed multi-horizon outcomes
+
+The unreleased `forward_returns` API prepares realized outcomes for training or supplied-return
+analysis. It requires Polars 2 and Specs 0.2. It does not replace barrier labels or Diagnostic's
+Alphalens cleaner. Existing fixed-horizon defaults and output names remain unchanged. Integer
+fixed-horizon arithmetic now avoids unsigned subtraction wrap and preserves small integer ticks.
+
+Use exact entry keys, declare the price basis, and select the horizon unit. This example counts
+observations with `calendar=None`; it makes no schedule-completeness claim.
+
+<!-- ml4t-exec -->
+```python
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.artifacts import LabelDefinition, LabelSchema, LabelSpec
+from ml4t.engineer.labeling import forward_returns
+
+times = [datetime(2025, 7, 3, tzinfo=UTC) + timedelta(hours=i) for i in range(3)]
+prices = pl.DataFrame({
+    "timestamp": times,
+    "asset": ["A"] * 3,
+    "close": [100, 110, 121],
+    "known_at": [time + timedelta(seconds=30) for time in times],
+})
+feed = FeedSpec(time_contract_version=2, calendar=None, entity_col="asset")
+outcomes = forward_returns(
+    prices,
+    horizons={"one": 1, "two": 2},
+    feed_spec=feed,
+    window_unit="observation",
+    endpoint_method="cumulative",
+    price_basis="raw",
+    available_at_col="known_at",
+)
+two = outcomes.filter(pl.col("horizon") == "two")
+assert abs(two["forward_return"][0] - 0.21) < 1e-15
+assert two["outcome_status"].to_list() == ["ok", "insufficient_tail", "insufficient_tail"]
+assert two["exit_time"][0] == times[2]
+assert two["outcome_available_at"][0] == prices["known_at"][2]
+
+spec = LabelSpec(
+    artifact_id="two-observation-outcomes",
+    schema=LabelSchema(
+        label_col="forward_return", entry_time_col="timestamp",
+        requested_exit_time_col="requested_exit_time", exit_time_col="exit_time",
+        outcome_available_at_col="outcome_available_at",
+    ),
+    definition=LabelDefinition(
+        horizon="2", window_unit="observation", endpoint_method="cumulative",
+        return_method="returns", missing_price_policy="raise", price_basis="raw",
+        index_mode="per_asset", tail_policy="null", feed_spec=feed,
+    ),
+)
+with TemporaryDirectory() as directory:
+    path = Path(directory)
+    two.write_parquet(path / "outcomes.parquet")
+    (path / "outcomes.json").write_text(json.dumps(spec.to_dict()))
+    restored = pl.read_parquet(path / "outcomes.parquet")
+    restored_spec = LabelSpec.from_mapping(json.loads((path / "outcomes.json").read_text()))
+    assert restored.equals(two)
+    assert restored_spec.definition.feed_spec.resolve_calendar() is None
+```
+
+The result is a long table, one row per entry and named horizon. It retains entry keys,
+requested and actual exits, the reference-price time, outcome availability, method, unit,
+indexing mode, price basis and an exclusion status. Select one horizon before sending the
+table to Diagnostic's `prepare_signal_panel`, and pass `return_columns=["forward_return"]`,
+`date_col="timestamp"` and the declared asset column. Metadata must not become return columns.
+Diagnostic also accepts independently prepared equivalent tables without Engineer.
+
+| Choice | Endpoint definition |
+|--------|---------------------|
+| `window_unit="observation"` | N following chronological observations on the selected clock. |
+| `window_unit="expected_bar"` | N following bars after validating the complete declared schedule/grid. |
+| `window_unit="session"` | Final scheduled bar of the Nth following trading session; daily session labels remain dates. |
+| `window_unit="elapsed"` | First timestamp at or after an exact physical-duration target, optionally bounded by `tolerance`. Session-label dates cannot define elapsed time. |
+| `index_mode="per_asset"` | Each asset's own chronological price clock. |
+| `index_mode="common_grid"` | Union of supplied timestamps; an absent asset quote is missing, never the next asset observation. |
+| `endpoint_method="cumulative"` | Selected exit price divided by entry price, minus one. |
+| `endpoint_method="exit_bar"` | Selected exit price divided by the preceding price on the selected clock, minus one. Thus 100/110/121 at horizon two gives 0.1 rather than 0.21. |
+
+Calendar selection is explicit argument, declared feed metadata, then NYSE. A named calendar
+requires a complete v2 grid declaration even when counting observations. A named 24/7 calendar
+validates continuous scheduled bars; `None` disables schedule validation. Expected-bar and session
+units require a named calendar. No frequency or holiday is inferred from observed gaps.
+For intraday grids declare frequency, timezone, timestamp meaning, session-open anchoring, label
+side and partial-bar policy using FeedSpec. Durations support composite and subsecond targets,
+including `30m`, `1h30m`, `1ms` and `1ns`. Instants normalize to UTC nanoseconds. Naive inputs need
+an explicit feed timezone; ambiguous/nonexistent local times fail.
+
+The default missing-price policy raises for null, nonfinite or nonpositive prices. Explicit
+`missing_price_policy="null"` retains unavailable outcomes and actual keys without filling quotes.
+Absent scheduled rows still fail completeness validation. `tail_policy="null"` retains tail rows
+with `insufficient_tail`; `drop` excludes those rows, and `raise` rejects the operation.
+Missing in-range endpoints receive `missing_endpoint`, not zero returns. `entries` may select a
+sparse ordered table of exact entity/time keys; missing or duplicate entry keys fail.
+
+Availability is the later known-at time of the two prices used. If either is unknown, availability
+remains null. Session-label dates do not assert information availability. These realized outcomes
+contain future information and must not enter a contemporaneous feature or strategy decision.
+Keep the original feed and effective options in LabelSpec when persisting the table. Calendar
+omission and explicit null retain their distinct shared serialization semantics.
+
 ## Trend Scanning
 
 De Prado's trend-scanning method finds the optimal holding period for each observation by fitting linear regressions over a range of horizons and selecting the one with the highest t-statistic.

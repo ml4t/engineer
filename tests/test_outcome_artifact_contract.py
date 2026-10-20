@@ -39,6 +39,9 @@ def _wire_definition(feed):
         "missing_price_policy": "null",
         "price_basis": "split_adjusted",
         "feed_spec": feed.to_dict(),
+        "index_mode": "common_grid",
+        "tail_policy": "null",
+        "endpoint_tolerance": "1ns",
     }
 
 
