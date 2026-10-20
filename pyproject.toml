@@ -76,7 +76,7 @@ dependencies = [
     "ml4t-specs>=0.2.0,<0.3.0",
 
     # Data processing (Polars-first)
-    "polars>=0.20.0",
+    "polars>=2.0.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0,<2.6",
 
