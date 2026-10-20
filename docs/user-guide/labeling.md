@@ -396,10 +396,20 @@ with TemporaryDirectory() as directory:
 
 The result is a long table, one row per entry and named horizon. It retains entry keys,
 requested and actual exits, the reference-price time, outcome availability, method, unit,
-indexing mode, price basis and an exclusion status. Select one horizon before sending the
-table to Diagnostic's `prepare_signal_panel`, and pass `return_columns=["forward_return"]`,
+indexing mode, price basis and an exclusion status.
+The horizon name is a selector. `horizon_value` stores a count, or a canonical fixed-nanosecond
+duration for elapsed windows, so persisted values can replay without guessing a format.
+Select one horizon before sending the table to Diagnostic's `prepare_signal_panel`, and pass `return_columns=["forward_return"]`,
 `date_col="timestamp"` and the declared asset column. Metadata must not become return columns.
 Diagnostic also accepts independently prepared equivalent tables without Engineer.
+
+The installed handoff has been qualified against an unpublished Diagnostic build at
+[`643b94b`](https://github.com/ml4t/diagnostic/tree/643b94b6636b0371319da84653fbe65cb95b56df),
+not the published 0.1.9 package. Keep the original outcome artifact for endpoint lineage and join
+it to retained analysis keys; do not backshift a sparse array. A manual join to older frames may
+require normalizing their instant keys to UTC nanoseconds first. Session-label dates remain
+identifiers, not midnight instants. Exact producer artifact and qualification revisions are recorded
+in [the owning pull request](https://github.com/ml4t/engineer/pull/114).
 
 | Choice | Endpoint definition |
 |--------|---------------------|

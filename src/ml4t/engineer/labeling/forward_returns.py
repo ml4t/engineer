@@ -16,7 +16,7 @@ from ml4t.engineer.core.bar_grid import (
     validate_declared_grid,
 )
 from ml4t.engineer.features.utils.arithmetic import _price_return
-from ml4t.engineer.labeling.utils import _get_future_price_lookup
+from ml4t.engineer.labeling.utils import _duration_nanoseconds, _get_future_price_lookup
 
 
 def _fixed_duration(value: str | timedelta, *, zero_allowed: bool = False) -> timedelta:
@@ -514,7 +514,11 @@ def forward_returns(
                 "reference_row_observed",
                 "reference_price_observed",
                 pl.lit(name).alias("horizon"),
-                pl.lit(str(horizons[name])).alias("horizon_value"),
+                pl.lit(
+                    f"{_duration_nanoseconds(horizon)}ns"
+                    if isinstance(horizon, timedelta)
+                    else str(horizon)
+                ).alias("horizon_value"),
                 pl.lit(unit.value).alias("window_unit"),
                 pl.lit(endpoint_method).alias("endpoint_method"),
                 pl.lit(return_method).alias("return_method"),

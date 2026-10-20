@@ -981,3 +981,46 @@ def test_decimal_opposite_sign_limits_do_not_overflow_before_domain_selection(
         assert values[1] == -2.0
     else:
         assert math.isnan(values[1])
+
+
+@pytest.mark.parametrize("duration,step", [(pd.Timedelta("1ns"), 1), (pd.Timedelta("1us"), 1000)])
+def test_actual_persisted_horizon_value_can_replay_the_native_outcome_without_an_extra_parser(
+    duration, step
+):
+    import json
+
+    from ml4t.engineer.artifacts import LabelSpec
+
+    frame = _prices(offsets=[0, step, 2 * step], unit="ns")
+    feed = FeedSpec(time_contract_version=2, calendar=None, entity_col="asset")
+    output = labeling.forward_returns(
+        frame,
+        horizons={"future": duration},
+        window_unit="elapsed",
+        feed_spec=feed,
+        price_basis="raw",
+    )
+    spec = LabelSpec.from_mapping(
+        {
+            "artifact_id": "actual-outcome-replay",
+            "definition": {
+                "horizon": output["horizon_value"][0],
+                "window_unit": "elapsed",
+                "endpoint_method": "cumulative",
+                "return_method": "returns",
+                "missing_price_policy": "raise",
+                "price_basis": "raw",
+                "feed_spec": feed.to_dict(),
+            },
+        }
+    )
+    restored = LabelSpec.from_mapping(json.loads(json.dumps(spec.to_dict())))
+    replayed = labeling.forward_returns(
+        frame,
+        horizons={"future": restored.definition.horizon},
+        window_unit=restored.definition.window_unit,
+        feed_spec=restored.definition.feed_spec,
+        price_basis=restored.definition.price_basis,
+    )
+    assert replayed.equals(output)
+    assert output["horizon_value"].unique().to_list() == [f"{step}ns"]

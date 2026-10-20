@@ -292,6 +292,14 @@ def get_future_price_at_time(
     return future_prices, future_prices.is_not_null()
 
 
+def _duration_nanoseconds(duration: timedelta) -> int:
+    return (
+        (duration.days * 86400 + duration.seconds) * 1_000_000_000
+        + duration.microseconds * 1000
+        + int(getattr(duration, "nanoseconds", 0))
+    )
+
+
 def _get_future_price_lookup(
     data: pl.DataFrame,
     time_horizon: str | timedelta,
@@ -315,11 +323,7 @@ def _get_future_price_lookup(
         td = time_horizon
 
     # Compute target timestamps
-    total_ns = (
-        (td.days * 86400 + td.seconds) * 1_000_000_000
-        + td.microseconds * 1000
-        + int(getattr(td, "nanoseconds", 0))
-    )
+    total_ns = _duration_nanoseconds(td)
     dtype = data.schema[ts_col]
     timestamp = pl.col(ts_col)
     unit = "us"
@@ -352,11 +356,7 @@ def _get_future_price_lookup(
 
     if tolerance is not None:
         if isinstance(tolerance, timedelta):
-            tolerance_ns = (
-                (tolerance.days * 86400 + tolerance.seconds) * 1_000_000_000
-                + tolerance.microseconds * 1000
-                + int(getattr(tolerance, "nanoseconds", 0))
-            )
+            tolerance_ns = _duration_nanoseconds(tolerance)
             join_kwargs["tolerance"] = f"{tolerance_ns}ns"
         else:
             join_kwargs["tolerance"] = tolerance
