@@ -38,6 +38,7 @@ RELEASE_CRITICAL_MODULES = (
     "src/ml4t/engineer/core/validation.py",
     "src/ml4t/engineer/dataset.py",
     "src/ml4t/engineer/discovery/catalog.py",
+    "src/ml4t/engineer/features/paired.py",
     "src/ml4t/engineer/labeling/atr_barriers.py",
     "src/ml4t/engineer/labeling/calendar.py",
     "src/ml4t/engineer/labeling/horizon_labels.py",

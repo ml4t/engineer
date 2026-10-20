@@ -6,7 +6,7 @@ screens. Dated source eligibility belongs to native feature preparation.
 """
 
 import inspect
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -17,7 +17,74 @@ from ml4t.engineer.features.utils import arithmetic
 
 Expression = pl.Expr | dict[str, pl.Expr]
 
-__all__ = ["factor_expression"]
+__all__ = ["factor_expression", "return_factor_features"]
+
+
+def return_factor_features(
+    data: pl.DataFrame | pl.LazyFrame,
+    name: str,
+    *,
+    target: Mapping[str, Any],
+    returns_length: int = 2,
+    correlation_length: int | None = None,
+    regression_length: int | None = None,
+    allowed_missing_percentage: float | None = None,
+    mask: str | pl.Expr | None = None,
+    **native_options: Any,
+) -> pl.DataFrame | pl.LazyFrame:
+    """Map return-factor constructors to native keyed price preparation.
+
+    target contains stable physical IDs, not an opaque Zipline Asset. Declare
+    price_basis, feed_spec/calendar and column mappings through native_options.
+    The mask changes the statistic output only, retaining target input history.
+    This is a dataframe recipe, not a Pipeline interpreter or legacy constructor.
+    """
+    methods = {
+        "RollingPearsonOfReturns": "pearson",
+        "RollingSpearmanOfReturns": "spearman",
+        "RollingLinearRegressionOfReturns": "regression",
+        "SimpleBeta": "beta",
+    }
+    if name not in methods:
+        raise ValueError(f"Unsupported return-factor recipe {name!r}")
+    method = methods[name]
+    rolling._period(returns_length, minimum=2)
+    if mask is not None and not isinstance(mask, str | pl.Expr):
+        raise TypeError("mask must be an input column name or expression")
+    correlation = method in {"pearson", "spearman"}
+    width = correlation_length if correlation else regression_length
+    wrong_length = regression_length if correlation else correlation_length
+    if width is None or wrong_length is not None:
+        raise ValueError("Declare only the correlation_length or regression_length for this recipe")
+    rolling._period(width, minimum=3 if method == "beta" else 2)
+    allowed_missing = 0
+    if method == "beta":
+        if returns_length != 2:
+            raise ValueError("SimpleBeta uses daily (two-price) returns")
+        fraction = 0.25 if allowed_missing_percentage is None else allowed_missing_percentage
+        if (
+            isinstance(fraction, bool)
+            or not isinstance(fraction, int | float)
+            or not 0 <= fraction <= 1
+        ):
+            raise ValueError("allowed_missing_percentage must be in [0,1]")
+        allowed_missing = int(width * fraction)
+    elif allowed_missing_percentage is not None:
+        raise ValueError("Only SimpleBeta has allowed_missing_percentage")
+    output = paired.target_return_features(
+        data,
+        target=target,
+        period=width,
+        returns_periods=returns_length - 1,
+        method=method,
+        allowed_missing=allowed_missing,
+        **native_options,
+    )
+    if mask is None:
+        return output
+    predicate = pl.col(mask) if isinstance(mask, str) else mask
+    column = f"{native_options.get('output', 'target')}_{method}"
+    return output.with_columns(pl.when(predicate).then(pl.col(column)).alias(column))
 
 
 @dataclass(frozen=True)

@@ -245,6 +245,56 @@ Its inferential fields require the optional `stats` extra (`uv add
 This is predictive rolling regression on supplied observations, not trend-on-time
 regression or portfolio attribution.
 
+For price panels, `features.paired.target_return_features` performs the exact
+time/identity join and derives returns before applying the paired statistic.
+Declare the target as a mapping of physical identity columns to stable values,
+including all components for a compound identity. `price_basis` records the
+supplied Data/caller declaration; this function does not adjust prices.
+
+The default `index_mode="common_grid"` temporarily retains absent quotes on the
+supplied union clock through both return derivation and rolling calculation.
+`per_asset` instead counts each asset's own observations. Neither mode fills
+quotes, compresses missing pairs out of rolling windows, or emits synthetic rows.
+A named calendar validates the original declared grid before calculating any
+return. Explicit `calendar=None` selects observation rows. These finite statistics
+support observation/expected-bar units, not session or elapsed windows.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+import math
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.features.paired import target_return_features
+
+days = [date(2025, 7, day) for day in (7, 8, 9, 10)]
+prices = pl.DataFrame({
+    "timestamp": days * 2, "asset": ["A"] * 4 + ["B"] * 4,
+    "close": [100., 120., 80., 112., 100., 110., 99., 118.8],
+})
+result = target_return_features(
+    prices.lazy(), target={"asset": "B"}, period=3, method="beta",
+    price_basis="raw", feed_spec=FeedSpec(time_contract_version=2, calendar=None),
+).collect()
+assert math.isclose(result.filter(pl.col("asset") == "A")["target_beta"][-1], 52 / 21)
+assert result.select(prices.columns).equals(prices)
+assert result["target_available_at"].null_count() == prices.height
+```
+
+Added return columns expose the actual paired inputs. `_available_at` is the latest
+publication instant across both assets' price dependencies in the full window.
+Without complete supplied timezone-aware `available_at_col` values it stays
+unknown. Observation timestamps are not fabricated publication times. The caller
+must still enforce decision-time eligibility before using these features.
+
+`compat.zipline.return_factor_features` maps `RollingPearsonOfReturns`,
+`RollingSpearmanOfReturns`, `RollingLinearRegressionOfReturns` and `SimpleBeta`
+onto this native preparation. It translates `returns_length=N` to an N-1-price
+lag, accepts the corresponding correlation/regression length, and converts
+SimpleBeta's allowed-missing percentage to a count. Its optional output mask
+does not remove the target's prices or warmup history. Pass stable target IDs,
+not opaque Zipline Asset objects. This recipe returns a native frame, not a Term.
+
 <!-- ml4t-exec -->
 ```python
 import math
