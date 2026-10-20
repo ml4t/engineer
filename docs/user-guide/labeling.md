@@ -425,6 +425,18 @@ Absent scheduled rows still fail completeness validation. `tail_policy="null"` r
 with `insufficient_tail`; `drop` excludes those rows, and `raise` rejects the operation.
 Missing in-range endpoints receive `missing_endpoint`, not zero returns. `entries` may select a
 sparse ordered table of exact entity/time keys; missing or duplicate entry keys fail.
+Input role names cannot use the reserved `_out_` prefix or conflict with output key metadata.
+
+Engineer never constructs a filled price view. If a caller supplies an explicit analytical
+research view, pass both `original_row_col` and `original_price_col` Boolean columns. They
+identify original rows and valid observed quotes before the caller's preparation. Both must
+be nonnull and consistent; an observed quote cannot belong to a synthetic row. Entry,
+reference and exit row/price flags remain in the outcome table. Without a supplied view,
+provided rows are original and finite positive quotes are observed. A numeric return with
+false observation flags is a research outcome, not evidence of an observed executable price.
+Named-calendar completeness is checked on original rows, so inserting and filling a missing
+scheduled row does not clear the failure. Each asset must have original coverage. Preserve
+the two input role declarations in LabelDefinition when persisting a research view's results.
 
 Availability is the later known-at time of the two prices used. If either is unknown, availability
 remains null. Session-label dates do not assert information availability. These realized outcomes

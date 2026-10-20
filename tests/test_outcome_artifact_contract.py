@@ -42,6 +42,8 @@ def _wire_definition(feed):
         "index_mode": "common_grid",
         "tail_policy": "null",
         "endpoint_tolerance": "1ns",
+        "original_row_col": "original_row",
+        "original_price_col": "original_quote",
     }
 
 
@@ -114,6 +116,8 @@ def test_outcome_frame_and_spec_keep_distinct_nanosecond_endpoints_on_disk(tmp_p
         ("endpoint_method", "closest"),
         ("return_method", "percent"),
         ("missing_price_policy", "fill"),
+        ("index_mode", "infer"),
+        ("tail_policy", "fill"),
     ],
 )
 def test_outcome_definition_rejects_unknown_method_instead_of_silently_dropping_it(field, value):
@@ -121,3 +125,10 @@ def test_outcome_definition_rejects_unknown_method_instead_of_silently_dropping_
     definition[field] = value
     with pytest.raises(ValueError, match=field):
         LabelSpec.from_mapping({"artifact_id": "invalid-outcomes", "definition": definition})
+
+
+def test_outcome_definition_cannot_drop_one_original_mask_role():
+    definition = _wire_definition(FeedSpec(time_contract_version=2, calendar=None))
+    definition.pop("original_row_col")
+    with pytest.raises(ValueError, match="original row and price"):
+        LabelSpec.from_mapping({"artifact_id": "incomplete-mask-roles", "definition": definition})

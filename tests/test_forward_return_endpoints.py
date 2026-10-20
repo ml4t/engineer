@@ -440,7 +440,9 @@ def test_submicrosecond_endpoint_tolerance_does_not_round_to_zero(tolerance, exp
 @pytest.mark.parametrize("time_based", [False, True])
 def test_existing_fixed_time_labels_do_not_wrap_declining_unsigned_prices(time_based):
     frame = _prices((100, 90, 81)).with_columns(pl.col("close").cast(pl.UInt64))
-    result = labeling.fixed_time_horizon_labels(frame, horizon="1h" if time_based else 1)
+    result = labeling.fixed_time_horizon_labels(
+        frame, horizon="1h" if time_based else 1, timestamp_col="timestamp"
+    )
     column = "label_return_1h" if time_based else "label_return_1p"
     assert result[column].to_list() == [pytest.approx(-0.1), pytest.approx(-0.1), None]
 
@@ -606,3 +608,137 @@ def test_beyond_coverage_arbitrary_precision_count_produces_tail_not_native_inte
     )
     assert result["forward_return"].to_list() == [None] * 3
     assert result["outcome_status"].to_list() == ["insufficient_tail"] * 3
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_explicit_external_research_price_view_retains_original_quote_and_row_masks(lazy):
+    original = _prices((100, None, 121))
+    view = original.with_columns(
+        pl.lit(True).alias("original_row"),
+        pl.col("close").is_not_null().alias("original_quote"),
+        pl.col("close").forward_fill(),
+    )
+    before = view.clone()
+    result = labeling.forward_returns(
+        view.lazy() if lazy else view,
+        horizons={"one": 1},
+        calendar=None,
+        price_basis="raw",
+        original_row_col="original_row",
+        original_price_col="original_quote",
+    )
+    result = result.collect() if lazy else result
+    assert result["forward_return"].to_list() == [0.0, pytest.approx(0.21), None]
+    assert result["entry_price_observed"].to_list() == [True, False, True]
+    assert result["exit_price_observed"].to_list() == [False, True, None]
+    assert result["reference_price_observed"].to_list() == [True, False, True]
+    assert result["entry_row_observed"].to_list() == [True] * 3
+    assert view.equals(before)
+
+
+def test_research_fill_rows_cannot_conceal_a_missing_scheduled_bar():
+    sparse = _prices(offsets=[0, 2, 3])
+    # A caller-owned research view inserts the missing clock row and fills its quote.
+    view = (
+        _prices((100, None, 110, 121))
+        .join(
+            sparse.select("timestamp").with_columns(pl.lit(True).alias("original_row")),
+            on="timestamp",
+            how="left",
+        )
+        .with_columns(
+            pl.col("original_row").fill_null(False),
+            pl.col("close").is_not_null().alias("original_quote"),
+            pl.col("close").forward_fill(),
+        )
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="24/7",
+        entity_col="asset",
+        data_frequency="1h",
+        timestamp_semantics="event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="exclude",
+    )
+    with pytest.raises(ValueError, match="missing scheduled bar"):
+        labeling.forward_returns(
+            view,
+            horizons={"one": 1},
+            feed_spec=feed,
+            price_basis="raw",
+            window_unit="expected_bar",
+            original_row_col="original_row",
+            original_price_col="original_quote",
+        )
+    row_mode = labeling.forward_returns(
+        view,
+        horizons={"one": 1},
+        calendar=None,
+        price_basis="raw",
+        original_row_col="original_row",
+        original_price_col="original_quote",
+    )
+    assert row_mode["exit_row_observed"].to_list() == [False, True, True, None]
+    assert row_mode["entry_row_observed"].to_list() == [True, False, True, True]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["missing_pair", "not_bool", "unknown_row", "contradictory", "unknown_price", "not_bool_price"],
+)
+def test_external_research_view_requires_unambiguous_original_masks(bad):
+    view = _prices().with_columns(
+        pl.lit(True).alias("original_row"), pl.lit(True).alias("original_quote")
+    )
+    options = {"original_row_col": "original_row", "original_price_col": "original_quote"}
+    if bad == "missing_pair":
+        del options["original_row_col"]
+    elif bad == "not_bool":
+        view = view.with_columns(pl.col("original_row").cast(pl.Int8))
+    elif bad == "unknown_row":
+        view = view.with_columns(pl.lit(None, dtype=pl.Boolean).alias("original_row"))
+    elif bad == "unknown_price":
+        view = view.with_columns(pl.lit(None, dtype=pl.Boolean).alias("original_quote"))
+    elif bad == "not_bool_price":
+        view = view.with_columns(pl.col("original_quote").cast(pl.Int8))
+    else:
+        view = view.with_columns(pl.lit(False).alias("original_row"))
+    with pytest.raises(ValueError, match="original"):
+        _run(view, **options)
+
+
+def test_named_grid_requires_actual_original_coverage_for_each_research_asset():
+    view = _prices().with_columns(
+        pl.lit(False).alias("original_row"), pl.lit(False).alias("original_quote")
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="24/7",
+        entity_col="asset",
+        data_frequency="1h",
+        timestamp_semantics="event_time",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="left",
+        partial_bar_policy="exclude",
+    )
+    with pytest.raises(ValueError, match="original row coverage"):
+        labeling.forward_returns(
+            view,
+            horizons={"one": 1},
+            feed_spec=feed,
+            price_basis="raw",
+            original_row_col="original_row",
+            original_price_col="original_quote",
+        )
+
+
+def test_input_role_cannot_shadow_an_internal_outcome_working_column():
+    frame = _prices().rename({"close": "_out_available"})
+    before = frame.clone()
+    with pytest.raises(ValueError, match="reserved _out_"):
+        _run(frame, price_col="_out_available")
+    assert frame.equals(before)

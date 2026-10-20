@@ -136,6 +136,8 @@ def forward_returns(
     missing_price_policy: Literal["raise", "null"] = "raise",
     tail_policy: Literal["null", "drop", "raise"] = "null",
     available_at_col: str | None = None,
+    original_row_col: str | None = None,
+    original_price_col: str | None = None,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Produce one long outcome row per exact entry key and named horizon.
 
@@ -157,6 +159,8 @@ def forward_returns(
     unit = WindowUnit(window_unit)
     if not isinstance(price_basis, str) or not price_basis.strip():
         raise ValueError("price_basis must explicitly declare the supplied price basis")
+    if (original_row_col is None) != (original_price_col is None):
+        raise ValueError("Declare both original_row_col and original_price_col for a research view")
     for name, value, allowed in (
         ("endpoint_method", endpoint_method, {"cumulative", "exit_bar"}),
         ("return_method", return_method, {"returns", "log_returns"}),
@@ -218,6 +222,12 @@ def forward_returns(
         "outcome_available_at",
         "forward_return",
         "outcome_status",
+        "entry_row_observed",
+        "entry_price_observed",
+        "exit_row_observed",
+        "exit_price_observed",
+        "reference_row_observed",
+        "reference_price_observed",
     }
     if (
         len(set(keys)) != len(keys)
@@ -243,6 +253,8 @@ def forward_returns(
             "missing_price_policy": missing_price_policy,
             "tail_policy": tail_policy,
             "available_at_col": available_at_col,
+            "original_row_col": original_row_col,
+            "original_price_col": original_price_col,
         }
         kwargs["entries"] = entries.head(0) if entries is not None else None
         template = forward_returns(pl.DataFrame(schema=data.collect_schema()), **kwargs)
@@ -262,7 +274,17 @@ def forward_returns(
             slice_pushdown=False,
             streamable=False,
         )
-    required = [*keys, price, *([available_at_col] if available_at_col is not None else [])]
+    required = [
+        *keys,
+        price,
+        *[
+            name
+            for name in (available_at_col, original_row_col, original_price_col)
+            if name is not None
+        ],
+    ]
+    if any(name.startswith("_out_") for name in required):
+        raise ValueError("Input role names cannot use the reserved _out_ prefix")
     absent = set(required) - set(data.columns)
     if absent:
         raise ValueError(f"Missing outcome input columns: {sorted(absent)}")
@@ -274,6 +296,13 @@ def forward_returns(
     if not frame[price].dtype.is_numeric():
         raise ValueError("Outcome prices must be numeric")
     invalid = ~pl.col(price).cast(pl.Float64).is_finite().fill_null(False) | (pl.col(price) <= 0)
+    if original_row_col is not None:
+        assert original_price_col is not None
+        for name in (original_row_col, original_price_col):
+            if frame.schema[name] != pl.Boolean or frame[name].null_count():
+                raise ValueError("original row/price masks must be nonnull Boolean columns")
+        if frame.filter(pl.col(original_price_col) & (~pl.col(original_row_col) | invalid)).height:
+            raise ValueError("original price mask contradicts original row or valid quote")
     if missing_price_policy == "raise" and frame.select(invalid.any()).item():
         raise ValueError("Outcome price contains null, nonfinite or nonpositive values")
     frame = frame.with_columns(pl.when(invalid).then(None).otherwise(pl.col(price)).alias(price))
@@ -294,25 +323,59 @@ def forward_returns(
     if requested_entries.join(frame.select(keys), on=keys, how="anti").height:
         raise ValueError("Every explicit entry key must match an exact supplied price key")
     if selected_calendar is not None:
+        grid_frame = (
+            frame.filter(pl.col(original_row_col)) if original_row_col is not None else frame
+        )
+        if (
+            original_row_col is not None
+            and frame.group_by(entities)
+            .agg(pl.col(original_row_col).any())
+            .filter(~pl.col(original_row_col))
+            .height
+        ):
+            raise ValueError(
+                "Cannot validate a declared grid without original row coverage for every entity"
+            )
         validate_declared_grid(
-            frame, feed_spec=feed, calendar=selected_calendar, timestamp_col=ts, group_cols=entities
+            grid_frame,
+            feed_spec=feed,
+            calendar=selected_calendar,
+            timestamp_col=ts,
+            group_cols=entities,
         )
     availability = (
         pl.col(available_at_col)
         if available_at_col is not None
         else pl.lit(None, dtype=pl.Datetime("ns", "UTC"))
     )
-    frame = frame.with_columns(availability.alias("_out_available"))
+    frame = frame.with_columns(
+        availability.alias("_out_available"),
+        (pl.col(original_row_col) if original_row_col is not None else pl.lit(True)).alias(
+            "_out_row_observed"
+        ),
+        (
+            pl.col(original_price_col)
+            if original_price_col is not None
+            else pl.col(price).is_not_null()
+        ).alias("_out_price_observed"),
+    )
     clock = frame.select(ts).unique().sort(ts)
     groups = frame.partition_by(entities, maintain_order=True) or [frame]
     results = []
     for group in groups:
-        observed = group.sort(ts)
-        working = observed.select(
-            ts, pl.col(price).alias("_out_price"), "_out_available"
+        asset_prices = group.sort(ts)
+        working = asset_prices.select(
+            ts,
+            pl.col(price).alias("_out_price"),
+            "_out_available",
+            "_out_row_observed",
+            "_out_price_observed",
         ).with_columns(pl.lit(True).alias("_out_present"))
         if index_mode == "common_grid":
             working = clock.join(working, on=ts, how="left", validate="1:1").sort(ts)
+            working = working.with_columns(
+                pl.col("_out_row_observed", "_out_price_observed").fill_null(False)
+            )
         for horizon_index, (name, horizon) in enumerate(parsed.items()):
             if isinstance(horizon, int) and unit != WindowUnit.SESSION:
                 # A beyond-coverage Python count must not overflow a native shift argument.
@@ -329,6 +392,14 @@ def forward_returns(
                     .shift(-reference_shift)
                     .alias("_out_reference_available"),
                     pl.col(ts).shift(-reference_shift).alias("reference_time"),
+                    pl.col("_out_row_observed").shift(-shift).alias("exit_row_observed"),
+                    pl.col("_out_price_observed").shift(-shift).alias("exit_price_observed"),
+                    pl.col("_out_row_observed")
+                    .shift(-reference_shift)
+                    .alias("reference_row_observed"),
+                    pl.col("_out_price_observed")
+                    .shift(-reference_shift)
+                    .alias("reference_price_observed"),
                 )
                 within = pl.col("requested_exit_time").is_not_null()
             else:
@@ -336,6 +407,8 @@ def forward_returns(
                     pl.col("_out_price").shift(1).alias("_out_reference_price"),
                     pl.col("_out_available").shift(1).alias("_out_reference_available"),
                     pl.col(ts).shift(1).alias("reference_time"),
+                    pl.col("_out_row_observed").shift(1).alias("reference_row_observed"),
+                    pl.col("_out_price_observed").shift(1).alias("reference_price_observed"),
                 )
                 reference = lookup.with_row_index("_future_row_index").select(
                     "_future_row_index",
@@ -344,6 +417,10 @@ def forward_returns(
                     "reference_time",
                     pl.col("_out_available").alias("_out_exit_available"),
                     pl.col("_out_present").alias("_out_exit_present"),
+                    "reference_row_observed",
+                    "reference_price_observed",
+                    pl.col("_out_row_observed").alias("exit_row_observed"),
+                    pl.col("_out_price_observed").alias("exit_price_observed"),
                 )
                 if unit == WindowUnit.SESSION:
                     assert isinstance(horizon, int) and selected_calendar is not None
@@ -378,6 +455,8 @@ def forward_returns(
                         pl.col("_out_price").alias("_out_reference_price"),
                         pl.col("_out_available").alias("_out_reference_available"),
                         pl.col(ts).alias("reference_time"),
+                        pl.col("_out_row_observed").alias("reference_row_observed"),
+                        pl.col("_out_price_observed").alias("reference_price_observed"),
                     )
                 within = pl.col("requested_exit_time").is_not_null() & (
                     pl.col("requested_exit_time") <= pl.col(ts).max()
@@ -422,6 +501,12 @@ def forward_returns(
                 .cast(pl.Float64)
                 .alias("forward_return"),
                 "outcome_status",
+                pl.col("_out_row_observed").alias("entry_row_observed"),
+                pl.col("_out_price_observed").alias("entry_price_observed"),
+                "exit_row_observed",
+                "exit_price_observed",
+                "reference_row_observed",
+                "reference_price_observed",
                 pl.lit(name).alias("horizon"),
                 pl.lit(str(horizons[name])).alias("horizon_value"),
                 pl.lit(unit.value).alias("window_unit"),
@@ -434,7 +519,7 @@ def forward_returns(
                     "calendar_declared"
                 ),
                 pl.lit(horizon_index, dtype=pl.UInt32).alias("_out_horizon_order"),
-            ).join(observed.select(keys), on=ts, how="inner", validate="1:1")
+            ).join(asset_prices.select(keys), on=ts, how="inner", validate="1:1")
             results.append(result)
     output = (
         requested_entries.join(pl.concat(results), on=keys, how="left")

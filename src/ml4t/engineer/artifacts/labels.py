@@ -63,8 +63,12 @@ class LabelDefinition:
     index_mode: str | None = None
     tail_policy: str | None = None
     endpoint_tolerance: str | None = None
+    original_row_col: str | None = None
+    original_price_col: str | None = None
 
     def __post_init__(self) -> None:
+        if (self.original_row_col is None) != (self.original_price_col is None):
+            raise ValueError("Declare both original row and price mask columns")
         if self.window_unit is not None:
             try:
                 object.__setattr__(self, "window_unit", WindowUnit(self.window_unit))
@@ -107,6 +111,8 @@ class LabelDefinition:
             index_mode=optional_str(mapping.get("index_mode")),
             tail_policy=optional_str(mapping.get("tail_policy")),
             endpoint_tolerance=optional_str(mapping.get("endpoint_tolerance")),
+            original_row_col=optional_str(mapping.get("original_row_col")),
+            original_price_col=optional_str(mapping.get("original_price_col")),
         )
 
 
@@ -138,6 +144,8 @@ class LabelSpec(ArtifactSpec):
             "index_mode",
             "tail_policy",
             "endpoint_tolerance",
+            "original_row_col",
+            "original_price_col",
         ):
             if payload["definition"][name] is None:
                 del payload["definition"][name]
