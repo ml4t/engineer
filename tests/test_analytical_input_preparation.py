@@ -338,3 +338,369 @@ def test_native_conversion_preserves_order_dtypes_and_laziness_but_rejects_dupli
         invalid = convert(duplicated.lazy() if lazy else duplicated, feed_spec=feed())
         if lazy:
             invalid.filter(pl.col("timestamp") == DAYS[1]).collect()
+
+
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("volume", -1.0),
+        ("volume", float("inf")),
+        ("multiplier", 0.0),
+        ("multiplier", -50.0),
+        ("close", float("inf")),
+        ("currency", ""),
+        ("volume_unit", "  "),
+        ("volume", "unknown"),
+        ("multiplier", "1 USD"),
+        ("currency", 840),
+        ("timestamp", "2025-07-07"),
+        ("asset", None),
+    ],
+)
+@pytest.mark.parametrize("lazy", [False, True])
+def test_invalid_market_keys_numbers_and_units_fail_atomically(column, value, lazy):
+    bad = market().with_columns(pl.lit(value).alias(column))
+    saved = bad.clone()
+    with pytest.raises(ValueError):
+        result = prepare_market(bad.lazy() if lazy else bad)
+        if lazy:
+            result.collect()
+    assert_frame_equal(bad, saved)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"purpose": "guess"},
+        {"price_basis": ""},
+        {"volume_basis": None},
+        {"completed_at_col": None},
+        {"currency_col": "close"},
+        {"feed_spec": {}},
+        {"liquidity_window": 0},
+        {"completed_lag": 0},
+    ],
+)
+def test_incomplete_or_ambiguous_market_declarations_are_not_inferred(options):
+    with pytest.raises((ValueError, TypeError)):
+        prepare_market(market(), **options)
+
+
+def test_market_missing_clocks_overflow_and_double_lag_fail_without_overwriting_input():
+    with pytest.raises(ValueError, match="Missing"):
+        prepare_market(market().drop("currency"))
+    with pytest.raises(ValueError, match="Duplicate"):
+        prepare_market(pl.concat([market(), market().head(1)]))
+    with pytest.raises(ValueError, match="reserved"):
+        prepare_market(market().with_columns(pl.lit(1).alias("__ml4t_inputs_user")))
+    with pytest.raises(ValueError, match="representable"):
+        prepare_market(market().with_columns(pl.lit(1e308).alias("close")))
+    with pytest.raises(ValueError, match="known aware"):
+        prepare_market(market().with_columns(pl.lit(None).alias("decision_time")))
+    result = prepare_market(market())
+    with pytest.raises(ValueError, match="double lag"):
+        prepare_market(result)
+    assert_frame_equal(prepare_market(result, liquidity_window=None), result)
+    retrospective = prepare_market(
+        market().drop("available_at", "decision_time"), purpose="retrospective"
+    )
+    assert retrospective["liquidity_available_at"].null_count() == 10
+    assert retrospective["lagged_mean_notional_volume"][2] == 500.0
+
+
+def test_market_future_price_shocks_and_unknown_units_do_not_become_causal_past_liquidity():
+    original = market()
+    future = original.with_columns(
+        pl.when(pl.col("timestamp") > DAYS[2]).then(999.0).otherwise("close").alias("close")
+    )
+    expected = prepare_market(original).filter(pl.col("timestamp") <= DAYS[2])
+    assert_frame_equal(prepare_market(future).filter(pl.col("timestamp") <= DAYS[2]), expected)
+    for column in ("currency", "multiplier", "volume_unit"):
+        result = prepare_market(original.with_columns(pl.lit(None).alias(column)))
+        assert result["lagged_mean_notional_volume"].null_count() == result.height
+        assert not result["liquidity_covered"].any()
+    empty = prepare_market(original.clear())
+    assert empty.height == 0
+    assert empty.schema == prepare_market(original).schema
+
+
+def loading_facts():
+    return pl.DataFrame(
+        {
+            "timestamp": [DAYS[1]],
+            "asset": [17],
+            "factor": ["MKT"],
+            "loading": [1.0],
+            "available_at": [datetime(2025, 7, 8, 12, tzinfo=UTC)],
+        }
+    )
+
+
+def loading_prepare(facts=None, **options):
+    return inputs().prepare_loading_inputs(
+        loading_facts() if facts is None else facts,
+        **{
+            "requests": requests(),
+            "factors": ["MKT"],
+            "feed_spec": feed(),
+            "purpose": "causal",
+            **options,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"purpose": "guess"},
+        {"output": ""},
+        {"factors": []},
+        {"factors": "MKT"},
+        {"factors": ["MKT", "MKT"]},
+        {"factors": [""]},
+        {"factors": [1]},
+        {"output": "asset"},
+        {"requests": requests().drop("decision_time")},
+        {"requests": pl.concat([requests(), requests().head(1)])},
+        {"requests": requests().with_columns(pl.lit(None).alias("timestamp"))},
+        {"requests": requests().with_columns(pl.lit(17, pl.UInt64).alias("asset"))},
+        {"requests": requests().with_columns(pl.lit("MKT").alias("factor"))},
+        {"requests": requests().with_columns(pl.lit(1).alias("__ml4t_inputs_x"))},
+    ],
+)
+def test_ambiguous_loading_requests_fail_instead_of_silently_coercing_or_expanding(options):
+    with pytest.raises(ValueError):
+        loading_prepare(**options)
+
+
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("asset", None),
+        ("factor", None),
+        ("factor", 1),
+        ("loading", "unknown"),
+        ("loading", float("inf")),
+        ("timestamp", None),
+    ],
+)
+def test_invalid_selected_loading_facts_are_not_zero_filled(column, value):
+    with pytest.raises(ValueError):
+        loading_prepare(loading_facts().with_columns(pl.lit(value).alias(column)))
+
+
+def test_dated_inputs_preserve_adjacent_ns_publication_cutoffs_and_exact_effective_keys():
+    base = 1_750_000_000_000_000_000
+    stamps = pl.Series("timestamp", [base + 1] * 3, dtype=pl.Datetime("ns", "UTC"))
+    asked = pl.DataFrame(
+        {
+            "timestamp": stamps,
+            "asset": [17] * 3,
+            "decision_time": pl.Series(
+                [base + n for n in (3, 4, 5)], dtype=pl.Datetime("ns", "UTC")
+            ),
+        }
+    )
+    facts = pl.DataFrame(
+        {
+            "timestamp": stamps.head(1),
+            "asset": [17],
+            "factor": ["MKT"],
+            "loading": [2.0],
+            "available_at": pl.Series([base + 4], dtype=pl.Datetime("ns", "UTC")),
+        }
+    )
+    result = loading_prepare(facts, requests=asked)
+    assert result["loading"].to_list() == [None, 2.0, 2.0]
+    assert result["loading_available_at"].cast(pl.Int64).to_list() == [None, base + 4, base + 4]
+    adjacent = facts.with_columns(
+        pl.Series("timestamp", [base + 2], dtype=pl.Datetime("ns", "UTC"))
+    )
+    assert loading_prepare(adjacent, requests=asked)["loading"].null_count() == 3
+
+
+def test_loading_effective_instants_need_timezone_or_aware_clocks_not_date_flooring():
+    fact = loading_facts().with_columns(pl.col("timestamp").cast(pl.Datetime("ns")))
+    asked = requests().with_columns(pl.col("timestamp").cast(pl.Datetime("ns")))
+    with pytest.raises(ValueError, match="timezone"):
+        loading_prepare(fact, requests=asked)
+    result = loading_prepare(fact, requests=asked, feed_spec=feed(timezone="America/New_York"))
+    assert result["loading"].to_list() == [1.0, None, None, None, None, None]
+    with pytest.raises(ValueError, match="clock kind"):
+        loading_prepare(fact)
+    with pytest.raises(ValueError, match="Date labels"):
+        loading_prepare(
+            loading_facts().with_columns(pl.col("timestamp").cast(pl.String)),
+            requests=requests().with_columns(pl.col("timestamp").cast(pl.String)),
+        )
+
+
+def test_dated_session_labels_do_not_silently_compare_naive_wall_time_with_aware_instants():
+    fact = loading_facts().with_columns(pl.col("timestamp").cast(pl.Datetime("ns")))
+    asked = requests().with_columns(
+        pl.col("timestamp").cast(pl.Datetime("ns")).dt.replace_time_zone("America/New_York")
+    )
+    with pytest.raises(ValueError, match="session.label"):
+        loading_prepare(fact, requests=asked, feed_spec=feed(timestamp_semantics="session_label"))
+    result = loading_prepare(
+        fact,
+        requests=asked.with_columns(pl.col("timestamp").dt.replace_time_zone(None)),
+        feed_spec=feed(timestamp_semantics="session_label"),
+    )
+    assert result["loading"].to_list() == [1.0, None, None, None, None, None]
+
+
+def test_expected_bar_liquidity_reuses_declared_calendar_and_explicit_none_is_row_mode():
+    spec = feed(
+        calendar="NYSE",
+        timestamp_semantics="session_label",
+        bar_type="time",
+        data_frequency="1d",
+    )
+    result = prepare_market(market(), feed_spec=spec)
+    assert result["liquidity_window_unit"].unique().to_list() == ["expected_bar"]
+    sparse = market().filter(pl.col("timestamp") != DAYS[1])
+    with pytest.raises(ValueError):
+        prepare_market(sparse, feed_spec=spec)
+    row = prepare_market(sparse, feed_spec=spec, calendar=None)
+    assert row["liquidity_window_unit"].unique().to_list() == ["observation"]
+    assert row.height == sparse.height
+
+
+@pytest.mark.parametrize("converter", ["market_to_long", "loadings_to_long"])
+def test_conversion_rejects_unknown_native_keys_and_missing_required_columns(converter):
+    convert = getattr(inputs(), converter)
+    with pytest.raises(ValueError, match="Missing"):
+        convert(pl.DataFrame({"close": [10.0]}), feed_spec=feed())
+    fields = {"close": [10.0], "factor": ["MKT"], "loading": [1.0]}
+    with pytest.raises(ValueError, match="unknown"):
+        convert(pl.DataFrame({"timestamp": [DAYS[0]], "asset": [None], **fields}), feed_spec=feed())
+
+
+def test_legacy_conversion_rejects_invalid_index_shapes_and_ambiguous_cells():
+    import pandas as pd
+
+    convert = inputs().market_to_long
+    with pytest.raises(TypeError):
+        convert([[10.0]], feed_spec=feed())
+    bad_indices = [
+        pd.Index([0]),
+        pd.MultiIndex.from_tuples([(0, "price")]),
+        pd.MultiIndex.from_tuples([(pd.Timestamp("2025-07-07"), "price", "extra")]),
+    ]
+    for index in bad_indices:
+        with pytest.raises(ValueError):
+            convert(pd.DataFrame({17: [10.0]}, index=index), feed_spec=feed())
+    legacy = pd.DataFrame(
+        {17: [10.0]},
+        index=pd.MultiIndex.from_product([pd.to_datetime(["2025-07-07"], utc=True), ["price"]]),
+    )
+    with pytest.raises(ValueError, match="Duplicate"):
+        convert(pd.concat([legacy, legacy]), feed_spec=feed())
+    with pytest.raises(ValueError, match="distinct"):
+        convert(legacy, feed_spec=feed(), volume_field="price")
+    with pytest.raises(ValueError, match="price field"):
+        convert(legacy, feed_spec=feed(), price_field="adjusted")
+    with pytest.raises(ValueError, match="identity"):
+        convert(legacy, feed_spec=feed(), entity_map={})
+    with pytest.raises(ValueError, match="Compound"):
+        convert(legacy, feed_spec=feed(entity_col=("venue", "sid")), entity_map={17: 17})
+    with pytest.raises(ValueError, match="unknown"):
+        convert(legacy, feed_spec=feed(), entity_map={17: None})
+    with pytest.raises(ValueError, match="stable"):
+        convert(legacy, feed_spec=feed(), entity_map={17: 17.5})
+    result = convert(legacy, feed_spec=feed(), entity_map={17: "stable17"})
+    assert result["asset"].to_list() == ["stable17"]
+    assert result["volume"].to_list() == [None]
+    empty = convert(legacy.iloc[:, :0], feed_spec=feed())
+    assert empty.height == 0
+    assert empty.columns == ["timestamp", "asset", "close", "volume"]
+
+
+def test_legacy_factor_names_and_mixed_value_dtypes_require_explicit_normalization():
+    import pandas as pd
+
+    index = pd.MultiIndex.from_arrays([pd.to_datetime(["2025-07-07"], utc=True), [17]])
+    for column in (1, ""):
+        with pytest.raises(ValueError, match="factor columns"):
+            inputs().loadings_to_long(pd.DataFrame({column: [1.0]}, index=index), feed_spec=feed())
+    mixed = pd.DataFrame({"MKT": pd.array([1], dtype="Int64"), "SIZE": [1.0]}, index=index)
+    with pytest.raises(ValueError, match="dtypes"):
+        inputs().loadings_to_long(mixed, feed_spec=feed())
+    assert inputs().loadings_to_long(mixed.iloc[:, :0], feed_spec=feed()).height == 0
+    market_index = pd.MultiIndex.from_product([pd.to_datetime(["2025-07-07"], utc=True), ["price"]])
+    mixed_market = pd.DataFrame(
+        {17: pd.array([2**53 + 1], dtype="Int64"), 23: [1.0]}, index=market_index
+    )
+    with pytest.raises(ValueError, match="dtypes"):
+        inputs().market_to_long(mixed_market, feed_spec=feed())
+
+
+def test_classification_unknown_interval_end_and_static_flags_preserve_explicit_scope():
+    facts = pl.DataFrame(
+        {
+            "asset": [17],
+            "sector": ["tech"],
+            "effective_from": [DAYS[0]],
+            "effective_to": [None],
+            "available_at": [datetime(2025, 7, 7, tzinfo=UTC)],
+        }
+    )
+    result = (
+        inputs()
+        .prepare_classification_inputs(
+            facts.lazy(), requests=requests(), feed_spec=feed(), purpose="causal"
+        )
+        .collect()
+    )
+    assert result.filter(pl.col("asset") == 17)["sector"].to_list() == ["tech"] * 3
+    with pytest.raises(ValueError, match="nonempty"):
+        inputs().prepare_classification_inputs(
+            facts.with_columns(pl.col("effective_from").alias("effective_to")),
+            requests=requests(),
+            feed_spec=feed(),
+            purpose="causal",
+        )
+    with pytest.raises(ValueError, match="clock kind"):
+        inputs().prepare_classification_inputs(
+            facts.with_columns(
+                pl.col("effective_from").cast(pl.Datetime("ns")).alias("effective_to")
+            ),
+            requests=requests(),
+            feed_spec=feed(),
+            purpose="causal",
+        )
+    with pytest.raises(ValueError, match="mapping"):
+        inputs().prepare_classification_inputs(
+            facts,
+            requests=requests(),
+            feed_spec=feed(),
+            purpose="causal",
+            static=True,
+        )
+    with pytest.raises(ValueError, match="mapping"):
+        inputs().prepare_classification_inputs(
+            None,
+            requests=requests(),
+            feed_spec=feed(),
+            purpose="causal",
+            static=True,
+        )
+    retro = inputs().prepare_classification_inputs(
+        {},
+        requests=requests(),
+        feed_spec=feed(),
+        purpose="retrospective",
+        static=True,
+    )
+    assert retro["sector"].null_count() == retro.height
+    assert retro["sector_static"].all()
+
+
+def test_publication_outside_ns_range_fails_explicitly_instead_of_wrapping():
+    with pytest.raises(ValueError, match="range"):
+        loading_prepare(
+            loading_facts().with_columns(
+                pl.lit(datetime(3000, 1, 1, tzinfo=UTC)).alias("available_at")
+            )
+        )

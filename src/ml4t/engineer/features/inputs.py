@@ -534,6 +534,15 @@ def _dated_inputs(
         raise ValueError("Fact/request effective keys must have the same declared clock kind")
     if intervals and to_dtype != pl.Null and to_dtype.base_type() != chosen_dtype.base_type():
         raise ValueError("Effective interval ends must match the declared clock kind")
+    if (
+        feed_spec.timestamp_semantics == TimestampSemantics.SESSION_LABEL
+        and isinstance(chosen_dtype, pl.Datetime)
+        and any(
+            isinstance(dtype, pl.Datetime) and dtype.time_zone != chosen_dtype.time_zone
+            for dtype in (from_dtype, to_dtype)
+        )
+    ):
+        raise ValueError("Fact/request session-label timezone declarations must match")
     if to_dtype == pl.Null:
         to_dtype = from_dtype
     added = {
