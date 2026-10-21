@@ -74,6 +74,16 @@ def test_group_transforms_use_only_contemporary_eligible_values(method, expected
     assert_frame_equal(output, combined)
 
 
+def test_undefined_numeric_classification_is_not_a_real_contemporary_group():
+    frame = (
+        panel()
+        .with_columns(pl.when(pl.col("sector") == "x").then(0.0).otherwise(1.0).alias("sector"))
+        .with_columns((pl.col("sector") / pl.col("sector")).alias("sector"))
+    )
+    result = calculate(frame, "rank")
+    assert result["result"].to_list() == [None, None, None, 1.0, None, None]
+
+
 @pytest.mark.parametrize(
     "method,expected",
     [

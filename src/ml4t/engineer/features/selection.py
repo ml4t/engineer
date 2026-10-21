@@ -43,7 +43,7 @@ def cross_section(
 ) -> pl.Expr:
     """Transform the eligible contemporary cross-section, independently per group.
 
-    mask determines the input population, not a final screen. Null group labels,
+    mask determines the input population, not a final screen. Null/NaN group labels,
     null values and NaNs are excluded; legacy classifier sentinels must be mapped
     explicitly. Ordinal ties use ascending stable entity IDs, not input row order.
     Input keys must identify at most one observation per timestamp/entity. This
@@ -107,7 +107,7 @@ def cross_section(
     original = _value(value)
     eligible = ~is_missing(original)
     if groups:
-        eligible &= pl.all_horizontal(pl.col(c).is_not_null() for c in groups)
+        eligible &= pl.all_horizontal(~is_missing(c) for c in groups)
     if mask is not None:
         eligible &= _value(mask).fill_null(False)
     x = pl.when(eligible).then(original)

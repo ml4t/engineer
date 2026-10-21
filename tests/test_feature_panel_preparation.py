@@ -698,3 +698,34 @@ def test_persisted_compound_entity_columns_keep_canonical_schema_and_physical_ns
 def test_invalid_compound_entity_schema_fails_before_persistence(columns):
     with pytest.raises(ValueError, match="entity_col"):
         FeatureSpec.from_mapping({"artifact_id": "invalid", "schema": {"entity_col": columns}})
+
+
+def test_explicit_pandas_presentation_keeps_effective_dates_exact_instants_and_stable_ids():
+    pytest.importorskip("pyarrow", reason="Explicit pandas presentation requires PyArrow")
+    frame = prepare(history()).with_columns(
+        pl.when(pl.col("asset") == "A")
+        .then(2**63 + 1)
+        .otherwise(2**63 + 2)
+        .cast(pl.UInt64)
+        .alias("asset")
+    )
+    presentation = (
+        frame.select("effective_session", "asset", "average")
+        .to_pandas(date_as_object=True)
+        .set_index(["effective_session", "asset"])
+    )
+    assert list(presentation.index) == [
+        (DAYS[2], 2**63 + 1),
+        (DAYS[2], 2**63 + 2),
+        (DAYS[3], 2**63 + 1),
+        (DAYS[3], 2**63 + 2),
+    ]
+    frame = frame.with_columns(
+        pl.Series("decision_time", [1, 2, 3, 4], dtype=pl.Datetime("ns", "UTC"))
+    )
+    presentation = (
+        frame.select("decision_time", "asset", "average")
+        .to_pandas()
+        .set_index(["decision_time", "asset"])
+    )
+    assert presentation.index.get_level_values("decision_time").asi8.tolist() == [1, 2, 3, 4]
