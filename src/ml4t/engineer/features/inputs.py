@@ -746,6 +746,8 @@ def prepare_loading_inputs(
     Retrospective output retains actual publication and known-at-decision flags.
     Lazy requests/facts are evaluated on collection,not silently made eager.
     """
+    if not isinstance(factor_col, str) or not factor_col:
+        raise ValueError("Declare a nonempty factor identity column name")
     if data is None:
         timestamp, entities = _roles(feed_spec)
         request_schema = (

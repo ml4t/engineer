@@ -580,6 +580,12 @@ def test_loading_metadata_output_names_cannot_overwrite_declared_factor_keys():
         loading_prepare(facts, factor_col="loading_available_at")
 
 
+@pytest.mark.parametrize("factor_col", [None, ""])
+def test_loading_preparation_cannot_disable_factor_identity_with_an_absent_column_name(factor_col):
+    with pytest.raises(ValueError, match="factor"):
+        loading_prepare(factor_col=factor_col, factors=["MKT", "SIZE"])
+
+
 @pytest.mark.parametrize("key", [("XNYS",), ("XNYS", 17, "extra"), "XNYS"])
 def test_compound_static_classification_keys_must_match_the_declared_identity_columns(key):
     asked = requests().rename({"asset": "sid"}).with_columns(pl.lit("XNYS").alias("venue"))
