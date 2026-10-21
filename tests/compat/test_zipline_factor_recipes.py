@@ -194,7 +194,8 @@ def test_paired_recipes_preserve_actual_paired_series(name, length, expected) ->
     assert result.item(-1, 0) == pytest.approx(expected, rel=1e-14, abs=0)
 
 
-def test_regression_recipe_exposes_actual_named_fields_and_beta_missing_fraction() -> None:
+def test_regression_recipe_exposes_actual_named_fields() -> None:
+    pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     frame = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [1.0, 2.0, 2.0, 4.0]})
     result = frame.select(
         recipe("RollingLinearRegression", inputs=["y", "x"], regression_length=4).alias(
@@ -207,6 +208,9 @@ def test_regression_recipe_exposes_actual_named_fields_and_beta_missing_fraction
         rtol=1e-13,
         atol=1e-15,
     )
+
+
+def test_beta_recipe_preserves_allowed_missing_fraction_without_stats_extra() -> None:
     gapped = pl.DataFrame({"x": [0.0, 1.0, 2.0, 3.0], "y": [1.0, None, 5.0, 7.0]})
     result = gapped.select(recipe("SimpleBeta", inputs=["y", "x"], regression_length=4))
     assert result.item(-1, 0) == pytest.approx(2.0, rel=1e-14)

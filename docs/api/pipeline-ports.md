@@ -55,7 +55,7 @@ Use the [migration how-to](../user-guide/pipeline-migration.md) to prepare input
 | `.top`, `.bottom` | Same-named cross-section methods | Exact N, stable ordinal ties; mask determines input population. |
 | `.demean`, `.zscore` | Same-named cross-section methods | Contemporary date/group population, population ddof=0 default; zero variance undefined. Not a train-fitted scaler. |
 | `.winsorize` | Same-named cross-section method | Floor/ceil legacy order-statistic bounds, not linear quantile clipping. |
-| `.quantiles`, `.quartiles`, `.quintiles`, `.deciles` | `cross_section(method="quantiles", bins=...)` | 0-based labels, linear edges, duplicate-edge error, null exclusions. Aliases use 4/5/10 bins. |
+| `.quantiles`, `.quartiles`, `.quintiles`, `.deciles` | `cross_section(method="quantiles", bins=...)` | 0-based labels, stable linear interpolation, duplicate-edge error, null exclusions. Nonmissing infinite values fail explicitly. Aliases use 4/5/10 bins. Floating values retain their local scale; integer/Decimal differences precede float conversion. |
 | `.percentile_between` | Same-named cross-section method | Inclusive linear bounds; convert legacy percent values 0..100 to fractions 0..1. |
 | `.mean`, `.stddev`, `.max`, `.min`, `.median`, `.sum`, `.notnull_count` daily summaries | Mask input then aggregate with native expressions over decision-time keys | Omit null/NaN, population stddev; sum of all missing values is zero, count is zero. Return one row per decision, not one per asset. |
 | Asset slicing and named multi-output fields | Exact keyed filter/join; `.struct.field(name)` | Stable keys and explicit output fields replace opaque Asset lookup/record wrappers. |

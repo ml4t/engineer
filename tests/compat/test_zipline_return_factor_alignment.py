@@ -127,6 +127,7 @@ def test_feature_availability_uses_both_assets_and_the_actual_price_dependencies
 
 
 def test_custom_roles_compound_identity_and_regression_fields_survive_the_pipeline() -> None:
+    pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     frame = (
         panel()
         .with_columns(
@@ -183,6 +184,8 @@ def test_target_contract_errors_are_atomic(options) -> None:
 
 @pytest.mark.parametrize("method", ["pearson", "spearman", "beta", "regression"])
 def test_empty_frame_retains_declared_added_schema(method: str) -> None:
+    if method == "regression":
+        pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     for frame in (panel().clear(), panel().clear().lazy()):
         result = run(frame, method=method)
         result = result.collect() if isinstance(result, pl.LazyFrame) else result
@@ -347,6 +350,8 @@ def test_named_calendar_and_explicit_none_precedence_reuse_the_actual_grid_valid
 def test_return_factor_recipe_uses_native_keyed_preparation_without_masking_target(
     name, method, length, lazy
 ) -> None:
+    if method == "regression":
+        pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     function = importlib.import_module("ml4t.engineer.compat.zipline").return_factor_features
     frame = panel()
     output = function(

@@ -137,6 +137,50 @@ def test_quantiles_use_linear_edges_and_percentile_filter_includes_both_bounds()
     )
     assert result["quantile"].to_list() == [0, 0, 1, 1, None, None]
     assert result["between"].to_list() == [False, True, True, False, False, False]
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize(
+    "values,bins,selected",
+    [
+        ([-1e308, 0.0, 1e308], [0, 0, 1], [False, True, False]),
+        ([-1e308, 1e308], [0, 1], [False, False]),
+        ([-1e100, 0.0, 1e-100, 1e100], [0, 0, 1, 1], [False, True, True, False]),
+    ],
+)
+def test_linear_quantile_selection_preserves_finite_opposite_extremes_and_local_scale(
+    lazy, values, bins, selected
+):
+    frame = pl.DataFrame(
+        {"timestamp": [1] * len(values), "asset": range(len(values)), "value": values}
+    )
+    result = (frame.lazy() if lazy else frame).with_columns(
+        selection().cross_section("value", method="quantiles", bins=2).alias("bin"),
+        selection()
+        .cross_section(
+            "value", method="percentile_between", min_percentile=0.25, max_percentile=0.75
+        )
+        .alias("selected"),
+    )
+    result = result.collect() if lazy else result
+    assert result["bin"].to_list() == bins
+    assert result["selected"].to_list() == selected
+
+
+def test_integer_percentile_bounds_do_not_truncate_fractional_value_edges():
+    frame = pl.DataFrame({"timestamp": [1] * 3, "asset": [1, 2, 3], "value": [-0.5, 0.25, 0.75]})
+    expression = selection().cross_section(
+        "value", method="percentile_between", min_percentile=0, max_percentile=1
+    )
+    assert frame.select(expression).to_series().to_list() == [True, True, True]
+    assert frame.clear().select(expression).schema["value"] == pl.Boolean
+
+
+@pytest.mark.parametrize("method,options", [("quantiles", {"bins": 2}), ("percentile_between", {})])
+def test_nonfinite_quantile_inputs_fail_explicitly_without_partial_selection(method, options):
+    frame = pl.DataFrame({"timestamp": [1, 1], "asset": [1, 2], "value": [1.0, float("inf")]})
+    with pytest.raises(ValueError, match="finite"):
+        frame.with_columns(selection().cross_section("value", method=method, **options))
     tied = frame.with_columns(pl.lit(1.0).alias("value"))
     with pytest.raises((ValueError, pl.exceptions.DuplicateError)):
         tied.select(selection().cross_section("value", method="quantiles", bins=4))

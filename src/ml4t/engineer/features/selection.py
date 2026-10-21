@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 
 from ml4t.engineer.features.rolling import _paired_difference, _period
@@ -23,6 +24,25 @@ def is_missing(value: str | pl.Expr) -> pl.Expr:
         )
 
     return _value(value).pipe_with_dtype(build)
+
+
+def _linear_edges(
+    values: npt.NDArray[np.float64], fractions: npt.NDArray[np.float64]
+) -> npt.NDArray[np.float64]:
+    ordered = np.sort(values)
+    if not np.isfinite(ordered).all():
+        raise ValueError("Quantile and percentile inputs require finite nonmissing values")
+    positions = (len(ordered) - 1) * np.asarray(fractions, dtype=np.float64)
+    a = ordered[np.floor(positions).astype(np.int64)]
+    b = ordered[np.ceil(positions).astype(np.int64)]
+    weight = positions - np.floor(positions)
+    opposite = np.signbit(a) != np.signbit(b)
+    edges = np.empty_like(positions)
+    # Avoid subtracting opposite finite extremes or losing small local values
+    # by centering every floating observation around a distant first value.
+    edges[opposite] = a[opposite] * (1 - weight[opposite]) + b[opposite] * weight[opposite]
+    edges[~opposite] = a[~opposite] + (b[~opposite] - a[~opposite]) * weight[~opposite]
+    return edges
 
 
 def cross_section(
@@ -139,26 +159,40 @@ def cross_section(
             (x.count() * max_percentile).ceil().cast(pl.Int64) - 1, null_on_oob=True
         )
         result = x.clip(lower, upper)
-    elif method == "quantiles":
-        assert bins is not None
+    else:
 
-        def quantile_labels(series: pl.Series) -> pl.Series:
+        def coordinates(value: pl.Expr, dtype: pl.DataType) -> pl.Expr:
+            return (
+                value.cast(pl.Float64)
+                if dtype.is_float()
+                else _paired_difference(value, value.drop_nulls().first())
+            )
+
+        def select_quantiles(series: pl.Series) -> pl.Series:
             values = series.to_numpy()
             valid = ~np.isnan(values)
             if not valid.any():
-                return pl.Series([None] * len(values), dtype=pl.Int64)
-            edges = np.quantile(values[valid], np.linspace(0.0, 1.0, bins + 1), method="linear")
+                return (
+                    pl.Series([None] * len(values), dtype=pl.Int64)
+                    if method == "quantiles"
+                    else pl.Series([False] * len(values), dtype=pl.Boolean)
+                )
+            if method == "percentile_between":
+                lower, upper = _linear_edges(
+                    values[valid], np.array([min_percentile, max_percentile])
+                )
+                return pl.Series(valid & (values >= lower) & (values <= upper))
+            assert bins is not None
+            edges = _linear_edges(values[valid], np.linspace(0.0, 1.0, bins + 1))
             if bins > 1 and len(np.unique(edges)) != len(edges):
                 raise ValueError("Duplicate quantile edges; declare a different bin count")
             labels = np.searchsorted(edges, values, side="left") - 1
             labels[values == edges[0]] = 0
             return pl.Series(labels, dtype=pl.Int64).set(pl.Series(~valid), None)
 
-        result = centered.map_batches(quantile_labels, return_dtype=pl.Int64)
-    else:
-        lower = centered.quantile(min_percentile, interpolation="linear")
-        upper = centered.quantile(max_percentile, interpolation="linear")
-        result = centered.is_between(lower, upper).fill_null(False)
+        result = x.pipe_with_dtype(coordinates).map_batches(
+            select_quantiles, return_dtype=pl.Int64 if method == "quantiles" else pl.Boolean
+        )
     return result.over(partition, order_by=entities)
 
 

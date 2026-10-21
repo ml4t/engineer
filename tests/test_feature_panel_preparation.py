@@ -582,6 +582,10 @@ def test_unknown_availability_and_undefined_struct_outputs_cannot_become_eligibl
     result = prepare(unknown)
     assert not result["eligible"].any()
     assert result["available_at"].null_count() == result.height
+
+
+def test_actual_undefined_regression_struct_fields_cannot_become_eligible():
+    pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     expression = rolling_regression("close", pl.lit(1.0), period=2)
     result = prepare(history(), features={"estimate": expression}, lookbacks={"estimate": 2})
     assert not result["eligible"].any()

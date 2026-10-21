@@ -8,7 +8,6 @@ import numpy as np
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
-from scipy import stats
 
 
 def paired():
@@ -28,11 +27,11 @@ def test_paired_methods_match_independent_complete_window_oracles(method: str, l
     for end in range(2, len(frame)):
         x, y = frame["x"].to_numpy()[end - 2 : end + 1], frame["y"].to_numpy()[end - 2 : end + 1]
         if method == "pearson":
-            expected.append(stats.pearsonr(x, y).statistic)
+            expected.append(np.corrcoef(x, y)[0, 1])
         elif method == "spearman":
-            expected.append(stats.spearmanr(x, y).statistic)
+            expected.append(np.corrcoef(np.argsort(np.argsort(x)), np.argsort(np.argsort(y)))[0, 1])
         else:
-            expected.append(stats.linregress(x, y).slope)
+            expected.append(np.cov(x, y)[0, 1] / np.var(x, ddof=1))
     np.testing.assert_allclose(result["result"].to_numpy(), expected, atol=1e-14, equal_nan=True)
 
 
@@ -60,6 +59,7 @@ def test_spearman_recomputes_average_tie_ranks_in_each_window() -> None:
 
 @pytest.mark.parametrize("lazy", [False, True])
 def test_rolling_regression_returns_all_five_actual_paired_fields(lazy: bool) -> None:
+    stats = pytest.importorskip("scipy.stats", reason="Regression p-values require stats extra")
     frame = pl.DataFrame({"x": [1.0, 3.0, 2.0, 4.0, 6.0], "y": [2.0, 8.0, 7.0, 9.0, 10.0]})
     result = (
         (frame.lazy() if lazy else frame)
@@ -87,6 +87,7 @@ def test_rolling_regression_returns_all_five_actual_paired_fields(lazy: bool) ->
 
 
 def test_regression_missing_pairs_and_constant_target_are_explicit() -> None:
+    pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     frame = pl.DataFrame({"x": [1.0, None, 3.0, 4.0], "y": [3.0, 100.0, 7.0, 9.0]})
     result = frame.select(
         paired().rolling_regression("y", "x", period=4, allowed_missing=1).alias("r")
@@ -99,6 +100,7 @@ def test_regression_missing_pairs_and_constant_target_are_explicit() -> None:
 
 
 def test_regression_has_independent_slope_intercept_pvalue_and_stderr_oracle() -> None:
+    pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     frame = pl.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "y": [1.0, 2.0, 2.0, 4.0]})
     actual = frame.select(paired().rolling_regression("y", "x", period=4).alias("r")).unnest("r")
     # Sxx=5, Sxy=4.5, Syy=4.75, residual SS=.7, df=2.
@@ -109,6 +111,8 @@ def test_regression_has_independent_slope_intercept_pvalue_and_stderr_oracle() -
 
 @pytest.mark.parametrize("method", ["pearson", "spearman", "beta", "regression"])
 def test_empty_and_singleton_pair_series_remain_empty_or_undefined(method: str) -> None:
+    if method == "regression":
+        pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     function = getattr(paired(), f"rolling_{method}")
     for count in (0, 1):
         frame = pl.DataFrame({"x": [1.0] * count, "y": [2.0] * count})
@@ -123,6 +127,8 @@ def test_empty_and_singleton_pair_series_remain_empty_or_undefined(method: str) 
 
 @pytest.mark.parametrize("method", ["pearson", "spearman", "beta", "regression"])
 def test_paired_methods_do_not_cross_assets_or_mutate_inputs(method: str) -> None:
+    if method == "regression":
+        pytest.importorskip("scipy", reason="Regression p-values require stats extra")
     frame = pl.DataFrame(
         {
             "asset": ["A", "B"] * 4,
