@@ -73,7 +73,7 @@ Use the [migration how-to](../user-guide/pipeline-migration.md) to prepare input
 | `ArrayPredicate`, `NumExprFilter` | Native elementwise Boolean expressions | Preserve declared null behavior; do not execute arbitrary legacy expression strings. |
 | `Filter.if_else` | `pl.when(predicate).then(left).otherwise(right)` | Declare unknown-predicate handling explicitly. |
 | `CustomFilter`, base `Filter` | Boolean expressions or reusable registered features | No graph interpreter; supply required history and knowledge clocks. |
-| Classifier `eq`, `ne`, `element_of` | Equality, inequality, `.is_in(...)` | Map missing sentinel to null; fill null Boolean outputs as intended. |
+| Classifier `eq`, `!=` (`__ne__`), `element_of` | Equality, inequality, `.is_in(...)` | Map missing sentinel to null; fill null Boolean outputs as intended. |
 | `startswith`, `endswith`, `has_substring` | `.str.starts_with`, `.str.ends_with`, `.str.contains(..., literal=True)` | Literal substring, not accidental regex interpretation. |
 | `matches` | Explicit `re.compile(pattern).match(value)` mapping | Legacy Python re.match starts at the beginning and supports Python regex features. Polars unanchored Rust regex is not a general equivalent. |
 | `relabel` | `.replace_strict(mapping, default=None)` or explicit mapping function | Preserve nulls and declare behavior for unknown labels. |
