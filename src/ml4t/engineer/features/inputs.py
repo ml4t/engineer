@@ -369,6 +369,16 @@ def prepare_market_inputs(
             )
         if liquidity_window is None:
             return frame
+        currency_count = prefix + "currency_count"
+        if (
+            frame.group_by(entities)
+            .agg(pl.col(currency_col).drop_nulls().n_unique().alias(currency_count))
+            .filter(pl.col(currency_count) > 1)
+            .height
+        ):
+            raise ValueError(
+                "Each stable entity needs one liquidity currency; normalize currency changes upstream"
+            )
         order, product, mean, known, completed, decision, contributing = (
             prefix + name
             for name in (

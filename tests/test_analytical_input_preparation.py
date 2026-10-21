@@ -142,6 +142,28 @@ def test_native_market_validation_without_derived_features_preserves_the_input_e
     assert_frame_equal(result, market())
 
 
+@pytest.mark.parametrize("lazy", [False, True])
+def test_liquidity_cannot_average_different_quote_currencies_for_one_stable_entity(lazy):
+    mixed = market().with_columns(
+        pl.when((pl.col("asset") == 23) & (pl.col("timestamp") >= DAYS[1]))
+        .then(pl.lit("EUR"))
+        .otherwise("currency")
+        .alias("currency")
+    )
+    saved = mixed.clone()
+    assert_frame_equal(prepare_market(mixed, liquidity_window=None), mixed)
+    with pytest.raises(ValueError, match="currency"):
+        result = prepare_market(mixed.lazy() if lazy else mixed)
+        if lazy:
+            result.collect()
+    assert_frame_equal(mixed, saved)
+    distinct = market().with_columns(
+        pl.when(pl.col("asset") == 23).then(pl.lit("EUR")).otherwise("currency").alias("currency")
+    )
+    valid = prepare_market(distinct)
+    assert valid.filter(pl.col("asset") == 23)["lagged_mean_notional_volume"][2] == 1000.0
+
+
 def requests():
     return pl.DataFrame(
         {

@@ -71,6 +71,10 @@ cannot use that day's unpublished price/volume product. Missing volume remains
 missing; a genuine zero is retained. Unknown currency, volume unit or monetary
 multiplier leaves dependent liquidity uncovered. A contract multiplier is
 explicit, not an assumed equity unit. No FX conversion occurs.
+Each stable entity's liquidity history must use one quote currency. Mixed
+currencies fail atomically and require explicit normalization upstream; units
+are not made comparable by averaging. Different entities may use different
+currencies. With no requested liquidity feature, their raw tables remain unchanged.
 
 ## Method and output reference
 
