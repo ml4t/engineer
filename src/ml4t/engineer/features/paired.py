@@ -77,9 +77,9 @@ def target_return_features(
         raise ValueError("index_mode must be common_grid or per_asset")
     if missing_price_policy not in {"raise", "null"}:
         raise ValueError("missing_price_policy must be raise or null")
-    contract = (
-        FeedSpec(time_contract_version=2) if feed_spec is None else FeedSpec.from_any(feed_spec)
-    )
+    if feed_spec is not None and not isinstance(feed_spec, FeedSpec):
+        raise TypeError("feed_spec must be a canonical FeedSpec instance, not an unresolved config")
+    contract = FeedSpec(time_contract_version=2) if feed_spec is None else feed_spec
 
     def bind(explicit: Any, declared: Any, default: Any, role: str) -> Any:
         if explicit is not None and feed_spec is not None and declared is not None:

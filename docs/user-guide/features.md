@@ -276,6 +276,88 @@ Ordinary Polars arithmetic, comparisons, boolean operators and `is_in` cover the
 corresponding elementwise factor/filter/classifier operations. None of these
 expressions selects Data revisions or establishes availability by itself.
 
+### Decision-time feature preparation
+
+`features.preparation.prepare_feature_panel` consumes already prepared native
+histories and supplied universe facts. Data or the caller selects source revisions
+and adjustment perspective first. Engineer validates keys, preserves pre-entry
+warmup and computes feature eligibility at each requested decision. It does not
+choose the latest revision, apply corporate actions or fetch provider history.
+
+Supply a canonical `FeedSpec` instance. For a canonical serialized handoff, restore
+it with `FeedSpec.from_mapping(...)` once. Unresolved config objects are rejected;
+explicit column arguments cannot conflict with the declaration. A named calendar
+requires the existing complete bar-grid declaration before any return/feature is
+derived. Explicit `calendar=None` keeps observation-row windows.
+
+`decisions` has the declared observation timestamp column and a separate aware
+`decision_time`. Universe rows have stable entity keys, `effective_from`, exclusive
+`effective_to` (null means open), aware `available_at`, nullable boolean `member`
+and optional classification columns. Effective intervals use the observation
+clock, not an inferred midnight instant. Missing/unknown facts never imply
+membership. Overlapping known active facts fail with an upstream-resolution error.
+
+<!-- ml4t-exec -->
+```python
+from datetime import UTC, date, datetime
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.features.preparation import prepare_feature_panel
+from ml4t.engineer.features.rolling import finite_mean
+
+days = [date(2025, 7, d) for d in (7, 8, 9)]
+history = pl.DataFrame({
+    "timestamp": days, "asset": ["A"] * 3, "close": [1., 2., 3.],
+    "available_at": [datetime(2025, 7, d.day, 16, tzinfo=UTC) for d in days],
+})
+decisions = pl.DataFrame({
+    "timestamp": [days[-1]], "decision_time": [datetime(2025, 7, 9, 17, tzinfo=UTC)],
+})
+universe = pl.DataFrame({
+    "asset": ["A"], "effective_from": [days[-1]],
+    "effective_to": pl.Series([None], dtype=pl.Date), "member": [True],
+    "available_at": [datetime(2025, 7, 8, 12, tzinfo=UTC)],
+})
+result = prepare_feature_panel(
+    history.lazy(), features={"average": finite_mean("close", period=3)},
+    lookbacks={"average": 3}, input_columns=["close"],
+    decisions=decisions, universe=universe, price_basis="raw",
+    feed_spec=FeedSpec(time_contract_version=2, calendar=None, entity_col="asset"),
+).collect()
+assert result["average"].to_list() == [2.]
+assert result["eligible"].to_list() == [True]
+```
+
+This asset enters the universe on July 9 but retains July 7-8 warmup. Expressions
+are bare per-asset expressions; the preparer applies entity grouping. Declare each
+finite row lookback and all input columns. Only complete, known, usable required
+windows become eligible. Unavailable or input-masked rows remain as null inputs,
+not shorter windows. A missing endpoint does not carry an earlier feature forward.
+Undefined/nonfinite outputs, including undefined fields in regression Structs,
+cannot become eligible. The output retains the observation/decision clocks,
+conservative contributing availability, membership, eligibility and price basis.
+
+For per-decision restated histories, Data prepares each perspective and the caller
+adds an aware snapshot column. Pass its name as `history_decision_time_col`; the
+preparer requires an exact matching snapshot for each decision. Without that
+column, duplicate history keys fail. It never selects or forward-fills a source
+revision/perspective implicitly. Preserve the Data snapshot's provenance alongside
+the resulting table.
+
+`input_mask` affects history before computation. Membership does not erase
+pre-entry history. `screen` runs after all features are computed. Alternatively,
+apply `cross_section(..., mask="eligible")` to the output, then filter final
+selections. Cross-sectional masks determine the contemporary population and are
+not a substitute for information-time validation.
+
+Owned `FeatureSchema` records optional `available_at_col`, `decision_time_col` and
+`eligible_col`. `FeatureDefinition` records the canonical `feed_spec`,
+`window_unit`, `price_basis` and finite `lookbacks`, with existing source-artifact
+lineage and join keys. `FeatureSpec.to_dict()` preserves omitted calendar versus
+explicit null; unused fields leave the old wire keys unchanged. Store actual
+typed frames separately, for example with Parquet. These records do not select
+source revisions or add a mandatory dataframe wrapper.
+
 ### Paired relationships and supplied event dates
 
 `features.paired.rolling_pearson`, `rolling_spearman`, `rolling_beta` and

@@ -265,6 +265,7 @@ def test_multicolumn_identity_does_not_join_reused_tickers_across_namespaces() -
         {"target": {"asset": "B", "other": 1}},
         {"window_unit": "expected_bar"},
         {"allowed_missing": -1},
+        {"feed_spec": {"timestamp_col": "timestamp", "time_col": "other"}},
         {"feed_spec": None, "entity_col": []},
         {"feed_spec": None, "price_col": "timestamp"},
     ],

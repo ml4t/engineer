@@ -29,6 +29,7 @@ These are not registry entries but remain important:
 | `paired.py` | full-window paired correlation/beta/regression with explicit missing-count limits |
 | `events.py` | supplied known event weekday counts, separate from exchange-session counts |
 | `selection.py` | eligible contemporary group transforms, stable selectors and boolean windows |
+| `preparation.py` | decision-time eligibility over supplied prepared histories and universe facts |
 | `fdiff.py` | fractional differencing utilities such as `ffdiff()` and `find_optimal_d()` |
 | `composite.py` | composite indicators and z-score combinations |
 
