@@ -122,6 +122,8 @@ its `_available_at`, `_covered`, `_known_at_decision`, `_effective_from`,
 future publication; retrospective selection retains the actual time and a false
 known-at-decision flag where appropriate. Multiple applicable known source
 revisions fail explicitly; Data/callers must select the intended revision.
+Output names cannot overwrite a factor key. Compound static-map tuple keys must
+match the declared entity columns exactly; extra tuple elements are not discarded.
 `None` optional facts produce uncovered request rows and do not remove unrelated
 price features. Explicit requested factors define loading coverage, not future
 factor names or assets discovered in the supplied history.

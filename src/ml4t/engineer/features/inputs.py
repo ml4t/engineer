@@ -594,6 +594,8 @@ def _dated_inputs(
     }
     if set(added) & set(request_schema):
         raise ValueError("Prepared output names collide with request columns")
+    if factor_col in added:
+        raise ValueError("Prepared output names cannot overwrite the declared factor identity")
     prefix = "__ml4t_inputs_"
     if any(c.startswith(prefix) for c in [*source_schema, *request_schema]):
         raise ValueError("Columns collide with reserved preparation names")
@@ -823,6 +825,10 @@ def prepare_classification_inputs(
             requests.collect_schema() if isinstance(requests, pl.LazyFrame) else requests.schema
         )
         identities = list(data)
+        if len(entities) > 1 and any(
+            not isinstance(key, tuple) or len(key) != len(entities) for key in identities
+        ):
+            raise ValueError("Compound static identities must match the declared entity columns")
         fields = {}
         for i, column in enumerate(entities):
             values = identities if len(entities) == 1 else [key[i] for key in identities]

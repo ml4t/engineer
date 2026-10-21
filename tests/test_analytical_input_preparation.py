@@ -544,6 +544,7 @@ def loading_prepare(facts=None, **options):
         {"factors": [""]},
         {"factors": [1]},
         {"output": "asset"},
+        {"output": "factor"},
         {"requests": requests().drop("decision_time")},
         {"requests": pl.concat([requests(), requests().head(1)])},
         {"requests": requests().with_columns(pl.lit(None).alias("timestamp"))},
@@ -571,6 +572,29 @@ def test_ambiguous_loading_requests_fail_instead_of_silently_coercing_or_expandi
 def test_invalid_selected_loading_facts_are_not_zero_filled(column, value):
     with pytest.raises(ValueError):
         loading_prepare(loading_facts().with_columns(pl.lit(value).alias(column)))
+
+
+def test_loading_metadata_output_names_cannot_overwrite_declared_factor_keys():
+    facts = loading_facts().rename({"factor": "loading_available_at"})
+    with pytest.raises(ValueError, match="factor"):
+        loading_prepare(facts, factor_col="loading_available_at")
+
+
+@pytest.mark.parametrize("key", [("XNYS",), ("XNYS", 17, "extra"), "XNYS"])
+def test_compound_static_classification_keys_must_match_the_declared_identity_columns(key):
+    asked = requests().rename({"asset": "sid"}).with_columns(pl.lit("XNYS").alias("venue"))
+    options = {
+        "requests": asked,
+        "feed_spec": feed(entity_col=("venue", "sid")),
+        "purpose": "causal",
+        "static": True,
+        "static_known_at": datetime(2025, 7, 1, tzinfo=UTC),
+    }
+    with pytest.raises(ValueError, match="identit"):
+        inputs().prepare_classification_inputs({key: "bank"}, **options)
+    result = inputs().prepare_classification_inputs({("XNYS", 17): "bank"}, **options)
+    assert result.filter(pl.col("sid") == 17)["sector"].to_list() == ["bank"] * 3
+    assert result.filter(pl.col("sid") == 23)["sector"].null_count() == 3
 
 
 def test_dated_inputs_preserve_adjacent_ns_publication_cutoffs_and_exact_effective_keys():
