@@ -16,7 +16,9 @@ def inputs():
 
 
 def feed(**options):
-    return FeedSpec(time_contract_version=2, calendar=None, entity_col="asset", **options)
+    return FeedSpec(
+        **{"time_contract_version": 2, "calendar": None, "entity_col": "asset", **options}
+    )
 
 
 def market():
@@ -205,3 +207,134 @@ def test_static_sector_maps_require_explicit_static_and_causal_knowledge_declara
     )
     assert result.filter(pl.col("asset") == 17)["sector"].to_list() == ["tech"] * 3
     assert result.filter(pl.col("asset") == 23)["sector_covered"].to_list() == [False] * 3
+
+
+def test_legacy_market_conversion_preserves_integer_ticks_adjacent_instants_and_missing_volume():
+    import pandas as pd
+
+    stamps = pd.to_datetime([1_750_000_000_000_000_001, 1_750_000_000_000_000_002], utc=True)
+    legacy = pd.DataFrame(
+        {2**63 + 17: pd.array([2**53, 0, 2**53 + 1, None], dtype="UInt64")},
+        index=pd.MultiIndex.from_product([stamps, ["price", "volume"]]),
+    )
+    result = inputs().market_to_long(legacy, feed_spec=feed())
+    assert result["timestamp"].cast(pl.Int64).to_list() == stamps.asi8.tolist()
+    assert result["asset"].dtype == pl.UInt64
+    assert result["asset"].to_list() == [2**63 + 17] * 2
+    assert result["close"].to_list() == [2**53, 2**53 + 1]
+    assert result["volume"].to_list() == [0, None]
+    assert "available_at" not in result.columns
+
+
+def test_legacy_loading_conversion_retains_explicit_missing_cells_without_filling_dates():
+    import pandas as pd
+
+    legacy = pd.DataFrame(
+        {"MKT": [1.0, None], "SIZE": [0.0, 2.0]},
+        index=pd.MultiIndex.from_arrays(
+            [pd.to_datetime(["2025-07-08", "2025-07-10"], utc=True), [17, 23]]
+        ),
+    )
+    result = inputs().loadings_to_long(legacy, feed_spec=feed())
+    assert result.height == 4
+    assert result["asset"].to_list() == [17, 23, 17, 23]
+    assert result["factor"].to_list() == ["MKT", "MKT", "SIZE", "SIZE"]
+    assert result["loading"].to_list() == [1.0, None, 0.0, 2.0]
+    assert "available_at" not in result.columns
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_absent_optional_facts_retain_request_coverage_without_touching_price_features(lazy):
+    original = requests().with_columns(pl.lit(123.0).alias("price_feature"))
+    asked = original.lazy() if lazy else original
+    loadings = inputs().prepare_loading_inputs(
+        None, requests=asked, factors=["MKT", "SIZE"], feed_spec=feed(), purpose="causal"
+    )
+    sectors = inputs().prepare_classification_inputs(
+        None, requests=asked, feed_spec=feed(), purpose="causal"
+    )
+    loadings = loadings.collect() if lazy else loadings
+    sectors = sectors.collect() if lazy else sectors
+    assert loadings.height == 12
+    assert loadings["loading"].null_count() == 12
+    assert not loadings["loading_covered"].any()
+    assert sectors["sector"].null_count() == 6
+    assert not sectors["sector_covered"].any()
+    assert_frame_equal(sectors.select(original.columns), original)
+    assert loadings["price_feature"].to_list() == [123.0] * 12
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_future_loading_revisions_cannot_change_earlier_causal_values_or_infer_assets(lazy):
+    facts = pl.DataFrame(
+        {
+            "timestamp": [DAYS[1]],
+            "asset": [17],
+            "factor": ["MKT"],
+            "loading": [1.0],
+            "available_at": [datetime(2025, 7, 8, 12, tzinfo=UTC)],
+        }
+    )
+
+    def prepare(frame):
+        result = inputs().prepare_loading_inputs(
+            frame.lazy() if lazy else frame,
+            requests=requests().lazy() if lazy else requests(),
+            factors=["MKT"],
+            feed_spec=feed(),
+            purpose="causal",
+        )
+        return result.collect() if lazy else result
+
+    expected = prepare(facts)
+    future = facts.with_columns(
+        pl.lit(999.0).alias("loading"),
+        pl.lit(datetime(2025, 7, 20, tzinfo=UTC)).alias("available_at"),
+    )
+    unknown = facts.with_columns(pl.lit(999, pl.Int64).alias("asset"))
+    assert_frame_equal(prepare(pl.concat([facts, future, unknown])), expected)
+    with pytest.raises(ValueError, match="Ambiguous"):
+        prepare(pl.concat([facts, facts]))
+
+
+def test_legacy_asset_objects_require_explicit_compound_stable_identity_mapping():
+    import pandas as pd
+
+    opaque = object()
+    original = pd.DataFrame(
+        {opaque: [10.0, 20.0]},
+        index=pd.MultiIndex.from_product(
+            [pd.to_datetime(["2025-07-08"], utc=True), ["price", "volume"]]
+        ),
+    )
+    with pytest.raises((ValueError, TypeError, pl.exceptions.ComputeError)):
+        inputs().market_to_long(original, feed_spec=feed())
+    result = inputs().market_to_long(
+        original,
+        feed_spec=feed(entity_col=("venue", "sid")),
+        entity_map={opaque: ("XNYS", 17)},
+    )
+    assert result.select("venue", "sid", "close", "volume").rows() == [("XNYS", 17, 10.0, 20.0)]
+
+
+@pytest.mark.parametrize(
+    "converter,required",
+    [
+        ("market_to_long", {"close": [10.0, 11.0]}),
+        ("loadings_to_long", {"factor": ["MKT", "MKT"], "loading": [1.0, 2.0]}),
+    ],
+)
+@pytest.mark.parametrize("lazy", [False, True])
+def test_native_conversion_preserves_order_dtypes_and_laziness_but_rejects_duplicate_keys(
+    converter, required, lazy
+):
+    original = pl.DataFrame({"timestamp": [DAYS[2], DAYS[1]], "asset": [17, 17], **required})
+    convert = getattr(inputs(), converter)
+    result = convert(original.lazy() if lazy else original, feed_spec=feed())
+    assert isinstance(result, pl.LazyFrame if lazy else pl.DataFrame)
+    assert_frame_equal(result.collect() if lazy else result, original)
+    duplicated = pl.concat([original, original.head(1)])
+    with pytest.raises(ValueError, match="Duplicate"):
+        invalid = convert(duplicated.lazy() if lazy else duplicated, feed_spec=feed())
+        if lazy:
+            invalid.filter(pl.col("timestamp") == DAYS[1]).collect()

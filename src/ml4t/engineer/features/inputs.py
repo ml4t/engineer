@@ -38,6 +38,189 @@ def _clock(
     return result
 
 
+def _native_table(
+    data: pl.DataFrame | pl.LazyFrame, required: Sequence[str], keys: Sequence[str]
+) -> pl.DataFrame | pl.LazyFrame:
+    schema = data.collect_schema() if isinstance(data, pl.LazyFrame) else data.schema
+    if set(required) - set(schema):
+        raise ValueError(f"Missing input columns: {sorted(set(required) - set(schema))}")
+
+    def validate(frame: pl.DataFrame) -> pl.DataFrame:
+        if frame.select(pl.any_horizontal(pl.col(c).is_null() for c in keys).any()).item():
+            raise ValueError("Input identity keys cannot be unknown")
+        if frame.select(pl.struct(keys).is_duplicated().any()).item():
+            raise ValueError("Duplicate input keys; select source revisions upstream")
+        return frame
+
+    if isinstance(data, pl.LazyFrame):
+        return data.map_batches(
+            validate,
+            schema=schema,
+            predicate_pushdown=False,
+            projection_pushdown=False,
+            slice_pushdown=False,
+            streamable=False,
+        )
+    return validate(data)
+
+
+def _legacy_table(data: Any) -> Any:
+    import pandas as pd
+
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError("Supply a native Polars table or a pandas MultiIndex DataFrame")
+    if not isinstance(data.index, pd.MultiIndex) or data.index.nlevels != 2:
+        raise ValueError("Legacy input requires a two-level date/field or date/asset index")
+    if not isinstance(data.index.get_level_values(0), pd.DatetimeIndex):
+        raise ValueError("Legacy first index level must contain declared Datetime keys")
+    if data.index.has_duplicates or data.columns.has_duplicates:
+        raise ValueError("Duplicate legacy input keys/columns; select revisions upstream")
+    return data
+
+
+def _identities(labels: Any, entities: Sequence[str], entity_map: Mapping[Any, Any] | None):
+    import pandas as pd
+
+    if entity_map is None and len(entities) == 1:
+        values = pl.from_pandas(pd.Series(labels)).rename(entities[0])
+        result = pl.DataFrame(values)
+    else:
+        if entity_map is None or any(key not in entity_map for key in labels):
+            raise ValueError("Declare every legacy asset's stable identity in entity_map")
+        values = [entity_map[key] for key in labels]
+        rows = [(key,) for key in values] if len(entities) == 1 else values
+        if any(not isinstance(key, tuple) or len(key) != len(entities) for key in rows):
+            raise ValueError("Compound stable identities require matching tuple values")
+        result = pl.from_pandas(pd.DataFrame(rows, columns=list(entities)))
+    if result.select(pl.any_horizontal(pl.all().is_null()).any()).item():
+        raise ValueError("Stable entity identities cannot be unknown")
+    if any(
+        dtype.base_type() not in {pl.String, pl.Categorical, pl.Enum} and not dtype.is_integer()
+        for dtype in result.schema.values()
+    ):
+        raise ValueError("Use stable integer/string IDs, not floats or opaque asset objects")
+    return result
+
+
+def market_to_long(
+    data: Any,
+    *,
+    feed_spec: FeedSpec,
+    price_field: str = "price",
+    volume_field: str = "volume",
+    entity_map: Mapping[Any, Any] | None = None,
+) -> pl.DataFrame | pl.LazyFrame:
+    """Convert legacy (date,field)-by-asset market cells without financial adjustments.
+
+    Native tables retain their columns, dtypes, order and lazy behavior. Legacy
+    conversion preserves supplied prices/volumes, zeros and missing cells. An
+    opaque legacy asset needs an explicit stable entity_map; no stringification,
+    completion/publication clock, units, currency or adjustment is invented.
+    Nullable pandas extension arrays require the existing optional Arrow bridge.
+    """
+    timestamp, entities = _roles(feed_spec)
+    price, volume = feed_spec.price_col, feed_spec.volume_col
+    keys = [timestamp, *entities]
+    if len({*keys, price, volume}) != len(keys) + 2:
+        raise ValueError("Market key/price/volume roles must be distinct")
+    if isinstance(data, pl.DataFrame | pl.LazyFrame):
+        return _native_table(data, [*keys, price], keys)
+    import pandas as pd
+
+    legacy = _legacy_table(data)
+    if not price_field or not volume_field or price_field == volume_field:
+        raise ValueError("Declare distinct nonempty legacy price/volume fields")
+    if price_field not in legacy.index.get_level_values(1):
+        raise ValueError("Legacy input has no declared price field")
+    identities = _identities(legacy.columns, entities, entity_map)
+
+    def field_frame(field: str, output: str) -> pl.DataFrame:
+        wide = legacy.xs(field, level=1)
+        pieces = []
+        for i, column in enumerate(wide.columns):
+            frame = pl.DataFrame(
+                {
+                    timestamp: pl.from_pandas(pd.Series(wide.index)),
+                    output: pl.from_pandas(wide[column].reset_index(drop=True)),
+                }
+            )
+            pieces.append(
+                frame.with_columns(
+                    identities[c].slice(i, 1).repeat_by(frame.height).explode().alias(c)
+                    for c in entities
+                )
+            )
+        if not pieces:
+            return pl.DataFrame(
+                schema={
+                    timestamp: pl.from_pandas(pd.Series(wide.index)).dtype,
+                    **identities.schema,
+                    output: pl.Float64,
+                }
+            )
+        try:
+            return pl.concat(pieces)
+        except pl.exceptions.SchemaError as exc:
+            raise ValueError(
+                "Normalize differing asset value dtypes explicitly before conversion"
+            ) from exc
+
+    prices = field_frame(price_field, price)
+    if volume_field in legacy.index.get_level_values(1):
+        result = prices.join(field_frame(volume_field, volume), on=keys, how="full", coalesce=True)
+    else:
+        result = prices.with_columns(pl.lit(None, pl.Float64).alias(volume))
+    return _native_table(result.select(*keys, price, volume), [*keys, price], keys)
+
+
+def loadings_to_long(
+    data: Any,
+    *,
+    feed_spec: FeedSpec,
+    factor_col: str = "factor",
+    value_col: str = "loading",
+    entity_map: Mapping[Any, Any] | None = None,
+) -> pl.DataFrame | pl.LazyFrame:
+    """Convert supplied (date,asset)-by-factor loadings without filling or inferring history.
+
+    This only changes containers. Causal preparation still requires actual
+    publication times from Data/the caller and explicitly requested factors.
+    """
+    timestamp, entities = _roles(feed_spec)
+    keys = [timestamp, *entities, factor_col]
+    if len({*keys, value_col}) != len(keys) + 1 or not factor_col or not value_col:
+        raise ValueError("Loading value/factor/key roles must be distinct and nonempty")
+    if isinstance(data, pl.DataFrame | pl.LazyFrame):
+        return _native_table(data, [*keys, value_col], keys)
+    import pandas as pd
+
+    legacy = _legacy_table(data)
+    if any(not isinstance(column, str) or not column for column in legacy.columns):
+        raise ValueError("Legacy factor columns must be distinct nonempty strings")
+    identities = _identities(legacy.index.get_level_values(1), entities, entity_map)
+    frame = identities.with_columns(
+        pl.from_pandas(pd.Series(legacy.index.get_level_values(0))).alias(timestamp)
+    )
+    pieces = [
+        frame.with_columns(
+            pl.lit(column).alias(factor_col),
+            pl.from_pandas(legacy[column].reset_index(drop=True)).alias(value_col),
+        )
+        for column in legacy.columns
+    ]
+    try:
+        result = (
+            pl.concat(pieces)
+            if pieces
+            else frame.clear().with_columns(
+                pl.lit(None, pl.String).alias(factor_col), pl.lit(None, pl.Float64).alias(value_col)
+            )
+        )
+    except pl.exceptions.SchemaError as exc:
+        raise ValueError("Normalize differing loading dtypes explicitly before conversion") from exc
+    return _native_table(result.select(*keys, value_col), [*keys, value_col], keys)
+
+
 def prepare_market_inputs(
     data: pl.DataFrame | pl.LazyFrame,
     *,
@@ -433,7 +616,15 @@ def _dated_inputs(
             display_end,
             *([] if static else [start, *([end] if intervals else [])]),
         ]
-        candidates = asked.join(facts.select(columns), on=join_keys, how="inner")
+        if not static and not intervals:
+            candidates = asked.join(
+                facts.select(columns),
+                left_on=[*join_keys, target],
+                right_on=[*join_keys, start],
+                how="inner",
+            )
+        else:
+            candidates = asked.join(facts.select(columns), on=join_keys, how="inner")
         valid = pl.lit(True)
         if not static:
             valid &= (
@@ -442,7 +633,7 @@ def _dated_inputs(
                     & (pl.col(end).is_null() | (pl.col(end) > pl.col(target)))
                 )
                 if intervals
-                else pl.col(start) == pl.col(target)
+                else pl.lit(True)
             )
         if purpose == "causal":
             valid &= pl.col(known).is_not_null() & (pl.col(known) <= pl.col(decision))
@@ -484,7 +675,7 @@ def _dated_inputs(
 
 
 def prepare_loading_inputs(
-    data: pl.DataFrame | pl.LazyFrame,
+    data: pl.DataFrame | pl.LazyFrame | None,
     *,
     requests: pl.DataFrame | pl.LazyFrame,
     factors: Sequence[str],
@@ -507,6 +698,20 @@ def prepare_loading_inputs(
     Retrospective output retains actual publication and known-at-decision flags.
     Lazy requests/facts are evaluated on collection,not silently made eager.
     """
+    if data is None:
+        timestamp, entities = _roles(feed_spec)
+        request_schema = (
+            requests.collect_schema() if isinstance(requests, pl.LazyFrame) else requests.schema
+        )
+        data = pl.DataFrame(
+            schema={
+                **{c: request_schema[c] for c in entities},
+                timestamp: request_schema[effective_time_col or timestamp],
+                factor_col: pl.String,
+                value_col: pl.Float64,
+                available_at_col: pl.Datetime("ns", "UTC"),
+            }
+        )
     return _dated_inputs(
         data,
         requests=requests,
@@ -523,7 +728,7 @@ def prepare_loading_inputs(
 
 
 def prepare_classification_inputs(
-    data: pl.DataFrame | pl.LazyFrame | Mapping[Any, Any],
+    data: pl.DataFrame | pl.LazyFrame | Mapping[Any, Any] | None,
     *,
     requests: pl.DataFrame | pl.LazyFrame,
     feed_spec: FeedSpec,
@@ -546,7 +751,23 @@ def prepare_classification_inputs(
     This joins supplied facts without creating a provider,universe or revision
     selector. It does not normalize holdings or compute sector exposures.
     """
-    _, entities = _roles(feed_spec)
+    timestamp, entities = _roles(feed_spec)
+    if data is None:
+        if static:
+            raise ValueError("static=True requires an explicit mapping,not absent facts")
+        request_schema = (
+            requests.collect_schema() if isinstance(requests, pl.LazyFrame) else requests.schema
+        )
+        effective_dtype = request_schema[effective_time_col or timestamp]
+        data = pl.DataFrame(
+            schema={
+                **{c: request_schema[c] for c in entities},
+                effective_from_col: effective_dtype,
+                effective_to_col: effective_dtype,
+                value_col: pl.String,
+                available_at_col: pl.Datetime("ns", "UTC"),
+            }
+        )
     if isinstance(data, Mapping):
         if not static:
             raise ValueError("Declare static=True for a static classification map")

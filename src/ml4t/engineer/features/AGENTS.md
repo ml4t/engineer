@@ -30,6 +30,7 @@ These are not registry entries but remain important:
 | `events.py` | supplied known event weekday counts, separate from exchange-session counts |
 | `selection.py` | eligible contemporary group transforms, stable selectors and boolean windows |
 | `preparation.py` | decision-time eligibility over supplied prepared histories and universe facts |
+| `inputs.py` | optional market/loading/classification container conversion and known-at preparation |
 | `fdiff.py` | fractional differencing utilities such as `ffdiff()` and `find_optimal_d()` |
 | `composite.py` | composite indicators and z-score combinations |
 
