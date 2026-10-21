@@ -58,9 +58,9 @@ def validate_declared_grid(
                 parsed = pd.Timedelta("1D" if frequency == "1d" else frequency)
         except (ValueError, TypeError, FutureWarning, DeprecationWarning) as exc:
             raise ValueError("declared grid data_frequency must be a fixed duration") from exc
-        if not isinstance(parsed, pd.Timedelta) or parsed.value % 1000:
-            raise ValueError("declared grid data_frequency requires finite microsecond precision")
-        frequency = parsed.to_pytimedelta()
+        if not isinstance(parsed, pd.Timedelta) or parsed <= pd.Timedelta(0):
+            raise ValueError("declared grid data_frequency requires a positive finite duration")
+        frequency = parsed
     if not isinstance(frequency, timedelta):
         raise ValueError("declared grid data_frequency must be a duration string or timedelta")
     if daily_labels:
@@ -143,11 +143,12 @@ def _validate_session_grid(
     frame = labels.collect() if isinstance(labels, pl.LazyFrame) else labels
     if frame[timestamp_col].null_count():
         raise ValueError("declared daily grid contains null session labels")
-    groups = frame.partition_by(group_cols, as_dict=True) if group_cols else {(): frame}
-    for group, rows in groups.items():
+    groups = frame.partition_by(group_cols) if group_cols else [frame]
+    for rows in groups:
         actual = sorted(rows[timestamp_col].to_list())
         if not actual:
             continue
+        group = rows.select(group_cols).row(0) if group_cols else ()
         observed = set(actual)
         if len(actual) != len(observed):
             raise ValueError(f"duplicate session label in group {group!r}")
@@ -199,8 +200,8 @@ def scheduled_session_indices(
     if labels:
         indices = {label.date(): index for index, label in enumerate(schedule.index)}
         return np.array([indices[day] for day in days], dtype=np.int64)
-    timestamps = values.dt.epoch("us").to_numpy()
-    opened = np.array([stamp.value // 1000 for stamp in schedule["market_open"]], dtype=np.int64)
+    timestamps = values.dt.epoch("ns").to_numpy()
+    opened = np.array([stamp.value for stamp in schedule["market_open"]], dtype=np.int64)
     side = (
         "left"
         if feed_spec.bar_label == "right"
@@ -227,6 +228,8 @@ def validate_bar_grid(
     The policy arguments are internal calculation inputs, not a serialized contract.
     This does not infer dataset coverage outside the first and last observation.
     """
+    import pandas as pd
+
     if not isinstance(frequency, timedelta) or not timedelta(0) < frequency < timedelta(days=1):
         raise ValueError("declared grid frequency must be a fixed duration below one day")
     if anchor != "session_open" or label_side not in {"left", "right"}:
@@ -254,30 +257,38 @@ def validate_bar_grid(
     frame = frame.with_columns(timestamps.dt.convert_time_zone("UTC"))
     if frame[timestamp_col].null_count():
         raise ValueError("declared bar grid contains null timestamps")
-    if frame.select((pl.col(timestamp_col).dt.nanosecond() % 1000 != 0).any()).item():
-        raise ValueError("off-grid bar timestamp has finer than supported microsecond precision")
-
-    groups = frame.partition_by(group_cols, as_dict=True) if group_cols else {(): frame}
-    for group, rows in groups.items():
-        actual = sorted(rows[timestamp_col].to_list())
+    if (
+        pd.Timedelta(frequency).value % 1000 == 0
+        and frame.select((pl.col(timestamp_col).dt.nanosecond() % 1000 != 0).any()).item()
+    ):
+        raise ValueError("off-grid bar timestamp has finer precision than the declared frequency")
+    groups = frame.partition_by(group_cols) if group_cols else [frame]
+    for rows in groups:
+        actual = sorted(rows[timestamp_col].dt.epoch("ns").to_list())
         if not actual:
             continue
+        group = rows.select(group_cols).row(0) if group_cols else ()
         if len(actual) != len(set(actual)):
             raise ValueError(f"duplicate bar timestamp in group {group!r}")
         observed = set(actual)
-        for expected in _expected_bar_labels(
+        for expected in _expected_bar_label_ticks(
             adapter, actual[0], actual[-1], frequency, label_side, include_partial
         ):
             if expected not in observed:
                 raise ValueError(
-                    f"missing scheduled bar in group {group!r} at {expected.isoformat()}; "
+                    f"missing scheduled bar in group {group!r} at "
+                    f"{pd.Timestamp(expected, unit='ns', tz='UTC').isoformat()} "
+                    f"for declared frequency {frequency}; "
                     "normalize prices to the declared grid before deriving returns, or explicitly "
                     "select calendar=None for observation-row calculations"
                 )
             observed.remove(expected)
         off_grid = sorted(observed)
         if off_grid:
-            raise ValueError(f"off-grid bar in group {group!r} at {off_grid[0].isoformat()}")
+            raise ValueError(
+                f"off-grid bar in group {group!r} at "
+                f"{pd.Timestamp(off_grid[0], unit='ns', tz='UTC').isoformat()}"
+            )
 
 
 def _expected_bar_labels(
@@ -288,21 +299,58 @@ def _expected_bar_labels(
     label_side: Literal["left", "right"],
     include_partial: bool,
 ) -> Iterator[datetime]:
+    import pandas as pd
+
+    for ticks in _expected_bar_label_ticks(
+        adapter,
+        pd.Timestamp(start).value,
+        pd.Timestamp(end).value,
+        frequency,
+        label_side,
+        include_partial,
+    ):
+        stamp = pd.Timestamp(ticks, unit="ns", tz="UTC")
+        assert isinstance(stamp, datetime)
+        yield stamp
+
+
+def _expected_bar_label_ticks(
+    adapter: "PandasMarketCalendar",
+    start: int,
+    end: int,
+    frequency: timedelta,
+    label_side: Literal["left", "right"],
+    include_partial: bool,
+) -> Iterator[int]:
+    import pandas as pd
+
+    step = pd.Timedelta(frequency).value
+    if step <= 0:
+        raise ValueError("declared grid frequency must be positive")
     intervals = set()
-    day = start.date()
-    while day <= end.date():
+    start_stamp = pd.Timestamp(start, unit="ns", tz="UTC")
+    end_stamp = pd.Timestamp(end, unit="ns", tz="UTC")
+    assert isinstance(start_stamp, datetime) and isinstance(end_stamp, datetime)
+    day = start_stamp.date()
+    final_day = end_stamp.date()
+    while day <= final_day:
         for opened, closed, _, _ in adapter._trading_intervals_around(day):
-            intervals.add((opened.astimezone(UTC), closed.astimezone(UTC)))
+            intervals.add(
+                (
+                    pd.Timestamp(opened.astimezone(UTC)).value,
+                    pd.Timestamp(closed.astimezone(UTC)).value,
+                )
+            )
         day += timedelta(days=7)
 
     for opened, closed in sorted(intervals):
         if closed < start or opened > end:
             continue
-        skipped = max(0, (start - opened) // frequency - 1)
-        boundary = opened + skipped * frequency
+        skipped = max(0, (start - opened) // step - 1)
+        boundary = opened + skipped * step
         while boundary < closed and boundary <= end:
-            next_boundary = min(boundary + frequency, closed)
-            if next_boundary - boundary < frequency and not include_partial:
+            next_boundary = min(boundary + step, closed)
+            if next_boundary - boundary < step and not include_partial:
                 break
             label = boundary if label_side == "left" else next_boundary
             if start <= label <= end:

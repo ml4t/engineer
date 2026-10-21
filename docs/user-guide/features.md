@@ -108,6 +108,18 @@ result = prices.lazy().with_columns(
 assert result["return"][0] is None
 assert result["return"][1] == 1 / 2**53
 assert result["log_return"][1] > 0
+
+from decimal import Decimal
+from math import isclose
+
+decimal_prices = pl.DataFrame({"close": [
+    Decimal("1000000.000000000000"),
+    Decimal("1000000.000000000001"),
+    Decimal("1000000.000000000002"),
+]})
+decimal_returns = decimal_prices.select(returns("close"))
+assert decimal_returns.schema["close"] == pl.Float64
+assert isclose(decimal_returns["close"][1], 1e-18, rel_tol=1e-15, abs_tol=0)
 ```
 
 Both expressions retain the input row count and leave the first `periods` rows
@@ -115,6 +127,9 @@ undefined in each asset. Integer differences are computed before floating divisi
 floating input keeps its existing ratio formula and dtype. Log returns retain tiny
 changes without turning a near-total loss into an artificial negative infinity.
 `percentage_change` uses the same simple-return calculation multiplied by 100.
+Decimal inputs retain their exact scale through subtraction, then produce Float64 fractional
+returns. This changes their former Decimal output dtype, whose division could truncate a nonzero
+tick to zero. Original prices stay unchanged; Float32/Float64 input behavior is unchanged.
 
 When replacing an Empyrical price-return call, note that its output omits the first
 undefined observation. Trim that documented leading row only if the consuming
