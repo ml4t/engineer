@@ -40,6 +40,7 @@ RELEASE_CRITICAL_MODULES = (
     "src/ml4t/engineer/discovery/catalog.py",
     "src/ml4t/engineer/labeling/atr_barriers.py",
     "src/ml4t/engineer/labeling/calendar.py",
+    "src/ml4t/engineer/labeling/forward_returns.py",
     "src/ml4t/engineer/labeling/horizon_labels.py",
     "src/ml4t/engineer/labeling/meta_labels.py",
     "src/ml4t/engineer/labeling/numba_ops.py",

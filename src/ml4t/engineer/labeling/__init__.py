@@ -11,6 +11,7 @@ from ml4t.engineer.labeling.calendar import (
     TradingCalendar,
     calendar_aware_labels,
 )
+from ml4t.engineer.labeling.forward_returns import forward_returns
 from ml4t.engineer.labeling.horizon_labels import (
     fixed_time_horizon_labels,
     trend_scanning_labels,
@@ -48,6 +49,7 @@ __all__ = [
     "compute_label_statistics",
     "fixed_time_horizon_feature",
     "fixed_time_horizon_labels",
+    "forward_returns",
     "meta_labels",
     "register_labeling_features",
     "rolling_percentile_binary_labels",
