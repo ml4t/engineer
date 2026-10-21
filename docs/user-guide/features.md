@@ -355,6 +355,12 @@ are bare per-asset expressions; the preparer applies entity grouping. Declare ea
 finite row lookback and all input columns. Only complete, known, usable required
 windows become eligible. Unavailable or input-masked rows remain as null inputs,
 not shorter windows. A missing endpoint does not carry an earlier feature forward.
+For kernels with deliberate omission rules, select
+`missing_input_policy="known_missing"` to allow confirmed null/NaN or input-masked
+values within the full original window. Every row still needs a publication time
+known by the decision. Unknown/future rows and infinite inputs remain ineligible.
+This option neither adds pre-listing rows nor fills absent scheduled bars; consume
+an explicitly supplied complete panel when that is what the original loader emits.
 Undefined/nonfinite outputs, including undefined fields in regression Structs,
 cannot become eligible. The output retains the observation/decision clocks,
 conservative contributing availability, membership, eligibility, the declared
@@ -377,7 +383,7 @@ not a substitute for information-time validation.
 
 Owned `FeatureSchema` records optional `available_at_col`, `decision_time_col` and
 `eligible_col`, plus `universe_time_col`. `FeatureDefinition` records the canonical `feed_spec`,
-`window_unit`, `price_basis` and finite `lookbacks`, with existing source-artifact
+`window_unit`, `price_basis`, finite `lookbacks` and optional `missing_input_policy`, with existing source-artifact
 lineage and join keys. `FeatureSpec.to_dict()` preserves omitted calendar versus
 explicit null; unused fields leave the old wire keys unchanged. Store actual
 typed frames separately, for example with Parquet. These records do not select

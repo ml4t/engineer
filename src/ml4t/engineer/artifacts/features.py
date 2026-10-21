@@ -54,6 +54,7 @@ class FeatureDefinition:
     window_unit: WindowUnit | None = None
     price_basis: str | None = None
     lookbacks: dict[str, int] | None = None
+    missing_input_policy: str | None = None
 
     def __post_init__(self) -> None:
         if self.feed_spec is not None:
@@ -62,6 +63,8 @@ class FeatureDefinition:
             object.__setattr__(self, "window_unit", WindowUnit(self.window_unit))
         if self.price_basis is not None and not self.price_basis.strip():
             raise ValueError("price_basis must be a nonempty declaration")
+        if self.missing_input_policy not in {None, "complete", "known_missing"}:
+            raise ValueError("missing_input_policy must be complete or known_missing")
         if self.lookbacks is not None:
             if any(
                 not isinstance(name, str)
@@ -90,6 +93,7 @@ class FeatureDefinition:
             window_unit=mapping.get("window_unit"),
             price_basis=optional_str(mapping.get("price_basis")),
             lookbacks=mapping.get("lookbacks"),
+            missing_input_policy=optional_str(mapping.get("missing_input_policy")),
         )
 
 
@@ -106,7 +110,13 @@ class FeatureSpec(ArtifactSpec):
         for name in ("available_at_col", "decision_time_col", "eligible_col", "universe_time_col"):
             if payload["schema"][name] is None:
                 del payload["schema"][name]
-        for name in ("feed_spec", "window_unit", "price_basis", "lookbacks"):
+        for name in (
+            "feed_spec",
+            "window_unit",
+            "price_basis",
+            "lookbacks",
+            "missing_input_policy",
+        ):
             if payload["definition"][name] is None:
                 del payload["definition"][name]
         if self.definition.feed_spec is not None:

@@ -1,7 +1,7 @@
 """Decision-time feature eligibility over caller/Data-prepared native histories."""
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 import polars as pl
 from ml4t.specs import UNSET_CALENDAR, FeedSpec, TimestampSemantics, WindowUnit
@@ -44,6 +44,7 @@ def prepare_feature_panel(
     decision_time_col: str = "decision_time",
     universe_time_col: str = "effective_session",
     history_decision_time_col: str | None = None,
+    missing_input_policy: Literal["complete", "known_missing"] = "complete",
     input_mask: str | pl.Expr | None = None,
     screen: str | pl.Expr | None = None,
 ) -> pl.DataFrame | pl.LazyFrame:
@@ -64,7 +65,10 @@ def prepare_feature_panel(
     carried forward. The declared price_basis is retained, not calculated.
 
     Supply bare per-asset expressions, their finite row lookbacks, and every input
-    column they require. Full required windows must contain known, usable inputs.
+    column they require. Full required windows must contain known, usable inputs
+    by default. known_missing permits confirmed null/NaN or input-masked values
+    to follow the supplied kernel's missing-value definition. All original rows
+    must still have known publication times; infinite inputs remain invalid.
     Unavailable/masked rows stay in history with null inputs, never compressed or
     filled. A final screen runs only after all values and eligibility are computed.
     Cross-sectional transforms operate on the resulting eligible population.
@@ -88,6 +92,8 @@ def prepare_feature_panel(
         raise ValueError("Declare distinct input_columns for the supplied expressions")
     if not isinstance(price_basis, str) or not price_basis.strip():
         raise ValueError("Declare a nonempty price_basis")
+    if missing_input_policy not in {"complete", "known_missing"}:
+        raise ValueError("missing_input_policy must be complete or known_missing")
     if any(
         value is not None and not isinstance(value, str | pl.Expr) for value in (input_mask, screen)
     ):
@@ -207,8 +213,8 @@ def prepare_feature_panel(
         for c in [*schema, *universe_frame.columns, *decision_frame.columns, *features]
     ):
         raise ValueError("Input columns collide with reserved feature preparation names")
-    known, cutoff, source_usable, feature_known = (
-        prefix + c for c in ("known", "cutoff", "usable", "time")
+    known, cutoff, source_usable, source_ready, feature_known = (
+        prefix + c for c in ("known", "cutoff", "usable", "ready", "time")
     )
 
     def clock(
@@ -358,13 +364,23 @@ def prepare_feature_panel(
                     group_cols=entities,
                 )
             usable = pl.col(known).is_not_null() & (pl.col(known) <= instant)
+            confirmed = usable
             for column in input_columns:
-                usable &= _usable_value(pl.col(column), schema[column])
+                value = pl.col(column)
+                valid = _usable_value(value, schema[column])
+                missing = value.is_null()
+                if schema[column].is_float():
+                    missing |= value.is_nan()
+                confirmed &= valid | missing
+                usable &= valid
             if input_mask is not None:
                 usable &= (
                     pl.col(input_mask) if isinstance(input_mask, str) else input_mask
                 ).fill_null(False)
-            history = history.with_columns(usable.alias(source_usable))
+            history = history.with_columns(
+                usable.alias(source_usable),
+                (usable if missing_input_policy == "complete" else confirmed).alias(source_ready),
+            )
             assets = pl.concat(
                 [history.filter(pl.col(known) <= instant).select(entities), facts.select(entities)]
             ).unique()
@@ -374,7 +390,7 @@ def prepare_feature_panel(
             available = []
             for name in features:
                 count = lookbacks[name]
-                full = pl.col(source_usable).cast(pl.Int64).rolling_sum(count) == count
+                full = pl.col(source_ready).cast(pl.Int64).rolling_sum(count) == count
                 available.append(
                     pl.when(full)
                     .then(pl.col(known).cast(pl.Int64).rolling_max(count))

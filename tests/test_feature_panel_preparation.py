@@ -168,6 +168,78 @@ def test_future_publication_cannot_fill_or_compress_a_required_window():
     assert a["available_at"].null_count() == 2
 
 
+@pytest.mark.parametrize("lazy", [False, True])
+def test_explicit_known_missing_profile_uses_kernel_definition_without_changing_rows(lazy):
+    frame = history().with_columns(
+        pl.when((pl.col("asset") == "A") & (pl.col("timestamp") == DAYS[1]))
+        .then(None)
+        .otherwise(pl.col("close"))
+        .alias("close")
+    )
+    strict = prepare(frame)
+    result = prepare(frame.lazy() if lazy else frame, missing_input_policy="known_missing")
+    result = result.collect() if lazy else result
+    assert result.select("timestamp", "asset").rows() == strict.select("timestamp", "asset").rows()
+    a = result.filter(pl.col("asset") == "A")
+    assert strict.filter(pl.col("asset") == "A")["eligible"].to_list() == [False, False]
+    assert a["average"].to_list() == [2.0, 3.5]
+    assert a["eligible"].to_list() == [True, True]
+    assert a["available_at"].to_list() == [
+        datetime(2025, 7, 9, 16, tzinfo=UTC),
+        datetime(2025, 7, 10, 16, tzinfo=UTC),
+    ]
+
+
+@pytest.mark.parametrize("value", [None, float("nan"), float("inf"), float("-inf")])
+def test_known_missing_profile_never_omits_unknown_future_or_invalid_infinite_inputs(value):
+    frame = history().with_columns(
+        pl.when((pl.col("asset") == "A") & (pl.col("timestamp") == DAYS[1]))
+        .then(pl.lit(value, dtype=pl.Float64))
+        .otherwise(pl.col("close"))
+        .alias("close")
+    )
+    if value is None or value != value:
+        frame = frame.with_columns(
+            pl.when((pl.col("asset") == "A") & (pl.col("timestamp") == DAYS[1]))
+            .then(None)
+            .otherwise(pl.col("available_at"))
+            .alias("available_at")
+        )
+    result = prepare(frame, missing_input_policy="known_missing")
+    assert result.filter(pl.col("asset") == "A")["eligible"].to_list() == [False, False]
+    future = history().with_columns(
+        pl.when(pl.col("timestamp") == DAYS[1])
+        .then(pl.lit(datetime(2025, 7, 10, 18, tzinfo=UTC)))
+        .otherwise(pl.col("available_at"))
+        .alias("available_at")
+    )
+    assert not prepare(future, missing_input_policy="known_missing")["eligible"].any()
+
+
+def test_known_missing_profile_preserves_masks_full_window_and_undefined_outputs():
+    result = prepare(
+        history(), input_mask=pl.col("close") > 1, missing_input_policy="known_missing"
+    )
+    assert result.filter(pl.col("asset") == "A")["average"].to_list() == [2.5, 3.0]
+    missing = history().with_columns(pl.lit(float("nan")).alias("close"))
+    result = prepare(missing, missing_input_policy="known_missing")
+    assert not result["eligible"].any()
+    short = history().filter(pl.col("timestamp") >= DAYS[1])
+    result = prepare(short, missing_input_policy="known_missing")
+    a = result.filter(pl.col("asset") == "A")
+    assert a["average"].to_list() == [None, 3.0]
+    assert a["eligible"].to_list() == [False, True]
+
+
+def test_custom_finite_expression_is_evaluated_per_entity_not_over_the_sorted_panel():
+    result = prepare(
+        history(),
+        features={"tail_sum": pl.col("close").tail(3).sum()},
+        lookbacks={"tail_sum": 3},
+    )
+    assert result["tail_sum"].to_list() == [6.0, 60.0, 9.0, 90.0]
+
+
 def test_changing_only_final_screen_does_not_change_warmup_or_group_values():
     before = prepare(history())
     screened = prepare(history(), screen=pl.col("asset") == "A")
@@ -262,6 +334,7 @@ def test_feature_artifact_public_roundtrip_preserves_required_feed_and_eligibili
             "window_unit": "observation" if calendar in (None, "omitted") else "expected_bar",
             "price_basis": "split_adjusted",
             "lookbacks": {"average": 3},
+            "missing_input_policy": "known_missing",
         },
     }
     spec = FeatureSpec.from_mapping(json.loads(json.dumps(payload)))
@@ -398,6 +471,7 @@ def test_missing_endpoint_or_market_coverage_does_not_carry_stale_features_forwa
         {"input_columns": ["close", "close"]},
         {"input_columns": ["asset"]},
         {"price_basis": ""},
+        {"missing_input_policy": "ignore"},
         {"input_mask": 1},
         {"screen": 1},
         {"timestamp_col": "other"},
