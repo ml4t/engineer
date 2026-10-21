@@ -97,6 +97,12 @@ def test_top_bottom_use_exact_cardinality_and_stable_tie_selection(method, expec
     assert calculate(panel(), method, n=0)["result"].to_list() == [False] * 6
 
 
+def test_negative_group_maximum_uses_numeric_order_not_float_storage_bits():
+    frame = panel().with_columns((-pl.col("value")).alias("value"))
+    result = calculate(frame, "top", n=1)
+    assert result["result"].to_list() == [False, False, True, True, False, False]
+
+
 def test_winsorization_uses_legacy_order_statistic_cutoffs_not_linear_clipping():
     frame = pl.DataFrame(
         {

@@ -14,7 +14,8 @@ Use the [migration how-to](../user-guide/pipeline-migration.md) to prepare input
 |---|---|---|
 | `Returns` | `factor_expression` or precise `features.utils.arithmetic.returns` | N prices become N-1 changes; signed reference denominator; fraction, not percentage points. |
 | `DailyReturns` | Same recipe with two prices | One change; retain both endpoint quote masks. |
-| `PercentChange`, `RateOfChangePercentage` | `absolute_percent_change` or recipes | Absolute reference denominator; fractional result, despite legacy naming. |
+| `PercentChange` | `absolute_percent_change` or recipe | Absolute reference denominator; fractional result. |
+| `RateOfChangePercentage` | `features.utils.arithmetic.percentage_change` or recipe | Signed reference denominator, percentage points (100 times the fractional return). |
 | `SimpleMovingAverage` | `finite_mean` or recipe | Full row window, omit null/NaN values from mean denominator. |
 | `WeightedAverageValue`, `VWAP` | `finite_weighted_mean` or recipes | Independent NaN sums of value*weight and weights; a missing value does not erase its weight. |
 | `AverageDollarVolume` | `average_dollar_volume` or recipe | Sum of price*volume divided by fixed N; distinguish quote units and volume basis. |
@@ -46,7 +47,7 @@ Use the [migration how-to](../user-guide/pipeline-migration.md) to prepare input
 | Operation | Native route | Material choices |
 |---|---|---|
 | Arithmetic `+`, `-`, `*`, `/`, `**`, `%`, reflected forms, unary minus | Corresponding `pl.Expr` operations | Native null and integer overflow rules; do not cast large tick prices before differencing. |
-| Comparisons `<`, `<=`, `>`, `>=`, `.eq`, `!=`; Boolean `&`, `|`, `~` | Native expressions, explicit `.fill_null(False)` for legacy filters | Do not use Python `and`/`or` on expressions. |
+| Comparisons `<`, `<=`, `>`, `>=`, `.eq`, `!=`; Boolean `&`, `|`, `~` | Native expressions over explicitly normalized missing inputs | Do not use Python `and`/`or`. Polars orders NaNs differently from NumExpr comparisons; normalize NaN to null and declare the Boolean null policy, or preserve a specifically required legacy NaN comparison explicitly. Final eligibility still excludes undefined features. |
 | `sin`, `cos`, `tan`, `arcsin`, `arccos`, `arctan`, `sinh`, `cosh`, `tanh`, `arcsinh`, `arccosh`, `arctanh` | Same-named Polars expression functions | Domain-invalid real values remain undefined. |
 | `log`, `log10`, `log1p`, `exp`, `expm1`, `sqrt`, `abs` | `.log()`, `.log(10)`, `.log1p()`, `.exp()`, `numpy.expm1(expr)`, `.sqrt()`, `.abs()` | Use expm1 directly for tiny inputs, not subtraction from a rounded exponential. |
 | `.isnan`, `.notnan`, `.isfinite` | `is_missing`, inverse `is_missing`, `.is_finite().fill_null(False)` | Native nulls join NaNs in missingness; infinities are not missing but are nonfinite. |
@@ -65,10 +66,10 @@ Use the [migration how-to](../user-guide/pipeline-migration.md) to prepare input
 |---|---|---|
 | `All`, `Any`, `AtLeastN` | `rolling_filter` with all/any/at_least | Full original windows, missing predicates false; apply `.over(entity_col)`. |
 | `AllPresent` | `rolling_filter(~is_missing(value), method="all")` | Known row presence is separate from actual value usability. |
-| `MaximumFilter` | Eligible value equals its group's maximum | Retain all maximal ties; this differs from exact-count top(1). |
+| `MaximumFilter` | `cross_section(method="top", n=1)` | One maximum per eligible group, stable-ID first tie. The pinned legacy implementation reinterprets float storage as signed integers and selects the wrong maximum for all-negative groups. Native numeric ordering deliberately corrects that defect. |
 | `NullFilter`, `NotNullFilter` | `is_missing`, inverse | Normalize legacy sentinels explicitly; no automatic -1 interpretation. |
 | `PercentileFilter` | Cross-section percentile_between | Inclusive bounds and eligible population. |
-| `SingleAsset`, `StaticAssets`, `StaticSids` | Stable-ID equality or `.is_in(...)` | Explicitly resolve legacy Asset.sid through its owner; static membership is not a historical universe. |
+| `SingleAsset`, `StaticAssets`, `StaticSids` | Stable-ID equality or `.is_in(...)` | Explicitly resolve legacy Asset.sid through its owner; static membership is not a historical universe. Legacy SingleAsset additionally raises unless its asset is alive throughout the requested range. Check that lifetime condition explicitly if retaining its strict behavior; a native equality filter alone does not raise. |
 | `ArrayPredicate`, `NumExprFilter` | Native elementwise Boolean expressions | Preserve declared null behavior; do not execute arbitrary legacy expression strings. |
 | `Filter.if_else` | `pl.when(predicate).then(left).otherwise(right)` | Declare unknown-predicate handling explicitly. |
 | `CustomFilter`, base `Filter` | Boolean expressions or reusable registered features | No graph interpreter; supply required history and knowledge clocks. |

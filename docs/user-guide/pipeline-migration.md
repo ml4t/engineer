@@ -141,6 +141,19 @@ with complete quotes and a known-missing close, listing/delisting and supplied
 lifetimes. This is development qualification, not an available release or proof
 of order, fill, commission, leverage or portfolio-performance equivalence.
 
+Development source `3c5665cd2d08bad2dc5dc25b4a97573a84a7de88` additionally
+passed both missingness profiles with actual CustomFactor, CustomFilter and
+CustomClassifier terms, and 33 installed operation comparisons covering all 19
+elementary math functions, seven daily summaries, five return-definition/window
+cases and both weekday-event classes. `examples/pipeline_expression_ports.py`
+contains the executable math and daily-summary ports. Data's unpublished
+`0.2.2.dev41+gd48d849f7` artifact at
+`d48d849f77d3ff75d05383cbaaed9b42f6ca95b7` fed actual known-at histories into
+Engineer source `cce590132846dbc7d558971b2d5a7f703d5cd9a2`: an appended future
+correction left the earlier mean 199 unchanged, and the later adjusted history
+retained stable asset 17 across OLD/NEW symbols with a final two-price mean 99.5.
+These artifacts are qualification inputs, not published install recommendations.
+
 See the [operation reference](../api/pipeline-ports.md) for individual methods,
 defaults and material differences, and [native features](features.md) for the
 preparation and expression contracts.
