@@ -305,11 +305,17 @@ explicit column arguments cannot conflict with the declaration. A named calendar
 requires the existing complete bar-grid declaration before any return/feature is
 derived. Explicit `calendar=None` keeps observation-row windows.
 
-`decisions` has the declared observation timestamp column and a separate aware
-`decision_time`. Universe rows have stable entity keys, `effective_from`, exclusive
+`decisions` has the observation cutoff, a separate aware `decision_time` and an
+explicit decision-effective universe key. The default `universe_time_col` selects
+`effective_session`, a supplied session identifier. It need not equal the prior
+price session used for a morning decision. For instant-effective universes, set
+`universe_time_col` to the explicitly supplied instant column, such as
+`decision_time`. No effective session is inferred from a UTC date or from prices.
+Universe rows have stable entity keys, `effective_from`, exclusive
 `effective_to` (null means open), aware `available_at`, nullable boolean `member`
-and optional classification columns. Effective intervals use the observation
-clock, not an inferred midnight instant. Missing/unknown facts never imply
+and optional classification columns. Effective intervals use that declared universe
+clock. Date identifiers stay dates; instant comparisons preserve physical timezone
+equivalence and ns boundaries. Missing/unknown facts never imply
 membership. Overlapping known active facts fail with an upstream-resolution error.
 
 <!-- ml4t-exec -->
@@ -327,6 +333,7 @@ history = pl.DataFrame({
 })
 decisions = pl.DataFrame({
     "timestamp": [days[-1]], "decision_time": [datetime(2025, 7, 9, 17, tzinfo=UTC)],
+    "effective_session": [days[-1]],
 })
 universe = pl.DataFrame({
     "asset": ["A"], "effective_from": [days[-1]],
@@ -350,7 +357,9 @@ windows become eligible. Unavailable or input-masked rows remain as null inputs,
 not shorter windows. A missing endpoint does not carry an earlier feature forward.
 Undefined/nonfinite outputs, including undefined fields in regression Structs,
 cannot become eligible. The output retains the observation/decision clocks,
-conservative contributing availability, membership, eligibility and price basis.
+conservative contributing availability, membership, eligibility, the declared
+universe key and price basis. Membership is evaluated at that explicit key using
+only facts known at the decision, not at the historical price cutoff.
 
 For per-decision restated histories, Data prepares each perspective and the caller
 adds an aware snapshot column. Pass its name as `history_decision_time_col`; the
@@ -361,12 +370,13 @@ the resulting table.
 
 `input_mask` affects history before computation. Membership does not erase
 pre-entry history. `screen` runs after all features are computed. Alternatively,
-apply `cross_section(..., mask="eligible")` to the output, then filter final
-selections. Cross-sectional masks determine the contemporary population and are
+apply `cross_section(..., timestamp_col="decision_time", mask="eligible")` to the
+output, then filter final selections. If one instant has multiple declared universe
+contexts, include their universe key in the group keys too. Cross-sectional masks determine the contemporary population and are
 not a substitute for information-time validation.
 
 Owned `FeatureSchema` records optional `available_at_col`, `decision_time_col` and
-`eligible_col`. `FeatureDefinition` records the canonical `feed_spec`,
+`eligible_col`, plus `universe_time_col`. `FeatureDefinition` records the canonical `feed_spec`,
 `window_unit`, `price_basis` and finite `lookbacks`, with existing source-artifact
 lineage and join keys. `FeatureSpec.to_dict()` preserves omitted calendar versus
 explicit null; unused fields leave the old wire keys unchanged. Store actual

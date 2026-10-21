@@ -42,13 +42,17 @@ def prepare_feature_panel(
     window_unit: str | WindowUnit | None = None,
     available_at_col: str = "available_at",
     decision_time_col: str = "decision_time",
+    universe_time_col: str = "effective_session",
     history_decision_time_col: str | None = None,
     input_mask: str | pl.Expr | None = None,
     screen: str | pl.Expr | None = None,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Calculate finite per-asset features with explicit causal eligibility.
 
-    decisions supplies an observation cutoff and a separate aware decision instant.
+    decisions supplies an observation cutoff, an aware decision instant and the
+    universe's decision-effective key (effective_session by default). These need
+    not identify the same session. universe_time_col can select an explicit
+    instant column for instant-effective facts; no session is inferred from dates.
     universe supplies stable IDs, effective_from/inclusive, effective_to/exclusive
     (null means open), available_at and nullable boolean member, plus optional
     classifications. Known active overlaps are ambiguous and raise. Missing facts
@@ -143,7 +147,7 @@ def prepare_feature_panel(
                 *([history_decision_time_col] if history_decision_time_col else []),
             ],
         ),
-        ("decisions", decision_frame.schema, [timestamp, decision_time_col]),
+        ("decisions", decision_frame.schema, [timestamp, decision_time_col, universe_time_col]),
         (
             "universe",
             universe_frame.schema,
@@ -164,17 +168,32 @@ def prepare_feature_panel(
         )
     if schema[timestamp] != decision_frame.schema[timestamp]:
         raise ValueError("Decision observation cutoffs must preserve the input timestamp dtype")
-    if any(
-        universe_frame.schema[c] != schema[timestamp] for c in ("effective_from", "effective_to")
+    universe_dtype = decision_frame.schema[universe_time_col]
+    if universe_frame.schema["effective_to"] == pl.Null:
+        universe_frame = universe_frame.with_columns(pl.col("effective_to").cast(universe_dtype))
+    if universe_dtype.base_type() not in {pl.Date, pl.Datetime} or any(
+        universe_frame.schema[c].base_type() != universe_dtype.base_type()
+        for c in ("effective_from", "effective_to")
     ):
         raise ValueError(
-            "Universe effective intervals must use the declared observation clock dtype"
+            "Universe effective intervals must match the declared decision-effective clock"
         )
     if universe_frame.schema["member"] != pl.Boolean:
         raise ValueError("Universe member must be nullable boolean, not an inferred classifier")
     roles = [*keys, decision_time_col, available_at_col, "member", "eligible", "price_basis"]
     if len(set(roles)) != len(roles) or set(features) & set(roles):
         raise ValueError("Feature and output roles collide")
+    if universe_time_col in {
+        *entities,
+        available_at_col,
+        "member",
+        "eligible",
+        "price_basis",
+        *features,
+    }:
+        raise ValueError("The universe clock collides with a different output role")
+    if universe_time_col not in roles:
+        roles.append(universe_time_col)
     extra = [
         c
         for c in universe_frame.columns
@@ -193,7 +212,12 @@ def prepare_feature_panel(
     )
 
     def clock(
-        frame: pl.DataFrame, column: str, output: str, *, required: bool = False
+        frame: pl.DataFrame,
+        column: str,
+        output: str,
+        *,
+        required: bool = False,
+        range_guard: bool = True,
     ) -> pl.DataFrame:
         expr = (
             pl.lit(None, pl.Int128) if frame.schema[column] == pl.Null else _instant_ticks(column)
@@ -201,7 +225,10 @@ def prepare_feature_panel(
         result = frame.with_columns(expr.alias(output))
         if required and result[output].null_count():
             raise ValueError(f"{column} must contain known decision/snapshot instants")
-        if result.filter((pl.col(output) < -(2**63)) | (pl.col(output) > 2**63 - 1)).height:
+        if (
+            range_guard
+            and result.filter((pl.col(output) < -(2**63)) | (pl.col(output) > 2**63 - 1)).height
+        ):
             raise ValueError(f"{column} exceeds Datetime(ns) output range")
         return result
 
@@ -223,16 +250,48 @@ def prepare_feature_panel(
         if decision_frame.filter(pl.col(prefix + "observation_ticks") > pl.col(cutoff)).height:
             raise ValueError("Observation cutoff cannot follow its decision instant")
     universe_frame = clock(universe_frame, available_at_col, known)
+    universe_from, universe_to, universe_target = (
+        "effective_from",
+        "effective_to",
+        universe_time_col,
+    )
+    if isinstance(universe_dtype, pl.Datetime):
+
+        def effective_clock(frame: pl.DataFrame, column: str, target: str) -> pl.DataFrame:
+            dtype = frame.schema[column]
+            assert isinstance(dtype, pl.Datetime)
+            value = pl.col(column)
+            if dtype.time_zone is None:
+                if contract.timezone is None:
+                    raise ValueError("Naive universe instants require a declared timezone")
+                value = value.dt.replace_time_zone(contract.timezone)
+            temporary = target + "_aware"
+            return clock(
+                frame.with_columns(value.alias(temporary)), temporary, target, range_guard=False
+            ).drop(temporary)
+
+        universe_from, universe_to, universe_target = (
+            prefix + name for name in ("from", "to", "target")
+        )
+        universe_frame = effective_clock(universe_frame, "effective_from", universe_from)
+        universe_frame = effective_clock(universe_frame, "effective_to", universe_to)
+        decision_frame = effective_clock(decision_frame, universe_time_col, universe_target)
+    if decision_frame[universe_target].null_count():
+        raise ValueError("Decision-effective universe keys cannot be unknown")
     if (
         decision_frame[timestamp].null_count()
-        or decision_frame.select(pl.struct(timestamp, cutoff).is_duplicated().any()).item()
+        or decision_frame.select(
+            pl.struct(list(dict.fromkeys([timestamp, cutoff, universe_target])))
+            .is_duplicated()
+            .any()
+        ).item()
     ):
         raise ValueError("Decision observation/instant keys must be nonnull and unique")
     if universe_frame.select(
         pl.any_horizontal(pl.col(c).is_null() for c in [*entities, "effective_from"]).any()
     ).item():
         raise ValueError("Universe identity/effective start cannot be unknown")
-    if universe_frame.filter(pl.col("effective_to") <= pl.col("effective_from")).height:
+    if universe_frame.filter(pl.col(universe_to) <= pl.col(universe_from)).height:
         raise ValueError("Universe effective intervals must be nonempty and end-exclusive")
     template = (
         pl.DataFrame(schema=schema)
@@ -252,6 +311,8 @@ def prepare_feature_panel(
         "price_basis": pl.String,
         **{c: universe_frame.schema[c] for c in extra},
     }
+    if universe_time_col not in result_schema:
+        result_schema[universe_time_col] = decision_frame.schema[universe_time_col]
 
     def calculate(frame: pl.DataFrame) -> pl.DataFrame:
         source = clock(frame, available_at_col, known)
@@ -270,6 +331,11 @@ def prepare_feature_panel(
             decision = decision_frame.slice(i, 1)
             bound = pl.lit(decision[timestamp]).first()
             instant = decision[cutoff].item()
+            effective = (
+                pl.lit(decision[universe_target].item(), dtype=pl.Int128)
+                if isinstance(universe_dtype, pl.Datetime)
+                else pl.lit(decision[universe_time_col]).first()
+            )
             history = source
             if history_decision_time_col:
                 history = history.filter(pl.col(prefix + "snapshot") == instant)
@@ -277,8 +343,8 @@ def prepare_feature_panel(
                     raise ValueError("Missing prepared history snapshot for a requested decision")
             history = history.filter(pl.col(timestamp) <= bound).sort([*entities, timestamp])
             facts = universe_frame.filter(
-                (pl.col("effective_from") <= bound)
-                & (pl.col("effective_to").is_null() | (pl.col("effective_to") > bound))
+                (pl.col(universe_from) <= effective)
+                & (pl.col(universe_to).is_null() | (pl.col(universe_to) > effective))
                 & (pl.col(known) <= instant)
             )
             if facts.select(pl.struct(entities).is_duplicated().any()).item():
@@ -354,9 +420,15 @@ def prepare_feature_panel(
                 ).alias("eligible"),
                 pl.lit(price_basis).alias("price_basis"),
             )
+            if universe_time_col not in {*keys, decision_time_col}:
+                result = result.with_columns(
+                    pl.lit(decision[universe_time_col]).first().alias(universe_time_col)
+                )
             output.append(result.select(*result_schema))
         result = pl.concat(output) if output else pl.DataFrame(schema=result_schema)
-        result = result.sort([decision_time_col, timestamp, *entities])
+        result = result.sort(
+            list(dict.fromkeys([decision_time_col, timestamp, universe_time_col, *entities]))
+        )
         if screen is not None:
             result = result.filter(pl.col(screen) if isinstance(screen, str) else screen)
         return result

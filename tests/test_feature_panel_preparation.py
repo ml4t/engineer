@@ -51,6 +51,7 @@ def decisions():
         {
             "timestamp": DAYS[2:],
             "decision_time": [datetime(2025, 7, d.day, 17, tzinfo=UTC) for d in DAYS[2:]],
+            "effective_session": DAYS[2:],
         }
     )
 
@@ -89,6 +90,68 @@ def test_dated_membership_keeps_preentry_warmup_and_original_feature_clock(lazy)
         == [datetime(2025, 7, 9, 16, tzinfo=UTC)] * 2 + [datetime(2025, 7, 10, 16, tzinfo=UTC)] * 2
     )
     assert_frame_equal(frame, history())
+
+
+def test_next_session_decision_uses_current_membership_not_the_prior_price_session():
+    requested = pl.DataFrame(
+        {
+            "timestamp": [DAYS[2]],
+            "decision_time": [datetime(2025, 7, 10, 13, tzinfo=UTC)],
+            "effective_session": [DAYS[3]],
+        }
+    )
+    facts = universe().with_columns(
+        pl.when(pl.col("asset") == "A")
+        .then(pl.lit(DAYS[3]))
+        .otherwise(pl.col("effective_to"))
+        .alias("effective_to"),
+        pl.when(pl.col("asset") == "B")
+        .then(pl.lit(DAYS[3]))
+        .otherwise(pl.col("effective_from"))
+        .alias("effective_from"),
+        pl.lit(True).alias("member"),
+    )
+    result = prepare(history(), decisions=requested, universe=facts)
+    assert result["eligible"].to_list() == [False, True]
+    assert result["average"].to_list() == [2.0, 20.0]
+    assert result["effective_session"].to_list() == [DAYS[3], DAYS[3]]
+
+
+def test_explicit_instant_universe_clock_preserves_timezone_equivalence_and_exclusive_ns_end():
+    base = int(
+        pl.Series([datetime(2025, 7, 10, 13, tzinfo=UTC)])
+        .cast(pl.Datetime("ns", "UTC"))
+        .cast(pl.Int64)[0]
+    )
+    requested = pl.DataFrame(
+        {
+            "timestamp": [DAYS[2]] * 2,
+            "decision_time": pl.Series([base + 2, base + 3], dtype=pl.Datetime("ns", "UTC")),
+        }
+    )
+    facts = pl.DataFrame(
+        {
+            "asset": ["A"],
+            "effective_from": pl.Series([base + 1], dtype=pl.Datetime("ns", "America/New_York")),
+            "effective_to": pl.Series([base + 3], dtype=pl.Datetime("ns", "UTC")),
+            "available_at": [datetime(2025, 7, 9, tzinfo=UTC)],
+            "member": [True],
+        }
+    )
+    result = prepare(
+        history(), decisions=requested, universe=facts, universe_time_col="decision_time"
+    )
+    a = result.filter(pl.col("asset") == "A")
+    assert a["decision_time"].cast(pl.Int64).to_list() == [base + 2, base + 3]
+    assert a["eligible"].to_list() == [True, False]
+
+
+def test_missing_universe_decision_key_is_not_inferred_from_the_price_or_utc_date():
+    with pytest.raises(ValueError, match="effective_session"):
+        prepare(history(), decisions=decisions().drop("effective_session"))
+    assert prepare(history(), universe=universe().with_columns(pl.lit(None).alias("effective_to")))[
+        "eligible"
+    ].to_list() == [True, False, True, False]
 
 
 def test_future_publication_cannot_fill_or_compress_a_required_window():
@@ -191,6 +254,7 @@ def test_feature_artifact_public_roundtrip_preserves_required_feed_and_eligibili
             "available_at_col": "known",
             "decision_time_col": "decision",
             "eligible_col": "eligible",
+            "universe_time_col": "effective_session",
         },
         "definition": {
             "family": "financial",
@@ -238,6 +302,7 @@ def test_adjacent_ns_observation_decision_and_publication_keys_do_not_round():
         lookbacks={"average": 2},
         decisions=requested,
         universe=facts,
+        universe_time_col="decision_time",
         feed_spec=FeedSpec(
             time_contract_version=2,
             calendar=None,
@@ -267,6 +332,7 @@ def test_instant_observation_cutoff_cannot_follow_the_actual_decision():
             frame,
             decisions=requested,
             universe=facts,
+            universe_time_col="decision_time",
             feed_spec=FeedSpec(
                 time_contract_version=2, calendar=None, timestamp_semantics="event_time"
             ),
@@ -454,8 +520,10 @@ def test_empty_history_does_not_waive_an_undeclared_default_calendar_grid():
 @pytest.mark.parametrize("timezone", [None, "America/New_York"])
 def test_naive_observation_instants_require_and_use_declared_timezone(timezone):
     frame = history().with_columns(pl.col("timestamp").cast(pl.Datetime("us")).dt.offset_by("12h"))
-    requested = decisions().with_columns(
-        pl.col("timestamp").cast(pl.Datetime("us")).dt.offset_by("12h")
+    requested = (
+        decisions()
+        .with_columns(pl.col("timestamp").cast(pl.Datetime("us")).dt.offset_by("12h"))
+        .with_columns(pl.col("timestamp").dt.offset_by("1h").alias("effective_at"))
     )
     facts = universe().with_columns(
         pl.col("effective_from").cast(pl.Datetime("us")),
@@ -464,6 +532,7 @@ def test_naive_observation_instants_require_and_use_declared_timezone(timezone):
     options = {
         "decisions": requested,
         "universe": facts,
+        "universe_time_col": "effective_at",
         "feed_spec": FeedSpec(
             time_contract_version=2,
             calendar=None,

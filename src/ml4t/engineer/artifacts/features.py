@@ -25,6 +25,7 @@ class FeatureSchema:
     available_at_col: str | None = None
     decision_time_col: str | None = None
     eligible_col: str | None = None
+    universe_time_col: str | None = None
 
     @classmethod
     def from_mapping(cls, mapping: dict[str, Any] | None) -> FeatureSchema:
@@ -38,6 +39,7 @@ class FeatureSchema:
             available_at_col=optional_str(mapping.get("available_at_col")),
             decision_time_col=optional_str(mapping.get("decision_time_col")),
             eligible_col=optional_str(mapping.get("eligible_col")),
+            universe_time_col=optional_str(mapping.get("universe_time_col")),
         )
 
 
@@ -101,7 +103,7 @@ class FeatureSpec(ArtifactSpec):
 
     def to_dict(self) -> dict[str, Any]:
         payload = ArtifactSpec.to_dict(self)
-        for name in ("available_at_col", "decision_time_col", "eligible_col"):
+        for name in ("available_at_col", "decision_time_col", "eligible_col", "universe_time_col"):
             if payload["schema"][name] is None:
                 del payload["schema"][name]
         for name in ("feed_spec", "window_unit", "price_basis", "lookbacks"):
