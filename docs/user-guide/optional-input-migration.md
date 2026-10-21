@@ -20,8 +20,9 @@ the conversion does not invent them. Opaque legacy Asset objects require an
 explicit `entity_map` to stable integer/string IDs. Compound entity mappings use
 tuples matching `FeedSpec.entity_col`. Numeric and timestamp dtypes are retained;
 incompatible asset/factor dtypes must be normalized explicitly, rather than
-silently casting precise integers to floats. Nullable pandas extension arrays
-use Polars' optional PyArrow bridge.
+silently casting precise integers to floats. These narrow container conversions
+preserve numeric nullable arrays and physical datetime keys without requiring
+PyArrow. They do not provide a generic arbitrary-object serialization service.
 
 Run `uv run python examples/optional_input_migration.py` for a complete container
 conversion, liquidity preparation, supplied-loading selection and static-sector

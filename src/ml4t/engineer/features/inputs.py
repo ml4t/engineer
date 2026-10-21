@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any, Literal
 
+import numpy as np
 import polars as pl
 from ml4t.specs import UNSET_CALENDAR, FeedSpec, TimestampSemantics, WindowUnit
 
@@ -78,11 +79,35 @@ def _legacy_table(data: Any) -> Any:
     return data
 
 
+def _pandas_values(values: Any, name: str) -> pl.Series:
+    import pandas as pd
+
+    if pd.api.types.is_datetime64_any_dtype(values.dtype):
+        index = pd.DatetimeIndex(values)
+        unit = index.unit
+        if unit == "s":
+            index = index.as_unit("ms")
+            unit = "ms"
+        result = pl.Series(name, index.asi8).cast(
+            pl.Datetime(unit, str(index.tz) if index.tz is not None else None)
+        )
+        return result.set(pl.Series(index.isna()), None)
+    dtype = getattr(values.dtype, "numpy_dtype", values.dtype)
+    declared = (
+        pl.Series(np.empty(0, dtype=dtype)).dtype
+        if pd.api.types.is_numeric_dtype(dtype)
+        else pl.String
+        if len(values) == 0
+        else None
+    )
+    return pl.Series(name, [None if pd.isna(value) else value for value in values], dtype=declared)
+
+
 def _identities(labels: Any, entities: Sequence[str], entity_map: Mapping[Any, Any] | None):
     import pandas as pd
 
     if entity_map is None and len(entities) == 1:
-        values = pl.from_pandas(pd.Series(labels)).rename(entities[0])
+        values = _pandas_values(pd.Series(labels), entities[0])
         result = pl.DataFrame(values)
     else:
         if entity_map is None or any(key not in entity_map for key in labels):
@@ -91,7 +116,8 @@ def _identities(labels: Any, entities: Sequence[str], entity_map: Mapping[Any, A
         rows = [(key,) for key in values] if len(entities) == 1 else values
         if any(not isinstance(key, tuple) or len(key) != len(entities) for key in rows):
             raise ValueError("Compound stable identities require matching tuple values")
-        result = pl.from_pandas(pd.DataFrame(rows, columns=list(entities)))
+        frame = pd.DataFrame(rows, columns=list(entities))
+        result = pl.DataFrame({_name: _pandas_values(frame[_name], _name) for _name in entities})
     if result.select(pl.any_horizontal(pl.all().is_null()).any()).item():
         raise ValueError("Stable entity identities cannot be unknown")
     if any(
@@ -116,7 +142,8 @@ def market_to_long(
     conversion preserves supplied prices/volumes, zeros and missing cells. An
     opaque legacy asset needs an explicit stable entity_map; no stringification,
     completion/publication clock, units, currency or adjustment is invented.
-    Nullable pandas extension arrays require the existing optional Arrow bridge.
+    Numeric nullable arrays and timestamp keys retain their physical dtypes
+    without requiring Arrow or converting precise integers through floats.
     """
     timestamp, entities = _roles(feed_spec)
     price, volume = feed_spec.price_col, feed_spec.volume_col
@@ -140,8 +167,8 @@ def market_to_long(
         for i, column in enumerate(wide.columns):
             frame = pl.DataFrame(
                 {
-                    timestamp: pl.from_pandas(pd.Series(wide.index)),
-                    output: pl.from_pandas(wide[column].reset_index(drop=True)),
+                    timestamp: _pandas_values(pd.Series(wide.index), timestamp),
+                    output: _pandas_values(wide[column], output),
                 }
             )
             pieces.append(
@@ -153,7 +180,7 @@ def market_to_long(
         if not pieces:
             return pl.DataFrame(
                 schema={
-                    timestamp: pl.from_pandas(pd.Series(wide.index)).dtype,
+                    timestamp: _pandas_values(pd.Series(wide.index), timestamp).dtype,
                     **identities.schema,
                     output: pl.Float64,
                 }
@@ -199,12 +226,12 @@ def loadings_to_long(
         raise ValueError("Legacy factor columns must be distinct nonempty strings")
     identities = _identities(legacy.index.get_level_values(1), entities, entity_map)
     frame = identities.with_columns(
-        pl.from_pandas(pd.Series(legacy.index.get_level_values(0))).alias(timestamp)
+        _pandas_values(pd.Series(legacy.index.get_level_values(0)), timestamp)
     )
     pieces = [
         frame.with_columns(
             pl.lit(column).alias(factor_col),
-            pl.from_pandas(legacy[column].reset_index(drop=True)).alias(value_col),
+            _pandas_values(legacy[column], value_col),
         )
         for column in legacy.columns
     ]

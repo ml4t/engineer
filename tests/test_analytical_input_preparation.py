@@ -69,6 +69,28 @@ def test_lagged_liquidity_uses_completed_price_volume_products_once_not_current_
     assert_frame_equal(original, market().sort("timestamp", "asset", descending=[False, True]))
 
 
+@pytest.mark.parametrize("purpose", ["causal", "retrospective"])
+def test_assets_with_nonoverlapping_histories_cannot_inherit_another_assets_liquidity_warmup(
+    purpose,
+):
+    original = (
+        market()
+        .with_columns(
+            pl.when(pl.col("asset") == 23)
+            .then(pl.col(c).dt.offset_by("7d"))
+            .otherwise(pl.col(c))
+            .alias(c)
+            for c in ("timestamp", "available_at", "decision_time")
+        )
+        .sort("timestamp", descending=True)
+    )
+    result = prepare_market(original.lazy(), purpose=purpose).collect()
+    assert_frame_equal(result.select(original.columns), original)
+    b = result.filter(pl.col("asset") == 23).sort("timestamp")
+    assert b["lagged_mean_notional_volume"].to_list() == [None, None, 1000.0, 1000.0, 1000.0]
+    assert b["liquidity_covered"].to_list() == [False, False, True, True, True]
+
+
 def test_retrospective_raw_products_distinguish_real_zero_from_uncovered_volume():
     result = prepare_market(market(), purpose="retrospective")
     assert result.filter(pl.col("asset") == 17)["notional_volume"].to_list() == [
@@ -224,6 +246,46 @@ def test_legacy_market_conversion_preserves_integer_ticks_adjacent_instants_and_
     assert result["close"].to_list() == [2**53, 2**53 + 1]
     assert result["volume"].to_list() == [0, None]
     assert "available_at" not in result.columns
+
+
+@pytest.mark.parametrize("timezone", [None, "Europe/Berlin"])
+@pytest.mark.parametrize("unit", ["ns", "us", "ms", "s"])
+def test_legacy_decimal_cells_and_datetime_labels_preserve_values_units_and_unknown_keys(
+    timezone, unit
+):
+    from decimal import Decimal
+
+    import pandas as pd
+
+    stamps = pd.date_range("2025-07-07", periods=2, tz=timezone).as_unit(unit)
+    original = pd.DataFrame(
+        {
+            "stable17": [
+                Decimal("9007199254740992.01"),
+                Decimal(0),
+                Decimal("9007199254740992.02"),
+                None,
+            ]
+        },
+        index=pd.MultiIndex.from_product([stamps, ["price", "volume"]]),
+    )
+    result = inputs().market_to_long(original, feed_spec=feed())
+    assert result["close"].to_list() == [
+        Decimal("9007199254740992.01"),
+        Decimal("9007199254740992.02"),
+    ]
+    assert result["volume"].to_list() == [Decimal(0), None]
+    expected_unit = "ms" if unit == "s" else unit
+    assert result["timestamp"].dtype == pl.Datetime(expected_unit, timezone)
+    assert (
+        result["timestamp"].cast(pl.Int64).to_list() == stamps.as_unit(expected_unit).asi8.tolist()
+    )
+    unknown = original.copy()
+    unknown.index = pd.MultiIndex.from_arrays(
+        [[pd.NaT, stamps[0], stamps[1], stamps[1]], original.index.get_level_values(1)]
+    )
+    with pytest.raises(ValueError, match="Duplicate|unknown"):
+        inputs().market_to_long(unknown, feed_spec=feed())
 
 
 def test_legacy_loading_conversion_retains_explicit_missing_cells_without_filling_dates():
@@ -551,6 +613,7 @@ def test_dated_session_labels_do_not_silently_compare_naive_wall_time_with_aware
 
 
 def test_expected_bar_liquidity_reuses_declared_calendar_and_explicit_none_is_row_mode():
+    pytest.importorskip("pandas_market_calendars", reason="Named schedules require calendar extra")
     spec = feed(
         calendar="NYSE",
         timestamp_semantics="session_label",
