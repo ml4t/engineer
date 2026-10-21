@@ -116,3 +116,92 @@ def test_delayed_publication_or_uncompleted_bar_cannot_supply_prior_causal_liqui
 def test_native_market_validation_without_derived_features_preserves_the_input_exactly():
     result = prepare_market(market(), liquidity_window=None)
     assert_frame_equal(result, market())
+
+
+def requests():
+    return pl.DataFrame(
+        {
+            "timestamp": [DAYS[1], DAYS[2], DAYS[3]] * 2,
+            "asset": [17] * 3 + [23] * 3,
+            "decision_time": [datetime(2025, 7, d.day, 13, tzinfo=UTC) for d in DAYS[1:4]] * 2,
+        }
+    )
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_loading_coverage_uses_requested_factors_and_actual_publication_not_zero_fill(lazy):
+    facts = pl.DataFrame(
+        {
+            "timestamp": [DAYS[1], DAYS[2], DAYS[3]],
+            "asset": [17] * 3,
+            "factor": ["MKT"] * 3,
+            "loading": [1.0, 3.0, 2.0],
+            "available_at": [datetime(2025, 7, d, 12, tzinfo=UTC) for d in (8, 10, 10)],
+        }
+    )
+    asked = requests().lazy() if lazy else requests()
+    result = inputs().prepare_loading_inputs(
+        facts, requests=asked, factors=["MKT", "SIZE"], feed_spec=feed(), purpose="causal"
+    )
+    assert isinstance(result, pl.LazyFrame if lazy else pl.DataFrame)
+    result = result.collect() if lazy else result
+    assert result.height == 12
+    a = result.filter((pl.col("asset") == 17) & (pl.col("factor") == "MKT"))
+    assert a["loading"].to_list() == [1.0, None, 2.0]
+    assert a["loading_covered"].to_list() == [True, False, True]
+    assert a["loading_known_at_decision"].to_list() == [True, False, True]
+    assert result.filter(pl.col("factor") == "SIZE")["loading"].null_count() == 6
+    assert result.filter(pl.col("asset") == 23)["loading"].null_count() == 6
+    retrospective = inputs().prepare_loading_inputs(
+        facts, requests=requests(), factors=["MKT"], feed_spec=feed(), purpose="retrospective"
+    )
+    a = retrospective.filter(pl.col("asset") == 17)
+    assert a["loading"].to_list() == [1.0, 3.0, 2.0]
+    assert a["loading_known_at_decision"].to_list() == [True, False, True]
+
+
+def test_dated_classifications_never_carry_expired_or_future_published_categories():
+    facts = pl.DataFrame(
+        {
+            "asset": [17, 17],
+            "effective_from": [DAYS[0], DAYS[2]],
+            "effective_to": pl.Series([DAYS[2], None], dtype=pl.Date),
+            "available_at": [datetime(2025, 7, d, 12, tzinfo=UTC) for d in (7, 10)],
+            "sector": ["tech", "bank"],
+        }
+    )
+    result = inputs().prepare_classification_inputs(
+        facts, requests=requests(), feed_spec=feed(), purpose="causal"
+    )
+    a = result.filter(pl.col("asset") == 17)
+    assert a["sector"].to_list() == ["tech", None, "bank"]
+    assert a["sector_covered"].to_list() == [True, False, True]
+    assert result.filter(pl.col("asset") == 23)["sector"].null_count() == 3
+    with pytest.raises(ValueError, match="[Aa]mbiguous"):
+        inputs().prepare_classification_inputs(
+            pl.concat([facts, facts.head(1)]),
+            requests=requests(),
+            feed_spec=feed(),
+            purpose="causal",
+        )
+
+
+def test_static_sector_maps_require_explicit_static_and_causal_knowledge_declarations():
+    with pytest.raises(ValueError, match="static"):
+        inputs().prepare_classification_inputs(
+            {17: "tech"}, requests=requests(), feed_spec=feed(), purpose="causal"
+        )
+    with pytest.raises(ValueError, match="known"):
+        inputs().prepare_classification_inputs(
+            {17: "tech"}, requests=requests(), feed_spec=feed(), purpose="causal", static=True
+        )
+    result = inputs().prepare_classification_inputs(
+        {17: "tech"},
+        requests=requests(),
+        feed_spec=feed(),
+        purpose="causal",
+        static=True,
+        static_known_at=datetime(2025, 7, 1, tzinfo=UTC),
+    )
+    assert result.filter(pl.col("asset") == 17)["sector"].to_list() == ["tech"] * 3
+    assert result.filter(pl.col("asset") == 23)["sector_covered"].to_list() == [False] * 3
