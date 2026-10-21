@@ -138,6 +138,376 @@ expressions, not portfolio statistics. Use explicit grouping for multiple assets
 validate the declared bar grid before deriving returns as described below. Row-only
 data must already have the intended observation order.
 
+### Explicit finite-window methods
+
+The next minor version adds the following registered methods for workflows that need
+finite observation windows rather than the native recursive or TA-Lib definitions.
+Existing `rsi`, `ema`, `macd`, `aroon`, `bollinger_bands` and risk features keep their
+defaults. These additions do not provide a Pipeline graph interpreter.
+
+| Feature | Definition and missingness |
+|---|---|
+| `rsi_cutler` | Simple gains/losses over `period` changes (`period + 1` prices). Omit changes adjacent to missing quotes; a flat window is undefined. |
+| `absolute_percent_change` | Fractional change over `period` changes with an absolute reference denominator. This accepts signed values and does not multiply by 100. |
+| `finite_mean` | Require `period` rows, then divide by the count of nonmissing prices. |
+| `finite_weighted_mean` | Sum valid price-times-volume products, divided by the independently summed volume. Missing prices do not remove denominator weights. |
+| `average_dollar_volume` | Sum valid price-times-volume products, divided by the fixed `period` row count. Input price, share and currency basis must already agree. |
+| `linear_weighted_mean` | Weights `1..period`, oldest to newest. Omit missing products but retain every denominator weight. |
+| `finite_ewma` | Normalize `decay_rate**age` over exactly `period` prices. Missing prices propagate; this is not recursive EMA. |
+| `finite_ewm_std` | The same finite weights, with weighted bias correction. Insufficient effective degrees of freedom yield NaN. |
+| `annualized_volatility` | Population standard deviation (`ddof=0`) of supplied `returns`, omitting missing values after the full window. Multiply by `sqrt(annualization_factor)`, default 252. Calendar choice does not set this scale. |
+| `finite_max_drawdown` | Select the first largest absolute price drop, then divide by its trough price. This explicit legacy definition is not a peak-denominator portfolio drawdown. |
+| `finite_bollinger_bands` | NaN-omitting mean and population standard deviation; fields `lower`, `middle`, `upper`, with multiplier `k`. |
+| `finite_aroon` | First extreme wins ties; fields `down`, `up`. Scale the position in `period` prices by `100 / (period - 1)`. |
+| `fast_stochastic` | Unsmoothed K from the latest close and NaN-omitting high/low extrema. Zero range remains undefined. |
+| `finite_ichimoku` | Unshifted `tenkan_sen`, `kijun_sen`, `senkou_span_a`, `senkou_span_b`. `chikou_position` indexes from the oldest price in the window, unlike a chart displacement. |
+| `finite_macd_signal` | Finite normalized fast/slow exponential means, followed by a finite signal mean. Length-one means use their sole observation. |
+| `finite_true_range` | Two-price true range with NaN-omitting high/low/previous-close components. There is no implicit larger-window reduction. |
+
+Except for Cutler RSI, absolute percent change and the composed MACD signal, `period` counts input rows and the
+first structurally usable row is `period - 1`. Missing observations still occupy their
+original row positions. Numeric results are Float64 and retain every input row;
+Ichimoku's selected `chikou_span` price retains its original dtype. Multi-output
+features use the usual `<output>_<field>` column names. Ichimoku
+propagates missing high/low values within each field's subwindow; all fields require
+the declared full window. Its zero tenkan/kijun lengths select that full window,
+matching the legacy `[-0:]` slice, while `chikou_position` must be in `[0, period)`.
+
+<!-- ml4t-exec -->
+```python
+import math
+import polars as pl
+from ml4t.engineer import compute_features
+
+prices = pl.DataFrame({"close": [10.0, 13.0, 12.0, 14.0, 13.0]}).with_columns(
+    pl.col("close").alias("open"),
+    pl.col("close").alias("high"),
+    pl.col("close").alias("low"),
+    pl.lit(100.0).alias("volume"),
+)
+result = compute_features(prices.lazy(), [
+    {"name": "rsi_cutler", "params": {"period": 3}, "output": "cutler"},
+    {"name": "rsi", "params": {"period": 3}, "output": "wilder"},
+], calendar=None).collect()
+assert math.isclose(result["cutler"][4], 50.0, rel_tol=1e-14, abs_tol=0.0)
+assert result["wilder"][4] != result["cutler"][4]
+assert result.height == prices.height
+```
+
+Use explicit grouping or `compute_features` for multiple assets. A `calendar=None`
+call counts the supplied observation rows without checking schedules. With a named
+calendar, declare the complete grid before computing any feature. The finite methods
+do not infer frequency, select source revisions, fill gaps or make future information
+eligible. They currently support observation/expected-bar windows; do not reinterpret
+their kernels as session or elapsed windows. Variance methods subtract an original
+window-local typed price anchor before floating conversion, so adjacent large integer ticks do
+not collapse to zero variance. Output remains Float64.
+
+### Factor-name expression recipes
+
+`compat.zipline.factor_expression` translates supported built-in names into the
+native methods above. It returns a Polars expression or a dictionary of named output
+expressions, not a Pipeline Term. It never imports Zipline or evaluates an opaque
+legacy graph. Use native column operators for arithmetic/comparisons and the existing
+feature decorator for custom calculations.
+
+Recipe `window_length` counts prices/inputs as in Pipeline. Return and Cutler recipes
+translate N prices into N-1 changes. The default annualized-volatility recipe derives
+daily returns from `close` and keeps that extra dependency row of warmup. Explicit
+`inputs=["returns"]` instead consumes supplied returns. EWMA/EWMSTD accept one explicit
+`decay_rate`, `span`, `halflife` or `center_of_mass`, including the three legacy
+constructor suffixes. Statistical recipes can consume already aligned column pairs;
+their legacy correlation/regression lengths and beta missing percentage are explicit.
+
+<!-- ml4t-exec -->
+```python
+import math
+import polars as pl
+from ml4t.engineer.compat.zipline import factor_expression
+
+frame = pl.DataFrame({"close": [1.0, 3.0, 9.0], "eligible": [True, False, True]})
+expression = factor_expression(
+    "EWMA.from_span", inputs=["close"], window_length=3, span=3, mask="eligible",
+)
+result = frame.lazy().with_columns(expression.alias("finite_mean")).collect()
+assert math.isclose(result["finite_mean"][2], 43 / 7, rel_tol=1e-14)
+assert result.height == frame.height
+```
+
+The output mask in this example does not erase the middle observation from history.
+Apply `.over(entity_col)` for independent asset histories. These expression recipes
+do not validate a market schedule. For bar data, validate the declared grid once with
+`compute_features(data, [], feed_spec=...)` before deriving returns/features, or
+explicitly choose `calendar=None` for observation rows. Recipe output masks are not
+dated universe/knowledge selection or final output screens. Named fields stay explicit;
+for example, select `factor_expression("BollingerBands", window_length=20)["middle"]`.
+
+### Eligible cross-sectional transforms and boolean windows
+
+`features.selection.cross_section` computes `rank`, `top`, `bottom`, `demean`,
+`zscore`, `winsorize`, `quantiles`, `percentile_between` or `peer_count` separately
+at each supplied timestamp and optional classification group. Its `mask` selects
+the input population before the transform. A later dataframe filter is a final
+screen and does not change those inputs. Unknown groups, nulls and NaNs are
+excluded. Map legacy classifier sentinels such as -1 to null explicitly.
+
+Ranks support ordinal/min/max/dense/average ties. Ordinal ties and top/bottom
+selection use ascending stable entity IDs, independently of input row order.
+Supply unique timestamp/entity keys; display symbols are not stable identities.
+Z-scores use population standard deviation by default (`ddof=0`), not a fitted
+training scaler. Constant groups have undefined z-scores. Typed local differences
+retain adjacent large integer ticks, and scaled moments avoid variance overflow
+or underflow for representable outputs.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+import polars as pl
+from ml4t.engineer.features.selection import cross_section
+
+signals = pl.DataFrame({
+    "timestamp": [date(2025, 7, 7)] * 4, "asset": ["D", "B", "A", "C"],
+    "value": [3., 1., 1., 999.], "eligible": [True, True, True, False],
+})
+ranked = signals.with_columns(
+    cross_section("value", method="rank", mask="eligible").alias("rank"),
+    cross_section("value", method="bottom", n=1, mask="eligible").alias("selected"),
+)
+assert ranked["rank"].to_list() == [3., 2., 1., None]
+assert ranked.filter("selected")["asset"].to_list() == ["A"]
+```
+
+Winsorization uses the legacy floor/ceil order-statistic cutoffs, not linear
+percentile clipping. Quantile bins and inclusive percentile filters use linear
+edges. Duplicate quantile edges raise instead of silently changing the number of
+bins. Native quantile labels are zero-based integers with null missing values.
+These feature selectors do not invoke Diagnostic's analytical factor cleaner.
+
+`features.selection.rolling_filter` supplies full-row `any`, `all` and `at_least`
+windows. Apply `.over(entity_col)` to isolate histories. Missing predicates count
+false; leading incomplete windows are null. `is_missing` recognizes native null
+and floating NaN, without treating infinity or a classifier sentinel as missing.
+Ordinary Polars arithmetic, comparisons, boolean operators and `is_in` cover the
+corresponding elementwise factor/filter/classifier operations. None of these
+expressions selects Data revisions or establishes availability by itself.
+
+### Decision-time feature preparation
+
+`features.preparation.prepare_feature_panel` consumes already prepared native
+histories and supplied universe facts. Data or the caller selects source revisions
+and adjustment perspective first. Engineer validates keys, preserves pre-entry
+warmup and computes feature eligibility at each requested decision. It does not
+choose the latest revision, apply corporate actions or fetch provider history.
+
+Supply a canonical `FeedSpec` instance. For a canonical serialized handoff, restore
+it with `FeedSpec.from_mapping(...)` once. Unresolved config objects are rejected;
+explicit column arguments cannot conflict with the declaration. A named calendar
+requires the existing complete bar-grid declaration before any return/feature is
+derived. Explicit `calendar=None` keeps observation-row windows.
+
+`decisions` has the observation cutoff, a separate aware `decision_time` and an
+explicit decision-effective universe key. The default `universe_time_col` selects
+`effective_session`, a supplied session identifier. It need not equal the prior
+price session used for a morning decision. For instant-effective universes, set
+`universe_time_col` to the explicitly supplied instant column, such as
+`decision_time`. No effective session is inferred from a UTC date or from prices.
+Universe rows have stable entity keys, `effective_from`, exclusive
+`effective_to` (null means open), aware `available_at`, nullable boolean `member`
+and optional classification columns. Effective intervals use that declared universe
+clock. Date identifiers stay dates; instant comparisons preserve physical timezone
+equivalence and ns boundaries. Missing/unknown facts never imply
+membership. Overlapping known active facts fail with an upstream-resolution error.
+
+<!-- ml4t-exec -->
+```python
+from datetime import UTC, date, datetime
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.features.preparation import prepare_feature_panel
+from ml4t.engineer.features.rolling import finite_mean
+
+days = [date(2025, 7, d) for d in (7, 8, 9)]
+history = pl.DataFrame({
+    "timestamp": days, "asset": ["A"] * 3, "close": [1., 2., 3.],
+    "available_at": [datetime(2025, 7, d.day, 16, tzinfo=UTC) for d in days],
+})
+decisions = pl.DataFrame({
+    "timestamp": [days[-1]], "decision_time": [datetime(2025, 7, 9, 17, tzinfo=UTC)],
+    "effective_session": [days[-1]],
+})
+universe = pl.DataFrame({
+    "asset": ["A"], "effective_from": [days[-1]],
+    "effective_to": pl.Series([None], dtype=pl.Date), "member": [True],
+    "available_at": [datetime(2025, 7, 8, 12, tzinfo=UTC)],
+})
+result = prepare_feature_panel(
+    history.lazy(), features={"average": finite_mean("close", period=3)},
+    lookbacks={"average": 3}, input_columns=["close"],
+    decisions=decisions, universe=universe, price_basis="raw",
+    feed_spec=FeedSpec(time_contract_version=2, calendar=None, entity_col="asset"),
+).collect()
+assert result["average"].to_list() == [2.]
+assert result["eligible"].to_list() == [True]
+```
+
+This asset enters the universe on July 9 but retains July 7-8 warmup. Expressions
+are bare per-asset expressions; the preparer applies entity grouping. Declare each
+finite row lookback and all input columns. Only complete, known, usable required
+windows become eligible. Unavailable or input-masked rows remain as null inputs,
+not shorter windows. A missing endpoint does not carry an earlier feature forward.
+For kernels with deliberate omission rules, select
+`missing_input_policy="known_missing"` to allow confirmed null/NaN or input-masked
+values within the full original window. Every row still needs a publication time
+known by the decision. Unknown/future rows and infinite inputs remain ineligible.
+This option neither adds pre-listing rows nor fills absent scheduled bars; consume
+an explicitly supplied complete panel when that is what the original loader emits.
+Undefined/nonfinite outputs, including undefined fields in regression Structs,
+cannot become eligible. The output retains the observation/decision clocks,
+conservative contributing availability, membership, eligibility, the declared
+universe key and price basis. Membership is evaluated at that explicit key using
+only facts known at the decision, not at the historical price cutoff.
+
+For per-decision restated histories, Data prepares each perspective and the caller
+adds an aware snapshot column. Pass its name as `history_decision_time_col`; the
+preparer requires an exact matching snapshot for each decision. Without that
+column, duplicate history keys fail. It never selects or forward-fills a source
+revision/perspective implicitly. Preserve the Data snapshot's provenance alongside
+the resulting table.
+
+`input_mask` affects history before computation. Membership does not erase
+pre-entry history. `screen` runs after all features are computed. Alternatively,
+apply `cross_section(..., timestamp_col="decision_time", mask="eligible")` to the
+output, then filter final selections. If one instant has multiple declared universe
+contexts, include their universe key in the group keys too. Cross-sectional masks determine the contemporary population and are
+not a substitute for information-time validation.
+
+Owned `FeatureSchema` records optional `available_at_col`, `decision_time_col` and
+`eligible_col`, plus `universe_time_col`; `entity_col` preserves one column name
+or a list of compound identity columns. `FeatureDefinition` records the canonical `feed_spec`,
+`window_unit`, `price_basis`, finite `lookbacks` and optional `missing_input_policy`, with existing source-artifact
+lineage and join keys. `FeatureSpec.to_dict()` preserves omitted calendar versus
+explicit null; unused fields leave the old wire keys unchanged. Store actual
+typed frames separately, for example with Parquet. These records do not select
+source revisions or add a mandatory dataframe wrapper.
+
+### Paired relationships and supplied event dates
+
+`features.paired.rolling_pearson`, `rolling_spearman`, `rolling_beta` and
+`rolling_regression` take explicit dependent/independent columns or expressions.
+Align their actual time/entity keys before computing and apply `.over(entity_col)`
+for asset-isolated windows. `period` counts original rows. `allowed_missing` is a
+count, not a percentage; a missing pair is removed from both sides without
+compressing the timeline. At least two valid pairs remain necessary. Spearman
+recomputes average tie ranks inside each window. Pearson/beta/regression propagate
+undefined nonmissing infinities. Constant independent regression windows produce
+NaN fields instead of aborting the whole asset panel.
+
+Regression returns a Struct with `alpha`, `beta`, `r_value`, `p_value`, `stderr`.
+Its inferential fields require the optional `stats` extra (`uv add
+'ml4t-engineer[stats]'`). The other paired methods and base imports do not need SciPy.
+This is predictive rolling regression on supplied observations, not trend-on-time
+regression or portfolio attribution.
+
+For price panels, `features.paired.target_return_features` performs the exact
+time/identity join and derives returns before applying the paired statistic.
+Declare the target as a mapping of physical identity columns to stable values,
+including all components for a compound identity. `price_basis` records the
+supplied Data/caller declaration; this function does not adjust prices.
+
+The default `index_mode="common_grid"` temporarily retains absent quotes on the
+supplied union clock through both return derivation and rolling calculation.
+`per_asset` instead counts each asset's own observations. Neither mode fills
+quotes, compresses missing pairs out of rolling windows, or emits synthetic rows.
+A named calendar validates the original declared grid before calculating any
+return. Explicit `calendar=None` selects observation rows. These finite statistics
+support observation/expected-bar units, not session or elapsed windows.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+import math
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.features.paired import target_return_features
+
+days = [date(2025, 7, day) for day in (7, 8, 9, 10)]
+prices = pl.DataFrame({
+    "timestamp": days * 2, "asset": ["A"] * 4 + ["B"] * 4,
+    "close": [100., 120., 80., 112., 100., 110., 99., 118.8],
+})
+result = target_return_features(
+    prices.lazy(), target={"asset": "B"}, period=3, method="beta",
+    price_basis="raw", feed_spec=FeedSpec(time_contract_version=2, calendar=None),
+).collect()
+assert math.isclose(result.filter(pl.col("asset") == "A")["target_beta"][-1], 52 / 21)
+assert result.select(prices.columns).equals(prices)
+assert result["target_available_at"].null_count() == prices.height
+```
+
+Added return columns expose the actual paired inputs. `_available_at` is the latest
+publication instant across both assets' price dependencies in the full window.
+Without complete supplied timezone-aware `available_at_col` values it stays
+unknown. Observation timestamps are not fabricated publication times. The caller
+must still enforce decision-time eligibility before using these features.
+
+`compat.zipline.return_factor_features` maps `RollingPearsonOfReturns`,
+`RollingSpearmanOfReturns`, `RollingLinearRegressionOfReturns` and `SimpleBeta`
+onto this native preparation. It translates `returns_length=N` to an N-1-price
+lag, accepts the corresponding correlation/regression length, and converts
+SimpleBeta's allowed-missing percentage to a count. Its optional output mask
+does not remove the target's prices or warmup history. Pass stable target IDs,
+not opaque Zipline Asset objects. This recipe returns a native frame, not a Term.
+
+<!-- ml4t-exec -->
+```python
+import math
+from importlib.util import find_spec
+import polars as pl
+from ml4t.engineer.features.paired import rolling_regression
+
+paired = pl.DataFrame({"market": [1.0, 2.0, 3.0, 4.0], "feature": [1.0, 2.0, 2.0, 4.0]})
+if find_spec("scipy") is None:
+    try:
+        rolling_regression("feature", "market", period=4)
+    except ImportError as error:
+        assert "ml4t-engineer[stats]" in str(error)
+    else:
+        raise AssertionError("Inferential regression must require its optional dependency")
+else:
+    result = paired.lazy().select(
+        rolling_regression("feature", "market", period=4).alias("regression")
+    ).unnest("regression").collect()
+    assert math.isclose(result["beta"][3], 0.9, rel_tol=1e-14)
+    assert math.isclose(result["stderr"][3], math.sqrt(0.07), rel_tol=1e-14)
+    assert math.isclose(result["p_value"][3], 1 - 9 / math.sqrt(95), rel_tol=1e-14)
+```
+
+`features.events.event_business_days` counts Monday through Friday, including
+exchange holidays, with the end date excluded. Supply separate event/reference
+Date labels and timezone-aware publication/decision instants. Unknown publication
+or publication after the decision yields null. This method neither selects an
+event provider nor infers exchange sessions. `direction="until"` permits a known
+future event; `direction="since"` uses the same supplied date with reversed endpoints.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date, datetime, timezone
+import polars as pl
+from ml4t.engineer.features.events import event_business_days
+
+events = pl.DataFrame({
+    "event_date": [date(2025, 7, 4)],
+    "session": [date(2025, 7, 7)],
+    "known_at": [datetime(2025, 7, 1, tzinfo=timezone.utc)],
+    "decision": [datetime(2025, 7, 7, 14, tzinfo=timezone.utc)],
+})
+result = events.select(event_business_days(
+    "event_date", reference_date_col="session", known_at_col="known_at",
+    decision_time_col="decision", direction="since",
+).alias("weekdays"))
+assert result["weekdays"][0] == 1.0  # July 4 is a weekday, despite the NYSE closure.
+```
+
 ### Calendar and bar grid
 
 The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.

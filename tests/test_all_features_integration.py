@@ -46,7 +46,7 @@ def sample_ohlcv_data():
 def test_all_features_registered():
     """Verify that features are actually registered."""
     registry = get_registry()
-    assert len(registry) == 120, f"Expected 120 features, got {len(registry)}"
+    assert len(registry) == 136, f"Expected 136 features, got {len(registry)}"
 
 
 def test_all_features_compute_individually(sample_ohlcv_data):

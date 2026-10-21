@@ -29,14 +29,19 @@ Note: All features are now organized as individual modules within their category
 from ml4t.engineer.features import (
     composite,
     cross_asset,
+    events,
     fdiff,
     math,  # noqa: F401
     microstructure,  # noqa: F401
     ml,  # noqa: F401
     momentum,  # noqa: F401
+    paired,
+    preparation,
     price_transform,  # noqa: F401
     regime,
     risk,
+    rolling,
+    selection,
     statistics,  # noqa: F401
     trend,  # noqa: F401
     volatility,  # noqa: F401
@@ -47,7 +52,12 @@ __all__ = [
     # Advanced feature modules (single files)
     "composite",
     "cross_asset",
+    "events",
+    "paired",
+    "preparation",
     "fdiff",
     "regime",
     "risk",
+    "rolling",
+    "selection",
 ]

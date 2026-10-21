@@ -51,14 +51,17 @@ def validate_declared_grid(
     if isinstance(frequency, str):
         import pandas as pd
 
+        duration_warning = getattr(pd.errors, "PandasDeprecationWarning", FutureWarning)
         try:
             with warnings.catch_warnings():
+                # Deprecated pandas unit spellings are invalid declarations;
+                # unrelated dependency deprecations do not invalidate a duration.
                 warnings.simplefilter("error", FutureWarning)
-                warnings.simplefilter("error", DeprecationWarning)
+                warnings.simplefilter("error", duration_warning)
                 parsed = pd.Timedelta("1D" if frequency == "1d" else frequency)
-        except (ValueError, TypeError, FutureWarning, DeprecationWarning) as exc:
+        except (ValueError, TypeError, FutureWarning, duration_warning) as exc:
             raise ValueError("declared grid data_frequency must be a fixed duration") from exc
-        if not isinstance(parsed, pd.Timedelta) or parsed <= pd.Timedelta(0):
+        if not isinstance(parsed, pd.Timedelta) or parsed <= timedelta(0):
             raise ValueError("declared grid data_frequency requires a positive finite duration")
         frequency = parsed
     if not isinstance(frequency, timedelta):
