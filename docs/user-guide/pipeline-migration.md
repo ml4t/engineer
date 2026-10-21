@@ -132,27 +132,84 @@ decision key and pass `history_decision_time_col`. Do not reuse retrospectively
 adjusted history as a causal snapshot. Store Data provenance alongside the
 FeatureSpec and typed frame.
 
-The installed migration checks qualified Engineer development source
-`cce590132846dbc7d558971b2d5a7f703d5cd9a2` against Zipline Reloaded 3.2.0
-(`cf649ac06fddce76f6caa2403cd8494ac84f72ad`), pandas 2.3.3 and NumPy 2.5.4.
-Both original momentum PipelineEngine journeys used the real shifted pricing
-loader and matched 135 keyed rows, RSI values and long/short selections each,
-with complete quotes and a known-missing close, listing/delisting and supplied
-lifetimes. This is development qualification, not an available release or proof
-of order, fill, commission, leverage or portfolio-performance equivalence.
+## Port the complete preparation workflow
 
-Development source `3c5665cd2d08bad2dc5dc25b4a97573a84a7de88` additionally
-passed both missingness profiles with actual CustomFactor, CustomFilter and
-CustomClassifier terms, and 33 installed operation comparisons covering all 19
-elementary math functions, seven daily summaries, five return-definition/window
-cases and both weekday-event classes. `examples/pipeline_expression_ports.py`
-contains the executable math and daily-summary ports. Data's unpublished
-`0.2.2.dev41+gd48d849f7` artifact at
-`d48d849f77d3ff75d05383cbaaed9b42f6ca95b7` fed actual known-at histories into
-Engineer source `cce590132846dbc7d558971b2d5a7f703d5cd9a2`: an appended future
-correction left the earlier mean 199 unchanged, and the later adjusted history
-retained stable asset 17 across OLD/NEW symbols with a final two-price mean 99.5.
-These artifacts are qualification inputs, not published install recommendations.
+Run `uv run python examples/reloaded_workflows.py` from the source checkout for
+precise wide-price conversion, a combined screen and a multi-output custom
+factor port. The example captures Data-produced split-adjusted observations
+across OLD/NEW symbols for stable asset 17. Its source as-of is July 7, 2025 at
+21:00 UTC; its signal-effective session is July 8. It does not claim the later
+adjusted history was tradable on earlier observation dates.
+
+| Existing workflow | Native route | Required input or material difference |
+|---|---|---|
+| Wide prices to trailing returns | `precise_wide_returns` recipe using `market_to_long` and native `returns` | Preserve integer ticks before division. Native output retains the leading null row; legacy simple-return presentation drops the first row. This recipe explicitly counts rows. |
+| RSI top/bottom selection | `momentum_screen` in `examples/pipeline_migration.py` | Retain input warmup and decision-effective membership; a screen must not erase feature history. |
+| Momentum/volatility/liquidity/sector screen | `snapshot_screen` in `examples/reloaded_workflows.py` | Source-selected split-compatible prices/volume, currency, multiplier, actual publication/completion and dated universe facts. Optional volume must not invalidate independent price-only features. |
+| Multi-output CustomFactor | `custom_bands`, then `pl.col("bands").struct.field("mid")` | Each required-input group keeps its own eligibility. Missing band inputs do not silently become usable outputs or remove another feature's history. |
+| CustomFilter/CustomClassifier | Typed Boolean/category expressions and supplied dated facts | Rewrite callbacks explicitly; preserve missing categories and known-at times. |
+| `term.alias(name)` | `expression.alias(name)` | Rename the native expression/output; no legacy Term object is created. |
+| `term.downsample(frequency)` | Explicit sampling sessions and `sampled_values` | Use the full declared exchange schedule, including the preceding sample when output starts mid-period. Carry sampled feature rows, not raw quotes. |
+| Factor keys plus prices for analysis | [Native multi-horizon outcomes](labeling.md#prepare-keyed-multi-horizon-outcomes) | Diagnostic owns the Alphalens facade/cleaner. Select the return columns explicitly and retain actual endpoints, availability, units and basis. |
+| Pyfolio-style market/loading containers | [Optional input preparation](optional-input-migration.md) | Data/callers supply source revisions, compatible units and knowledge times. Diagnostic owns capacity, exposures and attribution. |
+
+Numeric recipes can replace individual built-in constructor calls. An opaque
+Pipeline, custom callback or mutable execution environment requires a native
+table/expression port, not a global import replacement. Orders, fills, costs,
+account state and strategy delivery remain outside Engineer.
+
+Empyrical Reloaded 0.7.0 with pandas 2.3.3 has container-dependent return behavior:
+its pandas `pct_change` path can round away large-integer ticks and implicitly
+fill missing prices. Native preparation preserves the integer differences and
+does not fill quotes. The qualified integer-ndarray path and independent integer
+quotients establish the precision expectation; rounded or implicitly filled
+pandas results are not the native correctness target.
+
+The combined example deliberately uses `calendar=None` for its standalone
+base-dependency run. Omitting that argument preserves the captured NYSE feed
+and validates its declared daily grid with the real calendar extra. Neither
+route infers July 4 from missing observations.
+
+<!-- ml4t-exec -->
+```python
+import runpy
+
+recipes = runpy.run_path("examples/reloaded_workflows.py")
+prices, decisions, universe, feed = recipes["captured_snapshot"]()
+result = recipes["snapshot_screen"](
+    prices, decisions, universe, feed_spec=feed, calendar=None,
+)
+assert result["asset"].to_list() == [17]
+assert result["screen"].to_list() == [True]
+assert result["lagged_mean_notional_volume"].to_list() == [100343.0]
+```
+
+For sampled terms, select actual week-, month-, quarter- or year-start exchange
+sessions before the backward join. Do not choose the first observed quote in
+a partial period. Preserve a missing sample row: filling only nonnull values
+would retain a stale earlier sample. Keep input warmup before sampling, and
+retain `sample_session` and `sample_available_at` separately from the receiving
+decision. `sampled_values` rejects future-known values and ambiguous keys.
+
+## Qualification profiles
+
+The original workflow reference is Zipline Reloaded 3.2.0 at
+[`cf649ac`](https://github.com/stefan-jansen/zipline-reloaded/tree/cf649ac06fddce76f6caa2403cd8494ac84f72ad),
+with pandas 2.3.3 and NumPy 2.5.4. Original/custom PipelineEngine profiles use
+the real shifted pricing loader, missing quotes, listing/delisting and supplied
+lifetimes. Separate alias/cadence profiles cover all four sampling frequencies.
+The comparisons do not establish order/account/performance equivalence.
+
+The Data producer reference is unpublished `0.2.2.dev41+gd48d849f7` at
+[`d48d849`](https://github.com/ml4t/data/tree/d48d849f77d3ff75d05383cbaaed9b42f6ca95b7).
+Data selects revisions/adjustments and retains stable IDs. Actual installed
+handoffs cover future corrections, raw/split-compatible products and rename
+history. The Pyfolio input-method reference is Reloaded 0.10.0, not an Engineer
+capacity implementation. These are qualification profiles, not dependency pins
+or published install recommendations. Immutable Engineer artifact identities,
+exact recipe revisions and final checks are recorded in the owning
+[factor/screen PR](https://github.com/ml4t/engineer/pull/115) and
+[input/migration PR](https://github.com/ml4t/engineer/pull/116).
 
 See the [operation reference](../api/pipeline-ports.md) for individual methods,
 defaults and material differences, and [native features](features.md) for the

@@ -18,6 +18,10 @@ artifacts = ["src/ml4t/**/AGENTS.md"]
 include = [
     "/src",
     "/tests",
+    "/examples",
+    "/docs",
+    "/scripts",
+    "/mkdocs.yml",
     "/README.md",
     "/LICENSE",
     "/CHANGELOG.md",
