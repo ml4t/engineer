@@ -38,3 +38,17 @@ def test_advertised_example_runs(script: Path) -> None:
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
+
+
+@pytest.mark.parametrize("name", ["pipeline_expression_ports.py", "pipeline_migration.py"])
+def test_pipeline_examples_run_with_windows_legacy_console_encoding(name: str) -> None:
+    result = subprocess.run(
+        [sys.executable, str(EXAMPLE_DIR / name)],
+        cwd=EXAMPLE_DIR.parent,
+        env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

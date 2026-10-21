@@ -461,16 +461,25 @@ not opaque Zipline Asset objects. This recipe returns a native frame, not a Term
 <!-- ml4t-exec -->
 ```python
 import math
+from importlib.util import find_spec
 import polars as pl
 from ml4t.engineer.features.paired import rolling_regression
 
 paired = pl.DataFrame({"market": [1.0, 2.0, 3.0, 4.0], "feature": [1.0, 2.0, 2.0, 4.0]})
-result = paired.lazy().select(
-    rolling_regression("feature", "market", period=4).alias("regression")
-).unnest("regression").collect()
-assert math.isclose(result["beta"][3], 0.9, rel_tol=1e-14)
-assert math.isclose(result["stderr"][3], math.sqrt(0.07), rel_tol=1e-14)
-assert math.isclose(result["p_value"][3], 1 - 9 / math.sqrt(95), rel_tol=1e-14)
+if find_spec("scipy") is None:
+    try:
+        rolling_regression("feature", "market", period=4)
+    except ImportError as error:
+        assert "ml4t-engineer[stats]" in str(error)
+    else:
+        raise AssertionError("Inferential regression must require its optional dependency")
+else:
+    result = paired.lazy().select(
+        rolling_regression("feature", "market", period=4).alias("regression")
+    ).unnest("regression").collect()
+    assert math.isclose(result["beta"][3], 0.9, rel_tol=1e-14)
+    assert math.isclose(result["stderr"][3], math.sqrt(0.07), rel_tol=1e-14)
+    assert math.isclose(result["p_value"][3], 1 - 9 / math.sqrt(95), rel_tol=1e-14)
 ```
 
 `features.events.event_business_days` counts Monday through Friday, including

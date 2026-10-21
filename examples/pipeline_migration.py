@@ -1,5 +1,6 @@
 """Port finite custom factors, classifications and screens without a legacy graph runtime."""
 
+import json
 from datetime import UTC, date, datetime
 
 import polars as pl
@@ -95,4 +96,4 @@ if __name__ == "__main__":
     assert result.filter("longs")["asset"].to_list() == [23]
     assert result.filter("shorts")["asset"].to_list() == [31]
     assert result["sector_code"].to_list() == [1, 2, None]
-    print(result)
+    print(json.dumps(result.to_dicts(), ensure_ascii=True, default=str))

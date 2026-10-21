@@ -1,5 +1,7 @@
 """Native ports of elementwise math and daily summaries, not a graph interpreter."""
 
+import json
+
 import numpy as np
 import polars as pl
 
@@ -62,4 +64,4 @@ if __name__ == "__main__":
     assert summary["notnull_count"].to_list() == [2, 0]
     elementary = elementary_features(pl.DataFrame({"value": [1e-20, None]}))
     assert elementary["expm1"].to_list() == [1e-20, None]
-    print(summary)
+    print(json.dumps(summary.to_dicts(), ensure_ascii=True, default=str))
