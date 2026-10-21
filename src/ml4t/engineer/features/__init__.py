@@ -40,6 +40,7 @@ from ml4t.engineer.features import (
     regime,
     risk,
     rolling,
+    selection,
     statistics,  # noqa: F401
     trend,  # noqa: F401
     volatility,  # noqa: F401
@@ -56,4 +57,5 @@ __all__ = [
     "regime",
     "risk",
     "rolling",
+    "selection",
 ]

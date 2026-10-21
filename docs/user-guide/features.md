@@ -227,6 +227,55 @@ explicitly choose `calendar=None` for observation rows. Recipe output masks are 
 dated universe/knowledge selection or final output screens. Named fields stay explicit;
 for example, select `factor_expression("BollingerBands", window_length=20)["middle"]`.
 
+### Eligible cross-sectional transforms and boolean windows
+
+`features.selection.cross_section` computes `rank`, `top`, `bottom`, `demean`,
+`zscore`, `winsorize`, `quantiles`, `percentile_between` or `peer_count` separately
+at each supplied timestamp and optional classification group. Its `mask` selects
+the input population before the transform. A later dataframe filter is a final
+screen and does not change those inputs. Unknown groups, nulls and NaNs are
+excluded. Map legacy classifier sentinels such as -1 to null explicitly.
+
+Ranks support ordinal/min/max/dense/average ties. Ordinal ties and top/bottom
+selection use ascending stable entity IDs, independently of input row order.
+Supply unique timestamp/entity keys; display symbols are not stable identities.
+Z-scores use population standard deviation by default (`ddof=0`), not a fitted
+training scaler. Constant groups have undefined z-scores. Typed local differences
+retain adjacent large integer ticks, and scaled moments avoid variance overflow
+or underflow for representable outputs.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+import polars as pl
+from ml4t.engineer.features.selection import cross_section
+
+signals = pl.DataFrame({
+    "timestamp": [date(2025, 7, 7)] * 4, "asset": ["D", "B", "A", "C"],
+    "value": [3., 1., 1., 999.], "eligible": [True, True, True, False],
+})
+ranked = signals.with_columns(
+    cross_section("value", method="rank", mask="eligible").alias("rank"),
+    cross_section("value", method="bottom", n=1, mask="eligible").alias("selected"),
+)
+assert ranked["rank"].to_list() == [3., 2., 1., None]
+assert ranked.filter("selected")["asset"].to_list() == ["A"]
+```
+
+Winsorization uses the legacy floor/ceil order-statistic cutoffs, not linear
+percentile clipping. Quantile bins and inclusive percentile filters use linear
+edges. Duplicate quantile edges raise instead of silently changing the number of
+bins. Native quantile labels are zero-based integers with null missing values.
+These feature selectors do not invoke Diagnostic's analytical factor cleaner.
+
+`features.selection.rolling_filter` supplies full-row `any`, `all` and `at_least`
+windows. Apply `.over(entity_col)` to isolate histories. Missing predicates count
+false; leading incomplete windows are null. `is_missing` recognizes native null
+and floating NaN, without treating infinity or a classifier sentinel as missing.
+Ordinary Polars arithmetic, comparisons, boolean operators and `is_in` cover the
+corresponding elementwise factor/filter/classifier operations. None of these
+expressions selects Data revisions or establishes availability by itself.
+
 ### Paired relationships and supplied event dates
 
 `features.paired.rolling_pearson`, `rolling_spearman`, `rolling_beta` and
