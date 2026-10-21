@@ -20,12 +20,21 @@ class FeatureSchema:
     """Column layout for a feature artifact."""
 
     timestamp_col: str = "timestamp"
-    entity_col: str = "asset"
+    entity_col: str | tuple[str, ...] = "asset"
     feature_columns: tuple[str, ...] = ()
     available_at_col: str | None = None
     decision_time_col: str | None = None
     eligible_col: str | None = None
     universe_time_col: str | None = None
+
+    def __post_init__(self) -> None:
+        columns = [self.entity_col] if isinstance(self.entity_col, str) else list(self.entity_col)
+        if not columns or any(not isinstance(c, str) or not c for c in columns):
+            raise ValueError("entity_col must declare nonempty stable entity columns")
+        if len(set(columns)) != len(columns):
+            raise ValueError("entity_col columns must be distinct")
+        if not isinstance(self.entity_col, str):
+            object.__setattr__(self, "entity_col", tuple(columns))
 
     @classmethod
     def from_mapping(cls, mapping: dict[str, Any] | None) -> FeatureSchema:
@@ -34,7 +43,7 @@ class FeatureSchema:
         feature_columns = mapping.get("feature_columns", ())
         return cls(
             timestamp_col=str(mapping.get("timestamp_col", "timestamp")),
-            entity_col=str(mapping.get("entity_col", "asset")),
+            entity_col=mapping.get("entity_col", "asset"),
             feature_columns=tuple(str(item) for item in feature_columns),
             available_at_col=optional_str(mapping.get("available_at_col")),
             decision_time_col=optional_str(mapping.get("decision_time_col")),

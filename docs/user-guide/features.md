@@ -382,7 +382,8 @@ contexts, include their universe key in the group keys too. Cross-sectional mask
 not a substitute for information-time validation.
 
 Owned `FeatureSchema` records optional `available_at_col`, `decision_time_col` and
-`eligible_col`, plus `universe_time_col`. `FeatureDefinition` records the canonical `feed_spec`,
+`eligible_col`, plus `universe_time_col`; `entity_col` preserves one column name
+or a list of compound identity columns. `FeatureDefinition` records the canonical `feed_spec`,
 `window_unit`, `price_basis`, finite `lookbacks` and optional `missing_input_policy`, with existing source-artifact
 lineage and join keys. `FeatureSpec.to_dict()` preserves omitted calendar versus
 explicit null; unused fields leave the old wire keys unchanged. Store actual

@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 
 import polars as pl
 import pytest
+import yaml
 from ml4t.specs import FeedSpec
 from polars.testing import assert_frame_equal
 
@@ -630,6 +631,7 @@ def test_naive_observation_instants_require_and_use_declared_timezone(timezone):
         {"lookbacks": {"average": "3"}},
         {"price_basis": " "},
         {"window_unit": "median_spacing"},
+        {"missing_input_policy": "ignore"},
     ],
 )
 def test_invalid_artifact_declarations_do_not_survive_public_loading(definition):
@@ -651,3 +653,48 @@ def test_minimal_artifacts_keep_old_wire_keys_and_source_lineage():
     assert set(output["schema"]) == {"timestamp_col", "entity_col", "feature_columns"}
     assert set(output["definition"]) == {"family", "join_keys", "source_artifacts"}
     assert output["definition"]["source_artifacts"] == ["Data:snapshot:abc"]
+
+
+def test_persisted_compound_entity_columns_keep_canonical_schema_and_physical_ns(tmp_path):
+    payload = {
+        "artifact_id": "compound-features",
+        "schema": {"entity_col": ["venue", "asset"], "feature_columns": ["average"]},
+        "definition": {
+            "feed_spec": FeedSpec(
+                time_contract_version=2, calendar=None, entity_col=["venue", "asset"]
+            ).to_dict(),
+            "price_basis": "raw",
+            "missing_input_policy": "complete",
+        },
+    }
+    original = history().with_columns(pl.lit("XNYS").alias("venue"))
+    facts = universe().with_columns(pl.lit("XNYS").alias("venue"))
+    prepared = prepare(
+        original,
+        universe=facts,
+        feed_spec=FeedSpec.from_mapping(payload["definition"]["feed_spec"]),
+    )
+    prepared = prepared.with_columns(
+        (pl.col("available_at").cast(pl.Int64) + 1)
+        .cast(pl.Datetime("ns", "UTC"))
+        .alias("available_at")
+    )
+    path = tmp_path / "features.parquet"
+    prepared.write_parquet(path)
+    restored = pl.read_parquet(path)
+    assert_frame_equal(restored, prepared)
+    for encoding in (json.loads(json.dumps(payload)), yaml.safe_load(yaml.safe_dump(payload))):
+        output = FeatureSpec.from_mapping(encoding).to_dict()
+        assert output["schema"]["entity_col"] == ["venue", "asset"]
+        feed = FeedSpec.from_mapping(output["definition"]["feed_spec"])
+        assert feed.resolve_calendar() is None
+        assert (
+            restored.select(feed.timestamp_col, *feed.entity_col).rows()
+            == prepared.select("timestamp", "venue", "asset").rows()
+        )
+
+
+@pytest.mark.parametrize("columns", [[], [""], ["asset", "asset"], [1]])
+def test_invalid_compound_entity_schema_fails_before_persistence(columns):
+    with pytest.raises(ValueError, match="entity_col"):
+        FeatureSpec.from_mapping({"artifact_id": "invalid", "schema": {"entity_col": columns}})
