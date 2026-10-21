@@ -88,6 +88,40 @@ def _installed_check(python: Path, directory: Path, **environment: str):
     )
 
 
+def test_source_archive_migration_recipes_run_with_the_installed_candidate(
+    candidate_dir: Path, installed_candidate: Path, tmp_path: Path
+) -> None:
+    _, sdist = candidate._distribution_files(candidate_dir)
+    with tarfile.open(sdist) as archive:
+        archive.extractall(tmp_path, filter="data")
+    root = next(tmp_path.iterdir())
+    for name in ("optional_input_migration.py", "reloaded_workflows.py"):
+        result = subprocess.run(
+            [str(installed_candidate), str(root / "examples" / name)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+    documentation = subprocess.run(
+        [
+            str(installed_candidate),
+            "-c",
+            "import runpy; "
+            "runner = runpy.run_path('tests/documentation_workflows.py'); "
+            "assert runner['documented_workflows']()",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert documentation.returncode == 0, documentation.stderr
+
+
 def test_installed_candidate_rejects_real_source_tree_shadowing(
     candidate_dir: Path, installed_candidate: Path
 ) -> None:
