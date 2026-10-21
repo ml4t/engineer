@@ -132,3 +132,14 @@ def test_cadence_carries_sampled_rows_including_unknown_samples_without_future_v
     future = frame.with_columns(pl.lit(datetime(2025, 7, 20, tzinfo=UTC)).alias("available_at"))
     with pytest.raises(ValueError, match="not known"):
         recipes().sampled_values(future, [days[0]])
+
+
+def test_actual_price_preparation_keeps_unavailable_sample_and_holds_only_known_features():
+    result = recipes().cadence_example()
+    assert result["effective_session"].to_list() == [date(2025, 7, day) for day in (7, 8, 9, 14)]
+    assert result["sampled_rsi"].to_list()[:3] == pytest.approx(
+        [10.0, 10.0, 10.0], rel=1e-12, abs=0
+    )
+    assert result["sampled_rsi"][-1] is None
+    assert result["eligible"].to_list()[-1] is False
+    assert result["sample_session"].to_list() == [date(2025, 7, 7)] * 3 + [date(2025, 7, 14)]

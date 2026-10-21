@@ -158,6 +158,13 @@ Pipeline, custom callback or mutable execution environment requires a native
 table/expression port, not a global import replacement. Orders, fills, costs,
 account state and strategy delivery remain outside Engineer.
 
+Empyrical Reloaded 0.7.0 with pandas 2.3.3 has container-dependent return behavior:
+its pandas `pct_change` path can round away large-integer ticks and implicitly
+fill missing prices. Native preparation preserves the integer differences and
+does not fill quotes. The qualified integer-ndarray path and independent integer
+quotients establish the precision expectation; rounded or implicitly filled
+pandas results are not the native correctness target.
+
 The combined example deliberately uses `calendar=None` for its standalone
 base-dependency run. Omitting that argument preserves the captured NYSE feed
 and validates its declared daily grid with the real calendar extra. Neither

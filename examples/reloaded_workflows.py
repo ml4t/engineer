@@ -4,13 +4,14 @@ import json
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 
+import numpy as np
 import pandas as pd
 import polars as pl
 from ml4t.specs import UNSET_CALENDAR, CalendarUnset, FeedSpec
 
 from ml4t.engineer.features.inputs import market_to_long, prepare_market_inputs
 from ml4t.engineer.features.preparation import prepare_feature_panel
-from ml4t.engineer.features.rolling import annualized_volatility
+from ml4t.engineer.features.rolling import annualized_volatility, rsi_cutler
 from ml4t.engineer.features.utils.arithmetic import returns
 
 
@@ -206,6 +207,50 @@ def captured_snapshot() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, FeedS
     return prices, decisions, universe, feed
 
 
+def cadence_example() -> pl.DataFrame:
+    """Prepare actual price features before carrying explicitly chosen decision samples."""
+    days = [date(2025, 7, day) for day in (1, 2, 3, 7, 8, 9, 10, 11)]
+    effective = [date(2025, 7, day) for day in (7, 8, 9, 14)]
+    prices = pl.DataFrame(
+        {
+            "timestamp": days,
+            "asset": [17] * 8,
+            "close": [100.0, 101.0, 92.0, 94.25, 89.0, 90.0, 91.0, None],
+            "available_at": [
+                datetime(2025, 7, day.day, 17 if day.day == 3 else 20, tzinfo=UTC) for day in days
+            ],
+        }
+    )
+    decisions = pl.DataFrame(
+        {
+            "timestamp": [days[i] for i in (2, 3, 4, 7)],
+            "effective_session": effective,
+            "decision_time": [datetime(2025, 7, day.day, 13, tzinfo=UTC) for day in effective],
+        }
+    )
+    universe = pl.DataFrame(
+        {
+            "asset": [17],
+            "effective_from": [days[0]],
+            "effective_to": pl.Series([None], dtype=pl.Date),
+            "available_at": [datetime(2025, 6, 1, tzinfo=UTC)],
+            "member": [True],
+        }
+    )
+    panel = prepare_feature_panel(
+        prices.lazy(),
+        features={"rsi": rsi_cutler("close", period=2)},
+        lookbacks={"rsi": 3},
+        input_columns=["close"],
+        decisions=decisions,
+        universe=universe,
+        price_basis="raw",
+        feed_spec=FeedSpec(time_contract_version=2, calendar=None, entity_col="asset"),
+    ).collect()
+    # These are supplied NYSE week-start decisions in this captured July interval.
+    return sampled_values(panel, [date(2025, 7, 7), date(2025, 7, 14)])
+
+
 def main() -> None:
     stamps = pd.date_range("2025-07-07", periods=3, tz="UTC")
     wide = pd.DataFrame({17: pd.array([2**63, 2**63 + 1, 2**63 + 2], dtype="UInt64")}, index=stamps)
@@ -220,12 +265,21 @@ def main() -> None:
     assert screen["lagged_mean_notional_volume"].to_list() == [100343.0]
     bands = custom_bands(prices, decisions, universe, feed_spec=feed, calendar=None)
     assert bands["eligible"].to_list() == [True]
+    cadence = cadence_example()
+    np.testing.assert_allclose(
+        cadence["sampled_rsi"].to_numpy(),
+        [10.0, 10.0, 10.0, np.nan],
+        rtol=1e-12,
+        atol=0,
+        equal_nan=True,
+    )
     print(
         json.dumps(
             {
                 "precise_returns": precise["return"].to_list(),
                 "screened_assets": screen.filter("screen")["asset"].to_list(),
                 "custom_mid": bands["bands"].struct.field("mid").to_list(),
+                "sampled_rsi": cadence["sampled_rsi"].to_list(),
             }
         )
     )
