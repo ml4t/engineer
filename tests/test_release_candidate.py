@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 import tarfile
+import tempfile
 import zipfile
+from collections.abc import Iterator
 from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError
@@ -29,7 +33,6 @@ def test_candidate_manifest_binds_both_artifacts_to_source(candidate_dir: Path) 
         candidate_dir,
         expected_commit="a" * 40,
         expected_tree="b" * 40,
-        expected_tag=f"v{manifest['version']}",
     )
     assert manifest["name"] == "ml4t-engineer"
     assert manifest["version"]
@@ -40,6 +43,206 @@ def test_candidate_manifest_binds_both_artifacts_to_source(candidate_dir: Path) 
     assert manifest["metadata"]["maintainer_email"] == "Stefan Jansen <pm@ml4trading.io>"
     assert len(manifest["artifacts"]) == 2
     assert all(len(record["sha256"]) == 64 for record in manifest["artifacts"])
+
+
+@pytest.fixture(scope="module")
+def installed_candidate(candidate_dir: Path) -> Iterator[Path]:
+    root = os.environ.get("RUNNER_TEMP") or os.environ.get("TMPDIR")
+    if root is None:
+        cache = Path(__file__).parents[1] / ".pytest_cache"
+        cache.mkdir(exist_ok=True)
+        root = str(cache)
+    with tempfile.TemporaryDirectory(prefix="engineer-installed-check-", dir=root) as directory:
+        environment = Path(directory) / "environment"
+        subprocess.run(
+            ["uv", "venv", "--python", sys.executable, str(environment)],
+            check=True,
+            capture_output=True,
+        )
+        wheel, _ = candidate._distribution_files(candidate_dir)
+        subprocess.run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(environment),
+                "--link-mode",
+                "copy",
+                str(wheel),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        yield environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def _installed_check(python: Path, directory: Path, **environment: str):
+    return subprocess.run(
+        [str(python), str(Path(candidate.__file__).resolve()), "verify-installed", str(directory)],
+        env={**os.environ, **environment},
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def test_source_archive_migration_recipes_run_with_the_installed_candidate(
+    candidate_dir: Path, installed_candidate: Path, tmp_path: Path
+) -> None:
+    _, sdist = candidate._distribution_files(candidate_dir)
+    with tarfile.open(sdist) as archive:
+        archive.extractall(tmp_path, filter="data")
+    root = next(tmp_path.iterdir())
+    for name in ("optional_input_migration.py", "reloaded_workflows.py"):
+        result = subprocess.run(
+            [str(installed_candidate), str(root / "examples" / name)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+    documentation = subprocess.run(
+        [
+            str(installed_candidate),
+            "-c",
+            "import runpy; "
+            "runner = runpy.run_path('tests/documentation_workflows.py'); "
+            "assert runner['documented_workflows']()",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert documentation.returncode == 0, documentation.stderr
+
+
+def test_installed_candidate_rejects_real_source_tree_shadowing(
+    candidate_dir: Path, installed_candidate: Path
+) -> None:
+    valid = _installed_check(installed_candidate, candidate_dir)
+    assert valid.returncode == 0, valid.stderr
+    source = Path(__file__).parents[1] / "src"
+    legacy = subprocess.run(
+        [str(installed_candidate), "-c", "import ml4t.engineer; print(ml4t.engineer.__file__)"],
+        env={**os.environ, "PYTHONPATH": str(source)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert legacy.returncode == 0, legacy.stderr
+    assert Path(legacy.stdout.strip()).is_relative_to(source)
+    rejected = _installed_check(installed_candidate, candidate_dir, PYTHONPATH=str(source))
+    assert rejected.returncode != 0
+    assert "candidate import origin" in rejected.stderr
+
+
+def test_installed_candidate_rejects_modified_installed_package_bytes(
+    candidate_dir: Path, installed_candidate: Path
+) -> None:
+    location = subprocess.run(
+        [str(installed_candidate), "-c", "import ml4t.engineer; print(ml4t.engineer.__file__)"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    path = Path(location.stdout.strip()).parent / "features/trend/sma.py"
+    original = path.read_bytes()
+    try:
+        path.write_bytes(original + b"\n# Unexpected installed-file modification.\n")
+        legacy = subprocess.run(
+            [str(installed_candidate), "-c", "import ml4t.engineer"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert legacy.returncode == 0, legacy.stderr
+        rejected = _installed_check(installed_candidate, candidate_dir)
+        assert rejected.returncode != 0
+        assert "installed candidate bytes differ" in rejected.stderr
+    finally:
+        path.write_bytes(original)
+
+
+def test_installed_candidate_rejects_another_real_wheel_version(
+    candidate_dir: Path, installed_candidate: Path, tmp_path: Path
+) -> None:
+    subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(tmp_path)],
+        env={**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.0"},
+        check=True,
+        capture_output=True,
+    )
+    original, _ = candidate._distribution_files(candidate_dir)
+    other = next(tmp_path.glob("*.whl"))
+    install = ["uv", "pip", "install", "--python", str(installed_candidate), "--link-mode", "copy"]
+    try:
+        subprocess.run([*install, str(other)], check=True, capture_output=True)
+        legacy = subprocess.run(
+            [str(installed_candidate), "-c", "import ml4t.engineer"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert legacy.returncode == 0, legacy.stderr
+        rejected = _installed_check(installed_candidate, candidate_dir)
+        assert rejected.returncode != 0
+        assert "installed candidate version does not match" in rejected.stderr
+    finally:
+        subprocess.run([*install, str(original)], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize("source_dependency", [False, True])
+def test_release_selection_rejects_real_source_dependent_artifacts_before_publication(
+    tmp_path: Path, source_dependency: bool
+) -> None:
+    source = tmp_path / "source"
+    package = source / "qualification_fixture"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    dependency = (
+        "ml4t-specs @ git+https://github.com/ml4t/specs.git@"
+        "701bde68744035050ede386efce498234c661c21"
+        if source_dependency
+        else "ml4t-specs>=0.1.0,<0.2.0"
+    )
+    (source / "pyproject.toml").write_text(
+        '[build-system]\nrequires=["hatchling"]\nbuild-backend="hatchling.build"\n'
+        '[project]\nname="qualification-fixture"\nversion="1.0.0"\n'
+        f"dependencies={json.dumps([dependency])}\n"
+        "[tool.hatch.metadata]\nallow-direct-references=true\n",
+        encoding="utf-8",
+    )
+    directory = tmp_path / "candidate"
+    subprocess.run(
+        ["uv", "build", "--directory", str(source), "--out-dir", str(directory / "dist")],
+        check=True,
+        capture_output=True,
+    )
+    candidate.create(directory, commit_sha="a" * 40, git_tree="b" * 40)
+    candidate.verify(directory)  # Immutable source dependencies can qualify in source CI.
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(candidate.__file__)),
+            "verify",
+            str(directory),
+            "--expected-tag",
+            "v1.0.0",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if source_dependency:
+        assert result.returncode != 0
+        assert "release requires index dependencies" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
 
 
 def test_candidate_verification_is_atomic_for_wrong_identity_and_bytes(

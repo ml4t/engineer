@@ -70,6 +70,23 @@ def _ulcer_index(params: Mapping[str, Any]) -> int:
 
 
 FEATURE_LOOKBACKS: dict[str, LookbackCalculator] = {
+    "absolute_percent_change": _parameter("period"),
+    # Explicit finite-window methods, independent of the native TA-Lib defaults.
+    "rsi_cutler": _parameter("period"),
+    "finite_mean": _parameter("period", -1),
+    "finite_weighted_mean": _parameter("period", -1),
+    "average_dollar_volume": _parameter("period", -1),
+    "linear_weighted_mean": _parameter("period", -1),
+    "finite_ewma": _parameter("period", -1),
+    "finite_ewm_std": _parameter("period", -1),
+    "annualized_volatility": _parameter("period", -1),
+    "finite_max_drawdown": _parameter("period", -1),
+    "finite_bollinger_bands": _parameter("period", -1),
+    "finite_aroon": _parameter("period", -1),
+    "fast_stochastic": _parameter("period", -1),
+    "finite_ichimoku": _parameter("period", -1),
+    "finite_macd_signal": _sum("slow_period", "signal_period", adjustment=-2),
+    "finite_true_range": _constant(1),
     # Volume
     "ad": _constant(0),
     "adosc": _parameter("slowperiod", -1),

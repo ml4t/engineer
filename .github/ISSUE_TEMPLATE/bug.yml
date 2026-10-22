@@ -1,5 +1,5 @@
 name: Bug report
-description: Report reproducible incorrect behavior in ecosystem policy or tooling
+description: Report reproducible incorrect behavior in ml4t-engineer
 title: "[Bug]: "
 labels:
   - "type: bug"

@@ -107,6 +107,8 @@ nav:
     - Quickstart: getting-started/quickstart.md
   - User Guide:
     - Features: user-guide/features.md
+    - Pipeline Migration: user-guide/pipeline-migration.md
+    - Optional Input Migration: user-guide/optional-input-migration.md
     - Feature Discovery: user-guide/discovery.md
     - Labeling: user-guide/labeling.md
     - Alternative Bars: user-guide/bars.md
@@ -116,6 +118,7 @@ nav:
     - ML Readiness: user-guide/ml-readiness.md
   - API Reference:
     - api/index.md
+    - Pipeline Operation Ports: api/pipeline-ports.md
   - Book Guide:
     - book-guide/index.md
 

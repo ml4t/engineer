@@ -5,8 +5,14 @@ and then move directly into the first workflow.
 
 ## Requirements
 
-- Python 3.12, 3.13, or 3.14
+- Python 3.12, 3.13, 3.14, or 3.15
 - Polars 0.20+
+
+These requirements describe development source for the 0.2 release. Published 0.1.6
+supports Python 3.12-3.14 and does not accept the new `calendar` argument. Use its
+[version-matched quick start](https://github.com/ml4t/engineer/tree/v0.1.6#quick-start)
+for that release. Until 0.2 is available from PyPI, use the source installation below
+for Python 3.15 and the calendar-aware examples in this guide.
 
 ## Install from PyPI
 
@@ -20,28 +26,40 @@ If you standardize on `uv`, `uv pip install ml4t-engineer` is equivalent.
 
 ```bash
 git clone https://github.com/ml4t/engineer.git
-cd ml4t-engineer
-pip install -e .
+cd engineer
+uv sync --no-dev
 ```
+
+Run the examples with the created environment, for example `uv run --no-sync python`.
 
 ## Optional Dependencies
 
 ### TA-Lib (for validation)
 
-Some indicators can be validated against TA-Lib. Install TA-Lib if you need this:
+Some indicators can be validated against TA-Lib. The `ta` extra requires TA-Lib 0.8.2
+or later in the 0.8 series, whose wheels include the native library and support Python 3.15:
 
 ```bash
-# macOS
-brew install ta-lib
-pip install TA-Lib
+uv pip install "ml4t-engineer[ta]"
+```
 
-# Ubuntu/Debian
-sudo apt-get install libta-lib-dev
-pip install TA-Lib
+Use the [upstream installation guide](https://github.com/TA-Lib/ta-lib-python#installation)
+when your platform requires a source build. Comparisons must declare matching moving-average
+types: Engineer's APO/PPO default remains SMA (`matype=0`), while TA-Lib 0.8 defaults to EMA.
 
-# Windows
-# Download from https://www.ta-lib.org/
-pip install TA-Lib
+### Feature store
+
+The `store` extra adds DuckDB and PyArrow; the core quick start does not need it.
+Our Python 3.15 qualification used DuckDB 1.5.6 source builds on Linux, macOS and Windows.
+If no matching wheel is available, install the
+[upstream native build prerequisites](https://duckdb.org/docs/current/dev/building/python)
+before enabling the extra. Source builds need a C++ toolchain and can take tens of minutes.
+
+Within the source checkout, enable the extra and verify both imports:
+
+```bash
+uv sync --no-dev --extra store
+uv run --no-sync python -c "import duckdb; import ml4t.engineer.store; print(duckdb.__version__)"
 ```
 
 ### Statistical diagnostics

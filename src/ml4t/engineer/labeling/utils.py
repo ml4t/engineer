@@ -292,12 +292,20 @@ def get_future_price_at_time(
     return future_prices, future_prices.is_not_null()
 
 
+def _duration_nanoseconds(duration: timedelta) -> int:
+    return (
+        (duration.days * 86400 + duration.seconds) * 1_000_000_000
+        + duration.microseconds * 1000
+        + int(getattr(duration, "nanoseconds", 0))
+    )
+
+
 def _get_future_price_lookup(
     data: pl.DataFrame,
     time_horizon: str | timedelta,
     price_col: str,
     timestamp_col: str | None,
-    tolerance: str | None,
+    tolerance: str | timedelta | None,
     group_cols: list[str] | None,
 ) -> pl.DataFrame:
     """Return matched future prices, timestamps, and row indices."""
@@ -315,13 +323,21 @@ def _get_future_price_lookup(
         td = time_horizon
 
     # Compute target timestamps
-    total_us = int(td.total_seconds() * 1_000_000)
-    target_ts = pl.col(ts_col) + pl.duration(microseconds=total_us)
+    total_ns = _duration_nanoseconds(td)
+    dtype = data.schema[ts_col]
+    timestamp = pl.col(ts_col)
+    unit = "us"
+    if isinstance(dtype, pl.Datetime):
+        unit = "ns" if dtype.time_unit == "ns" or total_ns % 1000 else "us"
+        timestamp = timestamp.cast(pl.Datetime(unit, dtype.time_zone))
+    target_ts = timestamp + pl.duration(nanoseconds=total_ns, time_unit=unit)
+    if total_ns > 0 and data.select((target_ts < timestamp).any()).item():
+        raise ValueError("Future horizon exceeds the supported timestamp range (overflow)")
 
     # Create future lookup table
     lookup = data.with_row_index("_future_row_index").select(
         [
-            pl.col(ts_col).alias("_lookup_ts"),
+            timestamp.alias("_lookup_ts"),
             pl.col(price_col).alias("_future_price"),
             pl.col("_future_row_index"),
             *(pl.col(c) for c in (group_cols or [])),
@@ -339,7 +355,11 @@ def _get_future_price_lookup(
     }
 
     if tolerance is not None:
-        join_kwargs["tolerance"] = tolerance
+        if isinstance(tolerance, timedelta):
+            tolerance_ns = _duration_nanoseconds(tolerance)
+            join_kwargs["tolerance"] = f"{tolerance_ns}ns"
+        else:
+            join_kwargs["tolerance"] = tolerance
 
     if group_cols:
         group_sort_state = data.group_by(group_cols, maintain_order=True).agg(
@@ -454,11 +474,25 @@ def resolve_labeling_columns(
     config: LabelingConfig | None = None,
     contract: DataContractConfig | None = None,
     require_timestamp: bool = False,
+    allow_temporal_contract: bool = False,
 ) -> tuple[str, str | None, list[str]]:
     """Resolve columns using explicit args > labeling config > shared contract > defaults."""
     config_fields_set = (
         set(getattr(config, "model_fields_set", set())) if config is not None else set()
     )
+    if (
+        config is not None
+        and not allow_temporal_contract
+        and (
+            "calendar" in config_fields_set
+            or config.feed_spec is not None
+            or config.window_unit is not None
+        )
+    ):
+        raise DataValidationError(
+            "Declared calendar/feed/window semantics require calendar_aware_labels; "
+            "this standalone kernel does not interpret the temporal contract"
+        )
     timestamp_is_explicit = timestamp_col is not None
 
     if contract is None and config is not None:

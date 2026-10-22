@@ -1,0 +1,118 @@
+name: Native stress
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/ml4t/engineer/features/**"
+      - "src/ml4t/engineer/core/**"
+      - "tests/features/**"
+      - "tests/test_all_features_integration.py"
+      - "scripts/ci/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/native-stress.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - "src/ml4t/engineer/features/**"
+      - "src/ml4t/engineer/core/**"
+      - "tests/features/**"
+      - "tests/test_all_features_integration.py"
+      - "scripts/ci/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/native-stress.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-stress-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: "0.10.9"
+      - run: uv sync --python 3.12 --dev
+      - run: uv build --out-dir native-candidate/dist
+      - name: Bind the stress artifact to the tested revision
+        run: >-
+          uv run python scripts/ci/candidate.py create native-candidate
+          --commit-sha "${{ github.sha }}"
+          --git-tree "$(git rev-parse 'HEAD^{tree}')"
+      - id: matrix
+        run: uv run python scripts/ci/native_stress.py --matrix >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-stress-candidate
+          path: native-candidate/
+          if-no-files-found: error
+
+  stress:
+    name: Native stress (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    timeout-minutes: ${{ matrix.python-version == '3.15' && 90 || 30 }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.build.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: "0.10.9"
+          cache-suffix: python-${{ matrix.python-version }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: native-stress-candidate
+          path: native-candidate
+      - name: Verify stress artifact identity
+        shell: bash
+        run: >-
+          python scripts/ci/candidate.py verify native-candidate
+          --expected-commit "${{ github.sha }}"
+          --expected-tree "$(git rev-parse 'HEAD^{tree}')"
+      - name: Install the built wheel with locked test dependencies
+        shell: bash
+        run: |
+          uv export --locked --group dev --extra ta --extra store --extra viz \
+            --no-emit-project --no-hashes --output-file "${{ runner.temp }}/stress-requirements.txt"
+          uv venv --python python .artifact-venv
+          wheel="$(find native-candidate/dist -maxdepth 1 -name '*.whl' -print -quit)"
+          UV_CACHE_DIR="${{ runner.temp }}/fresh-wheel-cache" \
+            uv pip install --python .artifact-venv "$wheel"
+          uv pip install --python .artifact-venv \
+            --requirements "${{ runner.temp }}/stress-requirements.txt"
+      - name: Verify actual installed origin and bytes
+        shell: bash
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python scripts/ci/candidate.py verify-installed native-candidate --source-root src
+      - name: Run fresh-process native and cold-call regressions
+        shell: bash
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python scripts/ci/native_stress.py --repetitions 10

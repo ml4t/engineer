@@ -323,6 +323,142 @@ Output names identify the method and horizon, such as `label_return_10p`,
 controls the horizon, method, threshold, and column mapping. Conflicting explicit
 arguments fail before calculation.
 
+## Prepare keyed multi-horizon outcomes
+
+The unreleased `forward_returns` API prepares realized outcomes for training or supplied-return
+analysis. It requires Polars 2 and Specs 0.2. It does not replace barrier labels or Diagnostic's
+Alphalens cleaner. Existing fixed-horizon defaults and output names remain unchanged. Integer
+fixed-horizon arithmetic now avoids unsigned subtraction wrap and preserves small integer ticks.
+Decimal price differences also retain their original scale until conversion to fractional returns.
+Decimal inputs now produce Float64 returns rather than a scale-truncated Decimal ratio; price
+columns are unchanged. Float32/Float64 calculations retain their established formula and dtype.
+
+Use exact entry keys, declare the price basis, and select the horizon unit. This example counts
+observations with `calendar=None`; it makes no schedule-completeness claim.
+
+<!-- ml4t-exec -->
+```python
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.artifacts import LabelDefinition, LabelSchema, LabelSpec
+from ml4t.engineer.labeling import forward_returns
+
+times = [datetime(2025, 7, 3, tzinfo=UTC) + timedelta(hours=i) for i in range(3)]
+prices = pl.DataFrame({
+    "timestamp": times,
+    "asset": ["A"] * 3,
+    "close": [100, 110, 121],
+    "known_at": [time + timedelta(seconds=30) for time in times],
+})
+feed = FeedSpec(time_contract_version=2, calendar=None, entity_col="asset")
+outcomes = forward_returns(
+    prices,
+    horizons={"one": 1, "two": 2},
+    feed_spec=feed,
+    window_unit="observation",
+    endpoint_method="cumulative",
+    price_basis="raw",
+    available_at_col="known_at",
+)
+two = outcomes.filter(pl.col("horizon") == "two")
+assert abs(two["forward_return"][0] - 0.21) < 1e-15
+assert two["outcome_status"].to_list() == ["ok", "insufficient_tail", "insufficient_tail"]
+assert two["exit_time"][0] == times[2]
+assert two["outcome_available_at"][0] == prices["known_at"][2]
+
+spec = LabelSpec(
+    artifact_id="two-observation-outcomes",
+    schema=LabelSchema(
+        label_col="forward_return", entry_time_col="timestamp",
+        requested_exit_time_col="requested_exit_time", exit_time_col="exit_time",
+        outcome_available_at_col="outcome_available_at",
+    ),
+    definition=LabelDefinition(
+        horizon="2", window_unit="observation", endpoint_method="cumulative",
+        return_method="returns", missing_price_policy="raise", price_basis="raw",
+        index_mode="per_asset", tail_policy="null", feed_spec=feed,
+    ),
+)
+with TemporaryDirectory() as directory:
+    path = Path(directory)
+    two.write_parquet(path / "outcomes.parquet")
+    (path / "outcomes.json").write_text(json.dumps(spec.to_dict()))
+    restored = pl.read_parquet(path / "outcomes.parquet")
+    restored_spec = LabelSpec.from_mapping(json.loads((path / "outcomes.json").read_text()))
+    assert restored.equals(two)
+    assert restored_spec.definition.feed_spec.resolve_calendar() is None
+```
+
+The result is a long table, one row per entry and named horizon. It retains entry keys,
+requested and actual exits, the reference-price time, outcome availability, method, unit,
+indexing mode, price basis and an exclusion status.
+The horizon name is a selector. `horizon_value` stores a count, or a canonical fixed-nanosecond
+duration for elapsed windows, so persisted values can replay without guessing a format.
+Select one horizon before sending the table to Diagnostic's `prepare_signal_panel`, and pass `return_columns=["forward_return"]`,
+`date_col="timestamp"` and the declared asset column. Metadata must not become return columns.
+Diagnostic also accepts independently prepared equivalent tables without Engineer.
+
+The installed handoff has been qualified against an unpublished Diagnostic build at
+[`643b94b`](https://github.com/ml4t/diagnostic/tree/643b94b6636b0371319da84653fbe65cb95b56df),
+not the published 0.1.9 package. Keep the original outcome artifact for endpoint lineage and join
+it to retained analysis keys; do not backshift a sparse array. A manual join to older frames may
+require normalizing their instant keys to UTC nanoseconds first. Session-label dates remain
+identifiers, not midnight instants. Exact producer artifact and qualification revisions are recorded
+in [the owning pull request](https://github.com/ml4t/engineer/pull/114).
+
+| Choice | Endpoint definition |
+|--------|---------------------|
+| `window_unit="observation"` | N following chronological observations on the selected clock. |
+| `window_unit="expected_bar"` | N following bars after validating the complete declared schedule/grid. |
+| `window_unit="session"` | Final scheduled bar of the Nth following trading session; daily session labels remain dates. |
+| `window_unit="elapsed"` | First timestamp at or after an exact physical-duration target, optionally bounded by `tolerance`. Session-label dates cannot define elapsed time. |
+| `index_mode="per_asset"` | Each asset's own chronological price clock. |
+| `index_mode="common_grid"` | Union of supplied timestamps; an absent asset quote is missing, never the next asset observation. |
+| `endpoint_method="cumulative"` | Selected exit price divided by entry price, minus one. |
+| `endpoint_method="exit_bar"` | Selected exit price divided by the preceding price on the selected clock, minus one. Thus 100/110/121 at horizon two gives 0.1 rather than 0.21. |
+
+Calendar selection is explicit argument, declared feed metadata, then NYSE. A named calendar
+requires a complete v2 grid declaration even when counting observations. A named 24/7 calendar
+validates continuous scheduled bars; `None` disables schedule validation. Expected-bar and session
+units require a named calendar. No frequency or holiday is inferred from observed gaps.
+For intraday grids declare frequency, timezone, timestamp meaning, session-open anchoring, label
+side and partial-bar policy using FeedSpec. Durations support composite and subsecond targets,
+including `30m`, `1h30m`, `1d1h1ns`, `1ms` and `1ns`. Instants normalize to UTC nanoseconds.
+Out-of-range inputs or targets fail explicitly rather than wrapping into another date. Naive inputs need
+an explicit feed timezone; ambiguous/nonexistent local times fail.
+
+The default missing-price policy raises for null, nonfinite or nonpositive prices. Explicit
+`missing_price_policy="null"` retains unavailable outcomes and actual keys without filling quotes.
+Absent scheduled rows still fail completeness validation. `tail_policy="null"` retains tail rows
+with `insufficient_tail`; `drop` excludes those rows, and `raise` rejects the operation.
+Missing in-range endpoints receive `missing_endpoint`, not zero returns.
+If a covered session has no eligible full bar under the declared partial-bar policy, its outcome
+also has `missing_endpoint`; it is not skipped in the session count.
+`entries` may select a sparse ordered table of exact entity/time keys; missing or duplicate entry keys fail.
+Input role names cannot use the reserved `_out_` prefix or conflict with output key metadata.
+
+Engineer never constructs a filled price view. If a caller supplies an explicit analytical
+research view, pass both `original_row_col` and `original_price_col` Boolean columns. They
+identify original rows and valid observed quotes before the caller's preparation. Both must
+be nonnull and consistent; an observed quote cannot belong to a synthetic row. Entry,
+reference and exit row/price flags remain in the outcome table. Without a supplied view,
+provided rows are original and finite positive quotes are observed. A numeric return with
+false observation flags is a research outcome, not evidence of an observed executable price.
+Named-calendar completeness is checked on original rows, so inserting and filling a missing
+scheduled row does not clear the failure. Each asset must have original coverage. Preserve
+the two input role declarations in LabelDefinition when persisting a research view's results.
+
+Availability is the later known-at time of the two prices used. If either is unknown, availability
+remains null. Session-label dates do not assert information availability. These realized outcomes
+contain future information and must not enter a contemporaneous feature or strategy decision.
+Keep the original feed and effective options in LabelSpec when persisting the table. Calendar
+omission and explicit null retain their distinct shared serialization semantics.
+
 ## Trend Scanning
 
 De Prado's trend-scanning method finds the optimal holding period for each observation by fitting linear regressions over a range of horizons and selecting the one with the highest t-statistic.
@@ -414,6 +550,12 @@ result = apply_meta_model(
 
 For futures and other instruments with defined trading sessions, calendar-aware labeling respects session boundaries. A label that would span an overnight gap is handled correctly.
 
+In the next minor version, `calendar_aware_labels` uses the shared temporal contract.
+An explicit `calendar` argument wins over a declared `LabelingConfig.calendar`, then
+`FeedSpec` metadata, then NYSE. Omitting a selector differs from explicit `None`.
+Config JSON/YAML output preserves that distinction and emits only explicitly declared
+column overrides, so a round trip does not replace feed column mappings with defaults.
+
 ```python
 from ml4t.engineer.labeling import calendar_aware_labels
 
@@ -433,6 +575,112 @@ former pause because trading is continuous until 4:00 PM.
 See the [CME exchange notice](https://www.cmegroup.com/notices/electronic-trading/2021/06/20210621.html)
 for the affected equity-index contracts.
 
+<a id="observation-rows-expected-bars-and-elapsed-durations"></a>
+
+### Observation rows, expected bars, sessions and elapsed durations
+
+Use `calendar=None` for observation-row labeling, including timestamp-indexed data:
+
+```python
+row_config = LabelingConfig.triple_barrier(
+    upper_barrier=0.02,
+    lower_barrier=0.02,
+    max_holding_period=10,
+    calendar=None,
+    window_unit="observation",
+)
+labels = calendar_aware_labels(df, row_config)
+```
+
+Row mode retains input order, processes each asset independently, does not require
+timestamps and never loads a schedule provider. Its `label_bars` and `label_time` are
+observation counts and per-asset row offsets; `label_duration` is unset. Timestamp
+spacing and weekend placement do not alter its numerical labels. Duration holding
+periods are incompatible with this mode.
+
+Named calendars segment authoritative sessions and breaks. New shared-feed calls and
+omitted selectors default count windows to `"expected_bar"`; an undeclared or incomplete
+grid fails before labeling. Supply the complete shared grid
+declarations described in the [feature guide](features.md#calendar-and-bar-grid) to reject
+missing scheduled bars before labeling. Named `"24/7"` still has daily schedule boundaries
+and is not equivalent to row mode. Duration holding periods select `"elapsed"` and remain truncated at session
+boundaries, rather than counting sessions or observed dates.
+
+Pass `feed_spec=FeedSpec(...)` directly or through `LabelingConfig.feed_spec`. Shared
+`timestamp_semantics` must distinguish intraday instants from `session_label` identifiers.
+Naive feed timestamps require an explicit timezone, and ambiguous/nonexistent local
+times fail. Right-labeled/bar-close observations at a break boundary end the preceding
+tradable interval. Input timestamp representations are retained in the output.
+Instant horizons and `label_duration` use physical elapsed time, including across
+daylight-saving transitions. Shared `session_label` identifiers do not identify instants;
+their `label_time` retains the session identifier and `label_duration` is unset.
+
+Legacy calls without FeedSpec keep naive-UTC handling. Custom protocol objects and
+explicit `calendar="auto"` remain compatibility modes without shared feed metadata.
+An explicit legacy calendar selector without FeedSpec retains observation-count horizons.
+New calls can also select `window_unit="observation"` explicitly to count received rows
+within each authoritative segment, without claiming scheduled-bar completeness.
+Auto-gap segmentation does not establish market holidays, session completeness or a
+bar grid. Standalone labeling kernels retain their documented row-count or elapsed-time
+definitions and chronological sorting; they do not acquire calendar interpretation from
+timestamps. Use this wrapper when selecting the shared calendar/row contract.
+Standalone kernels reject configs declaring calendar/feed/window semantics instead
+of silently ignoring those declarations.
+Standalone kernels retain date-valued label times and calendar-day differences in
+`label_duration` for legacy `Date` inputs. These standalone calls do not validate
+the dates against an exchange schedule.
+
+For `window_unit="session"`, an integer `max_holding_period=N` expires at the final
+bar of the Nth scheduled session after the entry session. A positive integral count
+column can select N per event. July 3, 2025 on NYSE therefore reaches July 7 for N=1,
+not the July 4 holiday. Intraday entries reach the following session's last bar,
+including an early close; lunch and overnight breaks do not truncate this horizon.
+Profit, stop and trailing barriers still use the existing triple-barrier calculation.
+The full declared grid is checked before any labels are computed, including whole-session
+outages. No prices are filled or rows inserted.
+
+With `partial_bar_policy="exclude"`, a shortened session can have no bars. It still
+counts as a scheduled session. The exit uses the last available bar no later than the
+deadline, even if that is the entry itself with zero holding bars. The calculation
+does not extend the deadline into a later session to obtain another observation.
+
+Daily input uses `FeedSpec(time_contract_version=2, calendar="NYSE",
+timestamp_semantics="session_label", data_frequency="1d", bar_type="time")`.
+Do not supply intraday anchor/label/partial-bar fields. Date-valued and midnight datetime
+identifiers keep their displayed session date; they are not converted to UTC instants.
+Daily observation and expected-bar horizons scan across session rows rather than
+truncating every label to its entry row. Elapsed horizons reject these identifiers.
+
+As with existing count horizons, a deadline beyond the available dataset is censored
+at the last available bar. `label_bars` reports the actual observed holding length and
+`label_time` the actual exit, not an inferred future observation. These changes target
+the next 0.2 development release, not the historical 0.1.7 patch.
+
+<!-- ml4t-exec -->
+```python
+from datetime import date
+from io import BytesIO
+
+import polars as pl
+from ml4t.specs import FeedSpec
+from ml4t.engineer.config import LabelingConfig
+from ml4t.engineer.labeling import calendar_aware_labels
+
+prices = pl.DataFrame({
+    "timestamp": [date(2025, 7, day) for day in (3, 7, 8)],
+    "close": [100.0, 101.0, 103.0],
+})
+config = LabelingConfig.triple_barrier(
+    upper_barrier=None, lower_barrier=None, max_holding_period=1, window_unit="session",
+    feed_spec=FeedSpec(time_contract_version=2, calendar="NYSE", data_frequency="1d",
+                       timestamp_semantics="session_label", bar_type="time"),
+)
+labels = calendar_aware_labels(prices, config)
+assert labels["label_time"].to_list() == [date(2025, 7, 7), date(2025, 7, 8), date(2025, 7, 8)]
+assert labels["label_bars"].to_list() == [1, 1, 0]
+labels.write_parquet(BytesIO())
+labels.head(0).write_parquet(BytesIO())
+```
 ## Sample Weighting
 
 AFML Chapter 4 addresses the problem of overlapping labels creating correlated samples. The library provides the full toolkit:

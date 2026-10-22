@@ -38,7 +38,7 @@ is under `docs/user-guide/`, and the generated API reference is under
 
 ## Engineering constraints
 
-- Python 3.12, 3.13, and 3.14 are supported.
+- Python 3.12, 3.13, 3.14, and 3.15 are supported.
 - Feature computation must preserve the documented DataFrame or LazyFrame
   return behavior.
 - Changes to registered features must keep implementation, registry metadata,
@@ -61,3 +61,23 @@ uv build
 uv run python -c "import ml4t.engineer"
 uv run mkdocs build --strict
 ```
+
+## Maintainer-directed change batching
+
+For our own fixes and agent work directed by the maintainer, use a bounded, coherent PR rather
+than one PR per small defect or implementation step. One PR may close several related issues
+when the changes serve the same user workflow, subsystem repair or compatibility objective and
+can be reviewed and reverted together. Keep implementation, regressions, documentation and
+follow-up repairs together; use focused commits and retain evidence for each defect. Do not
+create separate issues or PRs merely for individual files, tests, assertions or platform variants.
+
+Split unrelated changes, independently risky or breaking changes, separate ownership boundaries,
+and work that needs independent release or rollback decisions. A general maintenance label alone
+does not make a batch coherent. Reuse or safely consolidate existing owned submissions instead of
+opening overlapping PRs; preserve contributor attribution, recoverable history and other owners'
+active work. Do not rewrite or close someone else's work merely to reduce the queue count.
+
+Run focused checks while iterating, then qualify the complete final revision with every applicable
+required gate. Group related work before expensive CI; do not weaken checks, bypass review or
+claim old-head checks qualify changed code. This maintainer-directed batching rule takes precedence
+over a literal one-issue-per-PR reading of contributor intake guidance.

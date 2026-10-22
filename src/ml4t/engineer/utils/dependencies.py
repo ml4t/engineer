@@ -115,6 +115,14 @@ class OptionalDependencies:
     def _register_dependencies(self):
         """Register all known optional dependencies."""
 
+        self._deps["scipy"] = DependencyInfo(
+            name="SciPy",
+            import_name="scipy",
+            install_cmd="uv add 'ml4t-engineer[stats]'",
+            purpose="Rolling paired regression inferential fields",
+            features=["features.paired.rolling_regression"],
+        )
+
         # ML Libraries
         self._deps["lightgbm"] = DependencyInfo(
             name="LightGBM",
