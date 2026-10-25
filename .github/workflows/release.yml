@@ -178,12 +178,26 @@ jobs:
             echo "DOCS_DEPLOY_KEY is required for a stable release" >&2
             exit 1
           fi
+      - name: Read existing versioned documentation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ml4t/website
+          ref: main
+          ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: .docs-website
+          lfs: true
+          sparse-checkout: static/docs/engineer/releases
+      - name: Stage stable documentation with existing archives
+        run: >-
+          uv run python scripts/ci/stage_docs.py site
+          .docs-website/static/docs/engineer/releases stable-site
       - name: Deploy stable documentation
         uses: cpina/github-action-push-to-another-repository@55306faa4ed53b815ae49e564af8cfb359d32ae2 # v1.7.3
         env:
           SSH_DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
         with:
-          source-directory: site/
+          source-directory: stable-site/
           destination-github-username: ml4t
           destination-repository-name: website
           target-directory: static/docs/engineer/
