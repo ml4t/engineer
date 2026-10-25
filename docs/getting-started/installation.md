@@ -6,13 +6,13 @@ and then move directly into the first workflow.
 ## Requirements
 
 - Python 3.12, 3.13, 3.14, or 3.15
-- Polars 0.20+
+- Polars 2.0+
 
-These requirements describe development source for the 0.2 release. Published 0.1.6
+The published 0.2.0 release supports these Python versions and the `calendar` argument.
+Published 0.1.6
 supports Python 3.12-3.14 and does not accept the new `calendar` argument. Use its
 [version-matched quick start](https://github.com/ml4t/engineer/tree/v0.1.6#quick-start)
-for that release. Until 0.2 is available from PyPI, use the source installation below
-for Python 3.15 and the calendar-aware examples in this guide.
+for that release.
 
 ## Install from PyPI
 
@@ -73,6 +73,24 @@ pip install "ml4t-engineer[stats]"
 
 The core `ffdiff()` transform does not require this extra.
 
+### Optional ML dependencies
+
+The `ml` extra installs LightGBM and SHAP:
+
+```bash
+uv pip install "ml4t-engineer[ml]"
+```
+
+On macOS, LightGBM also needs the OpenMP runtime. Install it before importing the ML
+dependencies, including when using the `dev` or `all` extras:
+
+```bash
+brew install libomp
+```
+
+See the [LightGBM Python installation guide](https://github.com/lightgbm-org/LightGBM/blob/v4.7.0/python-package/README.rst#installation)
+for native dependency details.
+
 ## Verify Installation
 
 ```python
@@ -84,11 +102,7 @@ print(f"Total features: {len(all_features)}")
 print(f"Categories: {feature_catalog.categories()}")
 ```
 
-Expected output:
-```
-Total features: 120
-Categories: ['math', 'microstructure', 'ml', 'momentum', 'price_transform', 'regime', 'risk', 'statistics', 'trend', 'volatility', 'volume']
-```
+This prints the features and categories available in your installed release.
 
 ## Next Steps
 

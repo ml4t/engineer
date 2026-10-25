@@ -189,6 +189,11 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install macOS OpenMP runtime for optional ML
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install libomp
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-candidate
@@ -201,7 +206,7 @@ jobs:
           --expected-tree "$(git rev-parse 'HEAD^{tree}')"
       - name: Export installed-wheel test environment
         run: >-
-          uv export --locked --group dev --extra ta --extra store --extra viz
+          uv export --locked --group dev --extra ta --extra store --extra viz --extra ml
           --no-emit-project --no-hashes
           --output-file "${{ runner.temp }}/test-requirements.txt"
       - name: Install the candidate wheel in a clean environment
@@ -217,6 +222,12 @@ jobs:
         run: >-
           uv run --python .artifact-venv --no-project
           python scripts/ci/candidate.py verify-installed candidate --source-root src
+      - name: Import optional ML dependencies
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python -c "import numpy, scipy, sklearn, shap, lightgbm;
+          print(numpy.__version__, scipy.__version__, sklearn.__version__,
+          shap.__version__, lightgbm.__version__)"
       - name: Run ty check
         run: >-
           uv run --python .artifact-venv --no-project
