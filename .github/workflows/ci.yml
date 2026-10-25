@@ -201,7 +201,7 @@ jobs:
           --expected-tree "$(git rev-parse 'HEAD^{tree}')"
       - name: Export installed-wheel test environment
         run: >-
-          uv export --locked --group dev --extra ta --extra store --extra viz
+          uv export --locked --group dev --extra ta --extra store --extra viz --extra ml
           --no-emit-project --no-hashes
           --output-file "${{ runner.temp }}/test-requirements.txt"
       - name: Install the candidate wheel in a clean environment
@@ -217,6 +217,11 @@ jobs:
         run: >-
           uv run --python .artifact-venv --no-project
           python scripts/ci/candidate.py verify-installed candidate --source-root src
+      - name: Import SHAP and its compiled dependencies
+        run: >-
+          uv run --python .artifact-venv --no-project
+          python -c "import numpy, scipy, sklearn, shap;
+          print(numpy.__version__, scipy.__version__, sklearn.__version__, shap.__version__)"
       - name: Run ty check
         run: >-
           uv run --python .artifact-venv --no-project
