@@ -526,6 +526,9 @@ class OfflineFeatureStore:
             Timezone-aware join keys are compared as instants in the labels'
             timezone. DuckDB's connection timezone does not change which feature
             is eligible. Naive keys are not assigned an implicit timezone.
+            Comparison uses the finer timestamp unit without rounding; the
+            returned label key retains its original dtype. A conversion that
+            would overflow fails explicitly.
 
             For each label row, this joins the most recent feature row where:
             - feature.timestamp <= label.timestamp (no look-ahead)

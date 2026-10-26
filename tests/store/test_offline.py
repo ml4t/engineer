@@ -130,6 +130,17 @@ def test_supported_nanosecond_storage_never_makes_a_future_feature_available_ear
         result = store.point_in_time_join(labels, "features")
         assert_frame_equal(result.select(labels.columns), labels)
         assert result["value"].to_list() == [None]
+        later = future.with_columns(
+            pl.col("timestamp") + pl.duration(nanoseconds=1000), pl.lit(19.0).alias("value")
+        )
+        store.save_features(later, "features", mode="append")
+        assert store.load_features("features").sort("timestamp")["timestamp"].cast(
+            pl.Int64
+        ).to_list() == [instant + 900, instant + 1900]
+        decision = pl.DataFrame(
+            {"timestamp": pl.Series([instant + 1000], dtype=pl.Datetime("ns", "UTC"))}
+        )
+        assert store.point_in_time_join(decision, "features")["value"].to_list() == [9.0]
 
 
 def test_timestamp_unit_promotion_cannot_wrap_a_valid_far_future_decision():
