@@ -158,7 +158,7 @@ def test_timestamp_unit_promotion_cannot_wrap_a_valid_far_future_decision():
     labels = pl.DataFrame({"timestamp": [datetime(2500, 1, 1)]})
     with OfflineFeatureStore() as store:
         store.save_features(features, "features")
-        with pytest.raises(FeatureStoreError, match="overflow"):
+        with pytest.raises(FeatureStoreError, match="point-in-time join"):
             store.point_in_time_join(labels, "features")
     assert labels["timestamp"].to_list() == [datetime(2500, 1, 1)]
 
