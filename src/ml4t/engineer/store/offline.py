@@ -283,7 +283,7 @@ class OfflineFeatureStore:
 
         Example:
             >>> result = store.execute("SELECT COUNT(*) FROM my_features")
-            >>> count = result.fetchone()[0]
+            >>> count = result.fetchall()[0][0]
         """
         return self.connection.sql(query)
 
@@ -431,8 +431,8 @@ class OfflineFeatureStore:
 
         # Execute query and convert to Polars via Arrow (zero-copy)
         try:
-            result = self.connection.execute(query)
-            # Use .pl() method for zero-copy Arrow → Polars conversion
+            result = self.connection.sql(query)
+            # DuckDB 2 exports Polars frames from relations, not DB-API results.
             return result.pl()
         except Exception as e:
             raise FeatureStoreError(f"Failed to load features from '{table_name}': {e}") from e
@@ -489,6 +489,10 @@ class OfflineFeatureStore:
             ... )
 
         Notes:
+            Timezone-aware join keys are compared as instants in the labels'
+            timezone. DuckDB's connection timezone does not change which feature
+            is eligible. Naive keys are not assigned an implicit timezone.
+
             For each label row, this joins the most recent feature row where:
             - feature.timestamp <= label.timestamp (no look-ahead)
             - Additional join keys match (if specified)
@@ -533,6 +537,19 @@ class OfflineFeatureStore:
         try:
             # Load features from DuckDB table
             features_df = self.load_features(features_table)
+
+            label_dtype = labels.schema[timestamp_col]
+            feature_dtype = features_df.schema[timestamp_col]
+            if (
+                isinstance(label_dtype, pl.Datetime)
+                and isinstance(feature_dtype, pl.Datetime)
+                and label_dtype.time_zone is not None
+                and feature_dtype.time_zone is not None
+            ):
+                # DuckDB returns TIMESTAMPTZ in its connection timezone.
+                features_df = features_df.with_columns(
+                    pl.col(timestamp_col).dt.convert_time_zone(label_dtype.time_zone)
+                )
 
             # Ensure both DataFrames are sorted by join_keys and timestamp for join_asof
             # When using 'by' parameter, we need to sort by both join_keys and timestamp

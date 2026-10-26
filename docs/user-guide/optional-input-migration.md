@@ -130,7 +130,7 @@ factor names or assets discovered in the supplied history.
 
 ## Compatibility and qualification boundary
 
-These APIs are unreleased development additions after Engineer 0.1.6. The
+These APIs are available in Engineer 0.2.0 and later. The
 native examples need no Pyfolio, Data or Diagnostic installation. The original
 capacity method reference is Pyfolio Reloaded 0.10.0; matching its denominator
 does not establish equivalence of a portfolio tear sheet, intraday estimate or

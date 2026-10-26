@@ -11,16 +11,60 @@ Tests cover:
 
 import tempfile
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 # Check for DuckDB availability
 pytest.importorskip("duckdb")
 
 from ml4t.engineer.store import FeatureStoreError, OfflineFeatureStore
+
+
+def test_duckdb_result_conversion_preserves_nulls_projection_and_empty_schema():
+    frame = pl.DataFrame({"asset": [17, 23], "value": [None, 3.5], "eligible": [True, False]})
+    with OfflineFeatureStore() as store:
+        store.save_features(frame, "features")
+        assert_frame_equal(store.load_features("features"), frame)
+        assert_frame_equal(
+            store.load_features(
+                "features", columns=["asset", "value"], filter_expr="value IS NOT NULL", limit=1
+            ),
+            frame.select("asset", "value").tail(1),
+        )
+        assert_frame_equal(store.load_features("features", filter_expr="FALSE"), frame.head(0))
+
+
+@pytest.mark.parametrize("connection_zone", ["America/New_York", "Europe/London"])
+def test_point_in_time_join_matches_aware_instants_despite_database_timezone(connection_zone):
+    # These instants span the repeated New York hour at the DST transition.
+    first = datetime(2025, 11, 2, 5, 30, tzinfo=UTC)
+    features = pl.DataFrame(
+        {
+            "timestamp": [first, first + timedelta(hours=1)],
+            "asset": [17, 17],
+            "value": [1.0, 9.0],
+        }
+    )
+    labels = pl.DataFrame(
+        {
+            "timestamp": [first - timedelta(minutes=1), first + timedelta(minutes=15)],
+            "asset": [17, 17],
+            "target": [0, 1],
+        }
+    )
+    with OfflineFeatureStore() as store:
+        store.connection.execute(f"SET TimeZone = '{connection_zone}'")
+        store.save_features(features, "features")
+        joined = store.point_in_time_join(labels, "features", join_keys=["asset"])
+        assert_frame_equal(joined.select(labels.columns), labels)
+        assert joined["value"].to_list() == [None, 1.0]
+        expired = store.point_in_time_join(labels, "features", join_keys=["asset"], tolerance="10m")
+        assert expired["value"].to_list() == [None, None]
+
 
 # ============================================================================
 # Fixtures
