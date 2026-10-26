@@ -305,7 +305,14 @@ class OfflineFeatureStore:
 
         Raises:
             FeatureStoreError: If mode is invalid or table exists with mode="fail"
-            ValueError: If df is empty or table_name is invalid
+            ValueError: If df is empty, table_name is invalid, or the engine/table
+                cannot preserve timezone-aware submicrosecond timestamps.
+
+        Notes:
+            Lossy timestamp writes are rejected before replacing or appending
+            rows. DuckDB 2 supports aware nanoseconds in new tables; older
+            engines and existing microsecond tables may require an explicitly
+            normalized input clock.
 
         Example:
             >>> store = OfflineFeatureStore("features.duckdb")
@@ -330,6 +337,33 @@ class OfflineFeatureStore:
         # Handle mode="fail"
         if mode == "fail" and exists:
             raise FeatureStoreError(f"Table '{table_name}' already exists and mode='fail'")
+
+        destination_types = None
+        for column, dtype in df.schema.items():
+            if (
+                not isinstance(dtype, pl.Datetime)
+                or dtype.time_unit != "ns"
+                or dtype.time_zone is None
+                or not df.select((pl.col(column).cast(pl.Int64) % 1000 != 0).any()).item()
+            ):
+                continue
+            quoted_column = _quote_identifier(column, parameter="column name")
+            expression = quoted_column
+            if mode == "append" and exists:
+                if destination_types is None:
+                    destination_types = self.connection.sql(
+                        f"SELECT * FROM {quoted_table} LIMIT 0"
+                    ).types
+                destination_type = destination_types[df.columns.index(column)]
+                expression = f"CAST({quoted_column} AS {destination_type}) AS {quoted_column}"
+            roundtrip = self.connection.sql(f"SELECT {expression} FROM df").pl()[column]
+            if not isinstance(roundtrip.dtype, pl.Datetime) or not roundtrip.dt.cast_time_unit(
+                "ns"
+            ).cast(pl.Int64).equals(df[column].cast(pl.Int64)):
+                raise ValueError(
+                    f"DuckDB cannot preserve submicrosecond precision in column {column!r}; "
+                    "the table has not been changed"
+                )
 
         # Drop table if mode="replace"
         if mode == "replace" and exists:
@@ -551,11 +585,30 @@ class OfflineFeatureStore:
                     pl.col(timestamp_col).dt.convert_time_zone(label_dtype.time_zone)
                 )
 
+            labels_for_join = labels
+            if (
+                isinstance(label_dtype, pl.Datetime)
+                and isinstance(feature_dtype, pl.Datetime)
+                and label_dtype.time_unit != feature_dtype.time_unit
+            ):
+                units = {"ms": 0, "us": 1, "ns": 2}
+                unit = max((label_dtype.time_unit, feature_dtype.time_unit), key=units.__getitem__)
+                aligned = []
+                for frame in (labels, features_df):
+                    original = frame[timestamp_col]
+                    original_dtype = original.dtype
+                    assert isinstance(original_dtype, pl.Datetime)
+                    converted = original.dt.cast_time_unit(unit)
+                    if not converted.dt.cast_time_unit(original_dtype.time_unit).equals(original):
+                        raise ValueError("timestamp precision conversion would overflow")
+                    aligned.append(frame.with_columns(converted))
+                labels_for_join, features_df = aligned
+
             # Ensure both DataFrames are sorted by join_keys and timestamp for join_asof
             # When using 'by' parameter, we need to sort by both join_keys and timestamp
             # to avoid sortedness warnings and ensure correct join behavior
             sort_cols = join_keys + [timestamp_col] if join_keys else [timestamp_col]
-            labels_sorted = labels.sort(sort_cols)
+            labels_sorted = labels_for_join.sort(sort_cols)
             features_sorted = features_df.sort(sort_cols)
 
             # Perform point-in-time join using Polars' join_asof
@@ -576,6 +629,8 @@ class OfflineFeatureStore:
                     tolerance=tolerance,  # Optional time window
                 )
 
+            if result.schema[timestamp_col] != label_dtype:
+                result = result.with_columns(pl.col(timestamp_col).cast(label_dtype))
             return result
 
         except Exception as e:

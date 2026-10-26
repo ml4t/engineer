@@ -16,10 +16,11 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+from packaging.version import Version
 from polars.testing import assert_frame_equal
 
 # Check for DuckDB availability
-pytest.importorskip("duckdb")
+duckdb = pytest.importorskip("duckdb")
 
 from ml4t.engineer.store import FeatureStoreError, OfflineFeatureStore
 
@@ -64,6 +65,83 @@ def test_point_in_time_join_matches_aware_instants_despite_database_timezone(con
         assert joined["value"].to_list() == [None, 1.0]
         expired = store.point_in_time_join(labels, "features", join_keys=["asset"], tolerance="10m")
         assert expired["value"].to_list() == [None, None]
+
+
+@pytest.mark.parametrize("zone", [None, "UTC"])
+@pytest.mark.parametrize("feature_unit,label_unit", [("ns", "us"), ("us", "ns"), ("ms", "us")])
+def test_point_in_time_join_reconciles_units_without_rounding_future_features(
+    zone, feature_unit, label_unit
+):
+    instant = datetime(2025, 7, 7, 12, tzinfo=UTC if zone else None)
+    features = pl.DataFrame(
+        {"timestamp": [instant, instant + timedelta(seconds=1)], "value": [1.0, 9.0]}
+    ).with_columns(pl.col("timestamp").dt.cast_time_unit(feature_unit))
+    labels = pl.DataFrame({"timestamp": [instant + timedelta(microseconds=500)]}).with_columns(
+        pl.col("timestamp").dt.cast_time_unit(label_unit)
+    )
+    with OfflineFeatureStore() as store:
+        store.save_features(features, "features")
+        result = store.point_in_time_join(labels, "features")
+        assert_frame_equal(result.select(labels.columns), labels)
+        assert result["value"].to_list() == [1.0]
+
+
+def test_submicrosecond_append_cannot_round_values_into_existing_microsecond_schema():
+    instant = 1750000000000000000
+    original = pl.DataFrame(
+        {"timestamp": pl.Series([instant // 1000], dtype=pl.Datetime("us", "UTC"))}
+    )
+    future = pl.DataFrame({"timestamp": pl.Series([instant + 900], dtype=pl.Datetime("ns", "UTC"))})
+    with OfflineFeatureStore() as store:
+        store.save_features(original, "features")
+        before = store.load_features("features")
+        with pytest.raises(ValueError, match="submicrosecond"):
+            store.save_features(future, "features", mode="append")
+        assert_frame_equal(store.load_features("features"), before)
+
+
+@pytest.mark.skipif(Version(duckdb.__version__) >= Version("2"), reason="DuckDB 2 preserves ns")
+def test_lossy_aware_nanosecond_replace_is_rejected_before_dropping_existing_table():
+    instant = 1750000000000000000
+    original = pl.DataFrame({"timestamp": pl.Series([instant], dtype=pl.Datetime("ns", "UTC"))})
+    future = original.with_columns(pl.col("timestamp") + pl.duration(nanoseconds=900))
+    with OfflineFeatureStore() as store:
+        store.save_features(original, "features")
+        before = store.load_features("features")
+        with pytest.raises(ValueError, match="submicrosecond"):
+            store.save_features(future, "features")
+        assert_frame_equal(store.load_features("features"), before)
+
+
+@pytest.mark.skipif(Version(duckdb.__version__) < Version("2"), reason="DuckDB 1 loses aware ns")
+def test_supported_nanosecond_storage_never_makes_a_future_feature_available_early():
+    instant = 1750000000000000000
+    future = pl.DataFrame(
+        {"timestamp": pl.Series([instant + 900], dtype=pl.Datetime("ns", "UTC")), "value": [9.0]}
+    )
+    labels = pl.DataFrame(
+        {"timestamp": pl.Series([instant // 1000], dtype=pl.Datetime("us", "UTC"))}
+    )
+    with OfflineFeatureStore() as store:
+        store.save_features(future, "features")
+        assert store.load_features("features")["timestamp"].cast(pl.Int64).to_list() == [
+            instant + 900
+        ]
+        result = store.point_in_time_join(labels, "features")
+        assert_frame_equal(result.select(labels.columns), labels)
+        assert result["value"].to_list() == [None]
+
+
+def test_timestamp_unit_promotion_cannot_wrap_a_valid_far_future_decision():
+    features = pl.DataFrame({"timestamp": [datetime(2025, 7, 7)], "value": [9.0]}).with_columns(
+        pl.col("timestamp").dt.cast_time_unit("ns")
+    )
+    labels = pl.DataFrame({"timestamp": [datetime(2500, 1, 1)]})
+    with OfflineFeatureStore() as store:
+        store.save_features(features, "features")
+        with pytest.raises(FeatureStoreError, match="overflow"):
+            store.point_in_time_join(labels, "features")
+    assert labels["timestamp"].to_list() == [datetime(2500, 1, 1)]
 
 
 # ============================================================================
