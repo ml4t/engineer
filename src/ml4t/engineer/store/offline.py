@@ -306,7 +306,7 @@ class OfflineFeatureStore:
         Raises:
             FeatureStoreError: If mode is invalid or table exists with mode="fail"
             ValueError: If df is empty, table_name is invalid, or the engine/table
-                cannot preserve timezone-aware submicrosecond timestamps.
+                cannot preserve timestamp precision.
 
         Notes:
             Lossy timestamp writes are rejected before replacing or appending
@@ -340,28 +340,30 @@ class OfflineFeatureStore:
 
         destination_types = None
         for column, dtype in df.schema.items():
-            if (
-                not isinstance(dtype, pl.Datetime)
-                or dtype.time_unit != "ns"
-                or dtype.time_zone is None
-                or not df.select((pl.col(column).cast(pl.Int64) % 1000 != 0).any()).item()
+            if not isinstance(dtype, pl.Datetime) or (
+                dtype.time_unit != "ns" and not (mode == "append" and exists)
             ):
                 continue
             quoted_column = _quote_identifier(column, parameter="column name")
             expression = quoted_column
-            if mode == "append" and exists:
-                if destination_types is None:
-                    destination_types = self.connection.sql(
-                        f"SELECT * FROM {quoted_table} LIMIT 0"
-                    ).types
-                destination_type = destination_types[df.columns.index(column)]
-                expression = f"CAST({quoted_column} AS {destination_type}) AS {quoted_column}"
-            roundtrip = self.connection.sql(f"SELECT {expression} FROM df").pl()[column]
+            try:
+                if mode == "append" and exists:
+                    if destination_types is None:
+                        destination_types = self.connection.sql(
+                            f"SELECT * FROM {quoted_table} LIMIT 0"
+                        ).types
+                    destination_type = destination_types[df.columns.index(column)]
+                    expression = f"CAST({quoted_column} AS {destination_type}) AS {quoted_column}"
+                roundtrip = self.connection.sql(f"SELECT {expression} FROM df").pl()[column]
+            except Exception as e:
+                raise FeatureStoreError(
+                    f"Failed to validate timestamp precision for {column!r}: {e}"
+                ) from e
             if not isinstance(roundtrip.dtype, pl.Datetime) or not roundtrip.dt.cast_time_unit(
-                "ns"
+                dtype.time_unit
             ).cast(pl.Int64).equals(df[column].cast(pl.Int64)):
                 raise ValueError(
-                    f"DuckDB cannot preserve submicrosecond precision in column {column!r}; "
+                    f"DuckDB cannot preserve timestamp precision in column {column!r}; "
                     "the table has not been changed"
                 )
 

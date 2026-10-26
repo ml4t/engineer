@@ -86,16 +86,22 @@ def test_point_in_time_join_reconciles_units_without_rounding_future_features(
         assert result["value"].to_list() == [1.0]
 
 
-def test_submicrosecond_append_cannot_round_values_into_existing_microsecond_schema():
+@pytest.mark.parametrize(
+    "zone,coarse,fine", [(None, "us", "ns"), ("UTC", "us", "ns"), (None, "ms", "us")]
+)
+def test_append_cannot_round_timestamp_values_into_coarser_schema(zone, coarse, fine):
     instant = 1750000000000000000
+    scales = {"ns": 1, "us": 1000, "ms": 1000000}
     original = pl.DataFrame(
-        {"timestamp": pl.Series([instant // 1000], dtype=pl.Datetime("us", "UTC"))}
+        {"timestamp": pl.Series([instant // scales[coarse]], dtype=pl.Datetime(coarse, zone))}
     )
-    future = pl.DataFrame({"timestamp": pl.Series([instant + 900], dtype=pl.Datetime("ns", "UTC"))})
+    future = pl.DataFrame(
+        {"timestamp": pl.Series([instant // scales[fine] + 900], dtype=pl.Datetime(fine, zone))}
+    )
     with OfflineFeatureStore() as store:
         store.save_features(original, "features")
         before = store.load_features("features")
-        with pytest.raises(ValueError, match="submicrosecond"):
+        with pytest.raises(ValueError, match="precision"):
             store.save_features(future, "features", mode="append")
         assert_frame_equal(store.load_features("features"), before)
 
@@ -108,19 +114,21 @@ def test_lossy_aware_nanosecond_replace_is_rejected_before_dropping_existing_tab
     with OfflineFeatureStore() as store:
         store.save_features(original, "features")
         before = store.load_features("features")
-        with pytest.raises(ValueError, match="submicrosecond"):
+        with pytest.raises(ValueError, match="precision"):
             store.save_features(future, "features")
         assert_frame_equal(store.load_features("features"), before)
 
 
-@pytest.mark.skipif(Version(duckdb.__version__) < Version("2"), reason="DuckDB 1 loses aware ns")
-def test_supported_nanosecond_storage_never_makes_a_future_feature_available_early():
+@pytest.mark.parametrize("zone", [None, "UTC"])
+def test_supported_nanosecond_storage_never_makes_a_future_feature_available_early(zone):
+    if zone is not None and Version(duckdb.__version__) < Version("2"):
+        pytest.skip("DuckDB 1 loses aware ns; atomic rejection is tested separately")
     instant = 1750000000000000000
     future = pl.DataFrame(
-        {"timestamp": pl.Series([instant + 900], dtype=pl.Datetime("ns", "UTC")), "value": [9.0]}
+        {"timestamp": pl.Series([instant + 900], dtype=pl.Datetime("ns", zone)), "value": [9.0]}
     )
     labels = pl.DataFrame(
-        {"timestamp": pl.Series([instant // 1000], dtype=pl.Datetime("us", "UTC"))}
+        {"timestamp": pl.Series([instant // 1000], dtype=pl.Datetime("us", zone))}
     )
     with OfflineFeatureStore() as store:
         store.save_features(future, "features")
@@ -138,7 +146,7 @@ def test_supported_nanosecond_storage_never_makes_a_future_feature_available_ear
             pl.Int64
         ).to_list() == [instant + 900, instant + 1900]
         decision = pl.DataFrame(
-            {"timestamp": pl.Series([instant + 1000], dtype=pl.Datetime("ns", "UTC"))}
+            {"timestamp": pl.Series([instant + 1000], dtype=pl.Datetime("ns", zone))}
         )
         assert store.point_in_time_join(decision, "features")["value"].to_list() == [9.0]
 
@@ -153,6 +161,18 @@ def test_timestamp_unit_promotion_cannot_wrap_a_valid_far_future_decision():
         with pytest.raises(FeatureStoreError, match="overflow"):
             store.point_in_time_join(labels, "features")
     assert labels["timestamp"].to_list() == [datetime(2500, 1, 1)]
+
+
+def test_invalid_timestamp_append_keeps_library_error_boundary_and_existing_table():
+    with OfflineFeatureStore() as store:
+        original = pl.DataFrame({"timestamp": [1]})
+        store.save_features(original, "features")
+        incompatible = pl.DataFrame(
+            {"timestamp": pl.Series([1750000000000000900], dtype=pl.Datetime("ns", "UTC"))}
+        )
+        with pytest.raises(FeatureStoreError):
+            store.save_features(incompatible, "features", mode="append")
+        assert_frame_equal(store.load_features("features"), original)
 
 
 # ============================================================================
