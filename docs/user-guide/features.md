@@ -24,7 +24,7 @@ Standalone cross-asset utilities such as beta, rolling correlation, and
 cointegration are documented below, but they are not part of the 120-feature
 registry count.
 
-The pinned book notebooks combine direct Engineer calls with manual teaching implementations. Start with [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) for `compute_features()`, then use the [Book Guide](../book-guide/index.md) to check each notebook's exact relationship to the API.
+The book notebooks combine Engineer examples with step-by-step explanations of the methods. Start with [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) for `compute_features()`, then use the [Book Guide](../book-guide/index.md) to find related examples and library guides.
 
 ## Computation API
 
@@ -1052,7 +1052,7 @@ Invalid parameters raise `ValueError` with the valid parameter names.
 - [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) calls the registry and `compute_features()`.
 - [Price and Volume Feature Families](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/01_price_volume_features.ipynb) combines Engineer calls with manual teaching implementations.
 - [ETFs: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/03_financial_features.ipynb) calls individual Engineer functions in a case-study pipeline.
-- [Book Guide](../book-guide/index.md) records the pinned revision and relationship for every selected notebook.
+- [Book Guide](../book-guide/index.md) connects the notebooks to Engineer functions and task guides.
 
 ## Next Steps
 

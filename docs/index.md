@@ -24,19 +24,19 @@ signals and models.
     Compute features, create labels, sample bars, and build leakage-safe datasets.
     [:octicons-arrow-right-24: Features](user-guide/features.md)
 
--   :material-label:{ .lg .middle } __Exact API reference__
+-   :material-label:{ .lg .middle } __API reference__
 
     ---
 
     Look up released functions, classes, signatures, and supported options.
     [:octicons-arrow-right-24: API Reference](api/index.md)
 
--   :material-book-open-variant:{ .lg .middle } __Checked book notebooks__
+-   :material-book-open-variant:{ .lg .middle } __Book notebooks__
 
     ---
 
-    Open commit-pinned notebooks and see whether each one calls Engineer, teaches the
-    method manually, or illustrates a related workflow.
+    Explore feature engineering, labeling, and bar sampling in the book notebooks,
+    with links to the corresponding library guides.
     [:octicons-arrow-right-24: Book Guide](book-guide/index.md)
 
 </div>
