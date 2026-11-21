@@ -47,6 +47,7 @@ def prepare_feature_panel(
     missing_input_policy: Literal["complete", "known_missing"] = "complete",
     input_mask: str | pl.Expr | None = None,
     screen: str | pl.Expr | None = None,
+    append_only: bool = False,
 ) -> pl.DataFrame | pl.LazyFrame:
     """Calculate finite per-asset features with explicit causal eligibility.
 
@@ -72,6 +73,11 @@ def prepare_feature_panel(
     Unavailable/masked rows stay in history with null inputs, never compressed or
     filled. A final screen runs only after all values and eligibility are computed.
     Cross-sectional transforms operate on the resulting eligible population.
+
+    append_only computes every feature once over the whole history instead of once
+    per decision. It requires features and input_mask that read no later row, no
+    history_decision_time_col, and every row up to a decision known by that
+    decision; the panel then equals the per-decision one.
     """
     if not features or set(features) != set(lookbacks):
         raise ValueError("Declare the same nonempty feature names and lookbacks")
@@ -94,6 +100,8 @@ def prepare_feature_panel(
         raise ValueError("Declare a nonempty price_basis")
     if missing_input_policy not in {"complete", "known_missing"}:
         raise ValueError("missing_input_policy must be complete or known_missing")
+    if append_only and history_decision_time_col:
+        raise ValueError("append_only histories have no decision-specific snapshots")
     if any(
         value is not None and not isinstance(value, str | pl.Expr) for value in (input_mask, screen)
     ):
@@ -320,6 +328,53 @@ def prepare_feature_panel(
     if universe_time_col not in result_schema:
         result_schema[universe_time_col] = decision_frame.schema[universe_time_col]
 
+    def ready_values(history: pl.DataFrame, known_rows: pl.Expr) -> pl.DataFrame:
+        """Feature values and the instant they are known, on every row of a sorted history."""
+        usable = known_rows
+        confirmed = usable
+        for column in input_columns:
+            value = pl.col(column)
+            valid = _usable_value(value, schema[column])
+            missing = value.is_null()
+            if schema[column].is_float():
+                missing |= value.is_nan()
+            confirmed &= valid | missing
+            usable &= valid
+        if input_mask is not None:
+            usable &= (pl.col(input_mask) if isinstance(input_mask, str) else input_mask).fill_null(
+                False
+            )
+        history = history.with_columns(
+            usable.alias(source_usable),
+            (usable if missing_input_policy == "complete" else confirmed).alias(source_ready),
+        )
+        history = history.with_columns(
+            pl.when(pl.col(source_usable)).then(pl.col(c)).alias(c) for c in input_columns
+        )
+        available = []
+        for name in features:
+            count = lookbacks[name]
+            full = pl.col(source_ready).cast(pl.Int64).rolling_sum(count) == count
+            available.append(
+                pl.when(full)
+                .then(pl.col(known).cast(pl.Int64).rolling_max(count))
+                .over(entities)
+                .alias(prefix + name)
+            )
+        history = (
+            history.with_columns(available)
+            .select(*keys, *input_columns, *[prefix + name for name in features])
+            .with_columns(expr.over(entities).alias(name) for name, expr in features.items())
+        )
+        history = history.with_columns(
+            pl.when(pl.col(prefix + name).is_not_null()).then(pl.col(name)).alias(name)
+            for name in features
+        )
+        knowledge = pl.when(
+            pl.all_horizontal(pl.col(prefix + name).is_not_null() for name in features)
+        ).then(pl.max_horizontal(pl.col(prefix + name) for name in features))
+        return history.select(*keys, *features, knowledge.alias(feature_known))
+
     def calculate(frame: pl.DataFrame) -> pl.DataFrame:
         source = clock(frame, available_at_col, known)
         unique_keys = [*keys]
@@ -332,6 +387,54 @@ def prepare_feature_panel(
             raise ValueError(
                 "Duplicate history keys; select source revisions/perspectives upstream"
             )
+        if append_only:
+            seen = (
+                source.filter(pl.col(known).is_not_null())
+                .group_by(timestamp)
+                .agg(pl.col(known).max())
+                .sort(timestamp)
+                .with_columns(pl.col(known).cum_max())
+            )
+            late = (
+                decision_frame.select(timestamp, cutoff)
+                .sort(timestamp)
+                .join_asof(seen, on=timestamp, strategy="backward")
+                .filter(pl.col(known) > pl.col(cutoff))
+            )
+            if late.height:
+                raise ValueError(
+                    "append_only requires every row up to a decision to be known by that decision"
+                )
+            ordered = source.sort([*entities, timestamp])
+            if resolved is not None:
+                # Each decision's history is a prefix of this one and grid checks are per row,
+                # so checking the history up to the last decision checks them all.
+                checked = ordered.filter(
+                    pl.col(timestamp) <= pl.lit(decision_frame[timestamp]).max()
+                )
+                if not checked.is_empty():
+                    validate_declared_grid(
+                        checked,
+                        feed_spec=contract,
+                        calendar=resolved,
+                        timestamp_col=timestamp,
+                        group_cols=entities,
+                    )
+            computed = (
+                ready_values(ordered, pl.col(known).is_not_null())
+                .filter(pl.col(timestamp).is_in(decision_frame[timestamp].implode()))
+                .with_columns(pl.col(timestamp).to_physical().alias(prefix + "key"))
+            )
+            undecided = computed.clear().select(*entities, *features, feature_known)
+            decided = {
+                key: rows.select(*entities, *features, feature_known)
+                for (key,), rows in computed.partition_by(prefix + "key", as_dict=True).items()
+            }
+            first_known = (
+                source.filter(pl.col(known).is_not_null())
+                .group_by(entities)
+                .agg(pl.col(timestamp).min().alias(prefix + "first"))
+            )
         output = []
         for i in range(decision_frame.height):
             decision = decision_frame.slice(i, 1)
@@ -342,12 +445,15 @@ def prepare_feature_panel(
                 if isinstance(universe_dtype, pl.Datetime)
                 else pl.lit(decision[universe_time_col]).first()
             )
-            history = source
-            if history_decision_time_col:
-                history = history.filter(pl.col(prefix + "snapshot") == instant)
-                if history.is_empty():
-                    raise ValueError("Missing prepared history snapshot for a requested decision")
-            history = history.filter(pl.col(timestamp) <= bound).sort([*entities, timestamp])
+            if not append_only:
+                history = source
+                if history_decision_time_col:
+                    history = history.filter(pl.col(prefix + "snapshot") == instant)
+                    if history.is_empty():
+                        raise ValueError(
+                            "Missing prepared history snapshot for a requested decision"
+                        )
+                history = history.filter(pl.col(timestamp) <= bound).sort([*entities, timestamp])
             facts = universe_frame.filter(
                 (pl.col(universe_from) <= effective)
                 & (pl.col(universe_to).is_null() | (pl.col(universe_to) > effective))
@@ -355,63 +461,34 @@ def prepare_feature_panel(
             )
             if facts.select(pl.struct(entities).is_duplicated().any()).item():
                 raise ValueError("Ambiguous overlapping known universe facts; resolve upstream")
-            if resolved is not None and not history.is_empty():
-                validate_declared_grid(
-                    history,
-                    feed_spec=contract,
-                    calendar=resolved,
-                    timestamp_col=timestamp,
-                    group_cols=entities,
+            if append_only:
+                assets = pl.concat(
+                    [
+                        first_known.filter(pl.col(prefix + "first") <= bound).select(entities),
+                        facts.select(entities),
+                    ]
+                ).unique()
+                latest = decided.get(decision[timestamp].to_physical().item(), undecided)
+            else:
+                if resolved is not None and not history.is_empty():
+                    validate_declared_grid(
+                        history,
+                        feed_spec=contract,
+                        calendar=resolved,
+                        timestamp_col=timestamp,
+                        group_cols=entities,
+                    )
+                assets = pl.concat(
+                    [
+                        history.filter(pl.col(known) <= instant).select(entities),
+                        facts.select(entities),
+                    ]
+                ).unique()
+                latest = (
+                    ready_values(history, pl.col(known).is_not_null() & (pl.col(known) <= instant))
+                    .filter(pl.col(timestamp) == bound)
+                    .select(*entities, *features, feature_known)
                 )
-            usable = pl.col(known).is_not_null() & (pl.col(known) <= instant)
-            confirmed = usable
-            for column in input_columns:
-                value = pl.col(column)
-                valid = _usable_value(value, schema[column])
-                missing = value.is_null()
-                if schema[column].is_float():
-                    missing |= value.is_nan()
-                confirmed &= valid | missing
-                usable &= valid
-            if input_mask is not None:
-                usable &= (
-                    pl.col(input_mask) if isinstance(input_mask, str) else input_mask
-                ).fill_null(False)
-            history = history.with_columns(
-                usable.alias(source_usable),
-                (usable if missing_input_policy == "complete" else confirmed).alias(source_ready),
-            )
-            assets = pl.concat(
-                [history.filter(pl.col(known) <= instant).select(entities), facts.select(entities)]
-            ).unique()
-            history = history.with_columns(
-                pl.when(pl.col(source_usable)).then(pl.col(c)).alias(c) for c in input_columns
-            )
-            available = []
-            for name in features:
-                count = lookbacks[name]
-                full = pl.col(source_ready).cast(pl.Int64).rolling_sum(count) == count
-                available.append(
-                    pl.when(full)
-                    .then(pl.col(known).cast(pl.Int64).rolling_max(count))
-                    .over(entities)
-                    .alias(prefix + name)
-                )
-            history = (
-                history.with_columns(available)
-                .select(*keys, *input_columns, *[prefix + name for name in features])
-                .with_columns(expr.over(entities).alias(name) for name, expr in features.items())
-            )
-            history = history.with_columns(
-                pl.when(pl.col(prefix + name).is_not_null()).then(pl.col(name)).alias(name)
-                for name in features
-            )
-            knowledge = pl.when(
-                pl.all_horizontal(pl.col(prefix + name).is_not_null() for name in features)
-            ).then(pl.max_horizontal(pl.col(prefix + name) for name in features))
-            latest = history.filter(pl.col(timestamp) == bound).select(
-                *entities, *features, knowledge.alias(feature_known)
-            )
             result = assets.join(latest, on=entities, how="left", validate="1:1").join(
                 facts.select(
                     *entities, "member", *extra, pl.col(known).cast(pl.Int64).alias(known)
