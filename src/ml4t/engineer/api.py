@@ -30,7 +30,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP, KEYWORD_ONLY_PARAMS
+from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP, INPUT_TYPE_COLUMNS, KEYWORD_ONLY_PARAMS
 from ml4t.engineer.core.registry import get_registry
 
 # =============================================================================
@@ -39,18 +39,6 @@ from ml4t.engineer.core.registry import get_registry
 # These mappings translate function parameter names to DataFrame column names.
 # Moved to module level to avoid recreation on every feature execution.
 # =============================================================================
-
-# Map input_type metadata to required DataFrame columns
-# This enables deriving column requirements from FeatureMetadata.input_type
-INPUT_TYPE_COLUMNS: dict[str, list[str]] = {
-    "OHLCV": ["open", "high", "low", "close", "volume"],
-    "OHLC": ["open", "high", "low", "close"],
-    "HLC": ["high", "low", "close"],
-    "HL": ["high", "low"],
-    "close": ["close"],
-    "returns": ["returns"],
-    "volume": ["volume"],
-}
 
 _GROUP_COLUMN_CANDIDATES = ("asset_id", "symbol", "ticker", "product", "asset")
 _TIME_COLUMN_CANDIDATES = ("timestamp", "event_time", "date", "datetime")
@@ -641,6 +629,23 @@ def _execute_feature(
                 f'Use: compute_features(df, [{{"name": "{feature_name}", '
                 f'"params": {{"{param_name}": value}}}}])'
             )
+
+    available = data.columns if isinstance(data, pl.DataFrame) else data.collect_schema().names()
+    passed = [c for arg in column_args for c in (arg if isinstance(arg, list) else [arg])]
+    missing = [c for c in dict.fromkeys(passed) if c not in available]
+    if missing:
+        hint = (
+            " Add a 'returns' column first, for example "
+            "data.with_columns(returns=pl.col('close').pct_change().over('symbol')); "
+            "the feature's docstring states the returns it expects."
+            if "returns" in missing
+            else ""
+        )
+        raise ValueError(
+            f"Feature '{feature_name}' needs column(s) {missing}, which the input lacks "
+            f"(input_type '{metadata.input_type}' requires "
+            f"{INPUT_TYPE_COLUMNS.get(metadata.input_type)}).{hint}"
+        )
 
     # Call the feature function
     try:
