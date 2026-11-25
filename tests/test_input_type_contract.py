@@ -104,3 +104,122 @@ def test_close_only_catalog_entries_exclude_range_and_volume_features() -> None:
     close_only = set(feature_catalog.by_input_type("close"))
     assert {"atr", "adx", "obv", "realized_volatility", "donchian_channels"}.isdisjoint(close_only)
     assert {"rsi", "ema"} <= close_only
+
+
+_QUOTE_PARAMS = {
+    "bid_ask_imbalance": {"bid_size": "buy_size", "ask_size": "sell_size"},
+    "book_depth_ratio": {"bid_depth": "buy_size", "ask_depth": "sell_size"},
+    "weighted_mid_price": {
+        "bid_price": "buy_price",
+        "ask_price": "sell_price",
+        "bid_size": "buy_size",
+        "ask_size": "sell_size",
+    },
+}
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("name", sorted(_QUOTE_PARAMS))
+def test_missing_default_quote_columns_name_the_feature(name: str, lazy: bool) -> None:
+    frame = _frame_for(INPUT_TYPE_COLUMNS["OHLCV"])
+    data = frame.lazy() if lazy else frame
+    with pytest.raises(ValueError, match=rf"{name}.*needs column") as error:
+        compute_features(data, [name], calendar=None)
+    assert "'bid_size'" in str(error.value)
+    assert "'ask_size'" in str(error.value)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("expression", [False, True])
+@pytest.mark.parametrize("name", sorted(_QUOTE_PARAMS))
+def test_custom_quote_columns_do_not_require_unused_defaults(
+    name: str, expression: bool, lazy: bool
+) -> None:
+    from polars.testing import assert_frame_equal
+
+    frame = _frame_for(INPUT_TYPE_COLUMNS["OHLCV"]).with_columns(
+        buy_size=pl.lit(300.0),
+        sell_size=pl.lit(100.0),
+        buy_price=pl.lit(99.0),
+        sell_price=pl.lit(101.0),
+    )
+    params = {
+        key: pl.col(value) if expression else value for key, value in _QUOTE_PARAMS[name].items()
+    }
+    data = frame.lazy() if lazy else frame
+    out = compute_features(data, [{"name": name, "params": params}], calendar=None)
+    if isinstance(out, pl.LazyFrame):
+        out = out.collect()
+    expected = {"bid_ask_imbalance": 0.5, "book_depth_ratio": 0.75, "weighted_mid_price": 100.5}
+    assert out[name].to_list() == [expected[name]] * frame.height
+    assert_frame_equal(out.select(frame.columns), frame)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("expression", [False, True])
+@pytest.mark.parametrize("name", sorted(_QUOTE_PARAMS))
+def test_missing_custom_quote_column_names_the_actual_input(
+    name: str, expression: bool, lazy: bool
+) -> None:
+    frame = _frame_for(INPUT_TYPE_COLUMNS["OHLCV"] + INPUT_TYPE_COLUMNS["quote"])
+    params = {
+        key: pl.col(value) if expression else value for key, value in _QUOTE_PARAMS[name].items()
+    }
+    data = frame.lazy() if lazy else frame
+    with pytest.raises(ValueError, match=rf"{name}.*needs column") as error:
+        compute_features(data, [{"name": name, "params": params}], calendar=None)
+    assert "'buy_size'" in str(error.value)
+    assert "'sell_size'" in str(error.value)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("name", ["bid_ask_imbalance", "book_depth_ratio"])
+def test_size_only_quotes_do_not_require_unused_prices(name: str, lazy: bool) -> None:
+    frame = _frame_for(INPUT_TYPE_COLUMNS["OHLCV"] + ["bid_size", "ask_size"])
+    out = compute_features(frame.lazy() if lazy else frame, [name], calendar=None)
+    if isinstance(out, pl.LazyFrame):
+        out = out.collect()
+    assert out[name].null_count() == 0
+
+
+@pytest.mark.parametrize("input_type", ["close", "unknown"])
+def test_registration_rejects_a_label_that_cannot_supply_required_returns(input_type: str) -> None:
+    from ml4t.engineer.core.decorators import feature
+
+    with pytest.raises(TypeError, match="input_type"):
+
+        @feature(
+            name="invalid_returns_contract",
+            category="volatility",
+            description="Invalid label",
+            lookback=0,
+            input_type=input_type,
+        )
+        def invalid_returns_contract(returns: pl.Expr | str) -> pl.Expr:
+            return pl.col(returns) if isinstance(returns, str) else returns
+
+
+def test_third_party_returns_feature_is_registered_and_computes_from_inferred_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ml4t.engineer.core import decorators
+    from ml4t.engineer.core.registry import FeatureRegistry
+
+    registry = FeatureRegistry()
+    monkeypatch.setattr(decorators, "get_registry", lambda: registry)
+
+    @decorators.feature(
+        name="custom_returns_contract",
+        category="volatility",
+        description="Returns variance",
+        lookback=0,
+    )
+    def custom_returns_contract(returns: pl.Expr | str) -> pl.Expr:
+        expr = pl.col(returns) if isinstance(returns, str) else returns
+        return expr * expr
+
+    metadata = registry.get("custom_returns_contract")
+    assert metadata is not None
+    assert metadata.input_type == "returns"
+    result = pl.DataFrame({"returns": [0.0, 0.5, -0.25]}).select(metadata.func("returns"))
+    assert result.to_series().to_list() == [0.0, 0.25, 0.0625]

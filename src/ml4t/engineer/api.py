@@ -632,20 +632,24 @@ def _execute_feature(
 
     available = data.columns if isinstance(data, pl.DataFrame) else data.collect_schema().names()
     passed = [c for arg in column_args for c in (arg if isinstance(arg, list) else [arg])]
-    missing = [c for c in dict.fromkeys(passed) if c not in available]
-    if missing:
-        hint = (
-            " Add a 'returns' column first, for example "
-            "data.with_columns(returns=pl.col('close').pct_change().over('symbol')); "
-            "the feature's docstring states the returns it expects."
-            if "returns" in missing
-            else ""
-        )
-        raise ValueError(
-            f"Feature '{feature_name}' needs column(s) {missing}, which the input lacks "
-            f"(input_type '{metadata.input_type}' requires "
-            f"{INPUT_TYPE_COLUMNS.get(metadata.input_type)}).{hint}"
-        )
+
+    def validate_columns(columns: list[str]) -> None:
+        missing = sorted(set(columns) - set(available))
+        if missing:
+            hint = (
+                " Add a 'returns' column using the return definition in the feature's docstring. "
+                "Validate the declared bar grid before deriving one-bar returns; "
+                "calendar=None uses row order without validating scheduled bars."
+                if "returns" in missing
+                else ""
+            )
+            raise ValueError(
+                f"Feature '{feature_name}' needs column(s) {missing}, which the input lacks "
+                f"(input_type '{metadata.input_type}' provides default columns "
+                f"{INPUT_TYPE_COLUMNS.get(metadata.input_type)}).{hint}"
+            )
+
+    validate_columns(passed)
 
     # Call the feature function
     try:
@@ -659,6 +663,23 @@ def _execute_feature(
             f"Available metadata: input_type='{metadata.input_type}', "
             f"parameters={metadata.parameters}"
         ) from e
+
+    if isinstance(result, pl.Expr):
+        expressions = [result]
+    elif isinstance(result, dict):
+        expressions = list(result.values())
+    elif isinstance(result, tuple | list):
+        expressions = list(result)
+    else:
+        expressions = []
+    validate_columns(
+        [
+            column
+            for expr in expressions
+            if isinstance(expr, pl.Expr)
+            for column in expr.meta.root_names()
+        ]
+    )
 
     # Handle different return types
     if isinstance(result, pl.Expr):

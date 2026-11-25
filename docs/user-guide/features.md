@@ -1,6 +1,6 @@
 # Technical Indicators
 
-ML4T Engineer provides 120 registry features across 11 categories, built on
+ML4T Engineer provides 136 registry features across 11 categories, built on
 Polars with Numba JIT for performance-critical kernels. 60 indicators are
 validated against TA-Lib at 1e-6 tolerance.
 
@@ -8,20 +8,20 @@ validated against TA-Lib at 1e-6 tolerance.
 
 | Category | Count | TA-Lib | Key Indicators |
 |----------|-------|--------|----------------|
-| Momentum | 31 | 19 | RSI, MACD, Stochastic, CCI, ADX, MFI |
-| Volatility | 15 | 4 | ATR, Bollinger, Yang-Zhang, Parkinson, GARCH |
+| Momentum | 36 | 29 | RSI, MACD, Stochastic, CCI, ADX, MFI |
+| Volatility | 18 | 4 | ATR, Bollinger, Yang-Zhang, Parkinson, GARCH |
 | Microstructure | 15 | 0 | Kyle Lambda, Amihud, Roll Spread, Realized Spread |
-| Trend | 10 | 9 | SMA, EMA, WMA, DEMA, TEMA, KAMA |
+| Trend | 15 | 9 | SMA, EMA, WMA, DEMA, TEMA, KAMA |
 | ML Features | 14 | 0 | Lag, Entropy, Fourier, Cyclical Encode |
-| Statistics | 14 | 7 | STDDEV, Linear Regression, TSF, Variance Ratio |
-| Risk | 6 | 0 | Max Drawdown, Downside Deviation, Sharpe, Sortino |
+| Statistics | 15 | 7 | STDDEV, Linear Regression, TSF, Variance Ratio |
+| Risk | 7 | 0 | Max Drawdown, Downside Deviation, Sharpe, Sortino |
 | Price Transform | 5 | 5 | Typical Price, Weighted Close, Average Price |
 | Regime | 4 | 0 | Hurst Exponent, Choppiness, Fractal Efficiency |
-| Volume | 3 | 3 | OBV, AD, ADOSC |
+| Volume | 4 | 3 | OBV, AD, ADOSC |
 | Math | 3 | 3 | Maximum, Minimum, Summation |
 
 Standalone cross-asset utilities such as beta, rolling correlation, and
-cointegration are documented below, but they are not part of the 120-feature
+cointegration are documented below, but they are not part of the 136-feature
 registry count.
 
 The book notebooks combine Engineer examples with step-by-step explanations of the methods. Start with [The ml4t Library Ecosystem](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/07_defining_the_learning_task/10_ml4t_library_ecosystem.ipynb) for `compute_features()`, then use the [Book Guide](../book-guide/index.md) to find related examples and library guides.
@@ -84,6 +84,25 @@ result = compute_features(df, [
 
 Unknown parameters, repeated output names, and output names that replace input columns
 raise `ValueError` before feature execution.
+
+### Select features by available inputs
+
+`feature_catalog.by_input_type("close")` lists features whose declared inputs are
+close prices. Range, volume, returns, and quote features have separate labels.
+The label describes the default columns, while `compute_features()` validates the
+columns actually referenced by each feature, including custom quote column names.
+Missing inputs raise `ValueError` naming the feature and missing columns for both
+eager and lazy frames. The computation API still requires its OHLCV schema.
+
+Returns-based features require an explicitly supplied `returns` column. Use the
+return definition documented by the feature and validate the declared bar grid
+before deriving one-bar returns. `calendar=None` selects observation rows and
+does not establish that adjacent prices represent consecutive scheduled bars.
+
+Third-party `@feature` registrations infer `input_type` from required column
+arguments when it is omitted. Declare a label explicitly when a feature reads
+columns through defaulted parameters. Unknown labels and labels that do not
+cover required columns fail at registration.
 
 ### Derive precise price returns
 
