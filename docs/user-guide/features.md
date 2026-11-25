@@ -106,7 +106,7 @@ cover required columns fail at registration.
 
 ### Derive precise price returns
 
-The next minor version requires Polars 2.0 or newer. Return expressions select their
+Release 0.2.1 requires Polars 2.0 or newer. Return expressions select their
 native arithmetic from the column dtype while planning a query, without collecting
 lazy data. Keep integer ticks as integers until after the expression evaluates;
 casting large prices to floating point first can erase a one-tick change.
@@ -159,7 +159,7 @@ data must already have the intended observation order.
 
 ### Explicit finite-window methods
 
-The next minor version adds the following registered methods for workflows that need
+Release 0.2.1 includes the following registered methods for workflows that need
 finite observation windows rather than the native recursive or TA-Lib definitions.
 Existing `rsi`, `ema`, `macd`, `aroon`, `bollinger_bands` and risk features keep their
 defaults. These additions do not provide a Pipeline graph interpreter.
@@ -529,10 +529,9 @@ assert result["weekdays"][0] == 1.0  # July 4 is a weekday, despite the NYSE clo
 
 ### Calendar and bar grid
 
-The calendar-aware default targets the next minor version (0.2), separate from the 0.1.7 patch.
-The shared temporal contract requires published `ml4t-specs>=0.2.0,<0.3.0`, also declared
-in built package metadata. Specs 0.1.5 does not provide this API. Engineer's development
-branch uses the published dependency; the temporal migration is not part of the 0.1.7 patch.
+Release 0.2.1 uses the calendar-aware default and requires published
+`ml4t-specs>=0.2.0,<0.3.0`, also declared in built package metadata. Specs 0.1.5
+does not provide this API. The temporal migration is not part of the 0.1.7 patch.
 
 Calendar selection
 uses the explicit `calendar` argument, then declared feed metadata, then NYSE. Explicit
@@ -577,7 +576,7 @@ assert features["sma"].to_list() == [None, 101.5, 104.5, 107.5]
 assert features["timestamp"].equals(daily_prices["timestamp"])
 ```
 
-`CryptoCalendar` also changes in the next minor version. Install the `calendars` extra
+In release 0.2.1, `CryptoCalendar` uses an authoritative schedule. Install the `calendars` extra
 to use its authoritative `24/7` schedule. It enumerates UTC daily session opens, not
 hourly observations. `next_open` and `previous_close` return strictly adjacent daily
 session boundaries; a maintenance break or reopen is not a new session boundary.
@@ -714,8 +713,8 @@ and leaves that label null off-session. Its clock time uses the exchange timezon
 the input timestamps remain unchanged. Boundary lookups return UTC-aware
 instants and fail explicitly if no scheduled boundary exists within 366 days.
 
-The next minor version removes the approximate weekday fallback when the calendar provider
-is absent or a schedule is empty. Install `ml4t-engineer[calendars]` for these helpers.
+Release 0.2.1 rejects an absent calendar provider or empty schedule instead of
+using an approximate weekday fallback. Install `ml4t-engineer[calendars]` for these helpers.
 An `EquityCalendar` object requires a named schedule; it cannot represent calendar-free
 execution. Use `compute_features(..., calendar=None)` for observation-row features.
 
@@ -723,7 +722,10 @@ execution. Use `compute_features(..., calendar=None)` for observation-row featur
 
 ## Category Reference
 
-### Momentum (31 indicators)
+These tables summarize native methods by category. Finite-window methods are
+described above; use `feature_catalog` for the complete current registry.
+
+### Momentum
 
 Price momentum and oscillator indicators. Most produce bounded (normalized) output suitable for direct ML use.
 
@@ -758,7 +760,7 @@ Price momentum and oscillator indicators. Most produce bounded (normalized) outp
 
 > **Book**: [Price and Volume Feature Families](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/01_price_volume_features.ipynb) calls Engineer for selected indicators and derives others manually. [ETFs: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/03_financial_features.ipynb) calls individual Engineer feature functions in a case-study pipeline.
 
-### Trend (10 indicators)
+### Trend
 
 Moving averages that produce price-scale outputs. Require preprocessing for ML models.
 
@@ -775,7 +777,7 @@ Moving averages that produce price-scale outputs. Require preprocessing for ML m
 | `midpoint` | Midpoint over period | Yes | 14 |
 | `donchian_channels` | Donchian Channels (highest high/lowest low) | No | 20 |
 
-### Volatility (15 indicators)
+### Volatility
 
 Volatility estimators ranging from simple (ATR) to advanced (GARCH). Includes range-based estimators that are more efficient than close-to-close.
 
@@ -801,7 +803,7 @@ Volatility estimators ranging from simple (ATR) to advanced (GARCH). Includes ra
 
 > **Book**: [Price and Volume Feature Families](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/01_price_volume_features.ipynb) calls Engineer's volatility functions and compares selected estimators on ETF data.
 
-### Microstructure (15 indicators)
+### Microstructure
 
 Market microstructure features from De Prado (2018) and empirical market microstructure literature.
 
@@ -825,7 +827,7 @@ Market microstructure features from De Prado (2018) and empirical market microst
 
 > **Book**: [Microstructure Features](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/02_microstructure_features.ipynb) calls Engineer's tick-rule and liquidity functions while teaching the wider workflow. [NASDAQ-100 Microstructure: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/nasdaq100_microstructure/03_financial_features.ipynb) calls `amihud_illiquidity` and implements other case-study features separately.
 
-### ML Features (14 indicators)
+### ML Features
 
 Features designed specifically for machine learning pipelines.
 
@@ -848,7 +850,7 @@ Features designed specifically for machine learning pipelines.
 
 > **Book**: [Slow Features and Context](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/04_fundamentals_macro_calendar.ipynb) calls Engineer's `cyclical_encode` and teaches the point-in-time data joins manually.
 
-### Risk (6 indicators)
+### Risk
 
 Risk and risk-adjusted return metrics.
 
@@ -887,7 +889,7 @@ These are called directly (not via `compute_features`) since they require multi-
 
 > **Book**: [Structural and Cross-Instrument Features](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/08_financial_features/03_structural_cross_instrument_features.ipynb) calls `beta_to_market`. [Panel Features](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/09_model_based_features/14_panel_features.ipynb) calls several cross-asset functions and combines them with manual analysis.
 
-### Regime (4 indicators)
+### Regime
 
 Market regime detection features. All produce bounded outputs suitable for direct ML use.
 
@@ -899,7 +901,7 @@ Market regime detection features. All produce bounded outputs suitable for direc
 | `trend_intensity_index` | Trend strength | 0-100 |
 
 
-### Statistics (14 indicators)
+### Statistics
 
 Statistical features including TA-Lib standard and rolling distribution metrics.
 
@@ -920,7 +922,7 @@ Statistical features including TA-Lib standard and rolling distribution metrics.
 | `rolling_kl_divergence` | KL divergence vs reference | No | 0-10 |
 | `rolling_wasserstein` | Wasserstein distance | No | No |
 
-### Price Transform (5 indicators)
+### Price Transform
 
 | Name | Description | TA-Lib |
 |------|-------------|--------|
@@ -930,7 +932,7 @@ Statistical features including TA-Lib standard and rolling distribution metrics.
 | `wclprice` | Weighted Close (H+L+2C)/4 | Yes |
 | `midprice` | Midpoint Price (H+L)/2 | Yes |
 
-### Volume (3 indicators)
+### Volume
 
 | Name | Description | TA-Lib |
 |------|-------------|--------|
@@ -940,7 +942,7 @@ Statistical features including TA-Lib standard and rolling distribution metrics.
 
 > **Book**: [ETFs: Feature Engineering](https://github.com/stefan-jansen/machine-learning-for-trading/blob/d2edec54b1c7a6a9d7a97d8129eb05db4491e1eb/case_studies/etfs/03_financial_features.ipynb) calls Engineer's volume, momentum, trend, volatility, and regime feature functions.
 
-### Math (3 indicators)
+### Math
 
 O(n) rolling operations using monotonic deque.
 
@@ -956,7 +958,7 @@ See the dedicated [Fractional Differencing guide](fractional-differencing.md) fo
 
 ## Feature Discovery
 
-The `FeatureCatalog` provides filtering and full-text search over all 120 features:
+The `FeatureCatalog` provides filtering and full-text search over all 136 features:
 
 ```python
 from ml4t.engineer import feature_catalog
@@ -977,7 +979,7 @@ info = feature_catalog.describe("yang_zhang_volatility")
 
 # List all categories
 print(feature_catalog.categories())
-# ['cross_asset', 'math', 'microstructure', 'ml', 'momentum', ...]
+# ['math', 'microstructure', 'ml', 'momentum', ...]
 
 # List all tags
 print(feature_catalog.tags())
@@ -1019,18 +1021,20 @@ The YAML format supports version comments and parameter documentation inline.
 
 ### OHLCV DataFrame
 
-Most features expect a DataFrame with standardized column names (lowercase):
+`compute_features()` requires the five canonical OHLCV columns, even when a
+selected expression uses fewer inputs. Direct feature expressions accept their
+documented inputs. Additional returns and quote columns are supplied explicitly:
 
 | Column | Type | Required By |
 |--------|------|-------------|
 | `timestamp` | datetime | Required for calendar-aware grids; optional in observation-row mode |
 | `asset_id` | string | Optional panel grouping, auto-detected when present |
-| `open` | float | OHLCV, OHLC features |
-| `high` | float | OHLCV, OHLC, HLC, HL features |
-| `low` | float | OHLCV, OHLC, HLC, HL features |
-| `close` | float | All features |
-| `volume` | float | OHLCV, volume features |
-| `returns` | float | Return-based features (auto-computed if missing) |
+| `open` | float | Required OHLCV input |
+| `high` | float | Required OHLCV input |
+| `low` | float | Required OHLCV input |
+| `close` | float | Required OHLCV input |
+| `volume` | float | Required OHLCV input |
+| `returns` | float | Explicit additional input for returns-based features |
 
 Features declare their `input_type` metadata (e.g., `"OHLCV"`, `"close"`, `"returns"`), and `compute_features` validates that required columns are present.
 
@@ -1038,9 +1042,8 @@ Features declare their `input_type` metadata (e.g., `"OHLCV"`, `"close"`, `"retu
 
 If a feature requires a column that's missing, `compute_features` raises a clear error:
 
-```
-ValueError: Feature 'mfi' requires column 'volume' (input_type='OHLCV') but it was not found.
-```
+For example, requesting `realized_volatility` without a `returns` column names
+both the feature and the missing column before calculating the feature.
 
 ## Custom Parameters
 

@@ -9,6 +9,7 @@ OHLCV frame with a raw polars ColumnNotFoundError (issue #135).
 import numpy as np
 import polars as pl
 import pytest
+from ml4t.specs import FeedSpec
 
 from ml4t.engineer import compute_features
 from ml4t.engineer.api import INPUT_TYPE_COLUMNS, _execute_feature
@@ -88,6 +89,54 @@ def test_missing_column_is_reported_for_lazy_input() -> None:
     lazy = _frame_for(INPUT_TYPE_COLUMNS["OHLCV"]).lazy()
     with pytest.raises(ValueError, match=r"garch_forecast.*\['returns'\]"):
         compute_features(lazy, ["garch_forecast"], group_col="symbol", calendar=None)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("unit,period", [("session", 2), ("elapsed", "2h")])
+def test_missing_returns_are_named_for_valid_calendar_window_inputs(unit, period, lazy) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    frame = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2025, 1, 1, tzinfo=UTC) + timedelta(hours=i + 1) for i in range(4)
+            ],
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.0] * 4,
+            "volume": [1000.0] * 4,
+        }
+    )
+    feed = FeedSpec(
+        time_contract_version=2,
+        calendar="24/7",
+        timezone="UTC",
+        data_frequency="1h",
+        timestamp_semantics="bar_close",
+        bar_type="time",
+        bar_grid_anchor="session_open",
+        bar_label="right",
+        partial_bar_policy="exclude",
+    )
+    with pytest.raises(ValueError, match=r"realized_volatility.*\['returns'\]"):
+        compute_features(
+            frame.lazy() if lazy else frame,
+            [{"name": "realized_volatility", "params": {"period": period}}],
+            feed_spec=feed,
+            window_unit=unit,
+        )
+    supplied = frame.with_columns(pl.lit(0.0).alias("returns"))
+    valid = compute_features(
+        supplied.lazy() if lazy else supplied,
+        [{"name": "realized_volatility", "params": {"period": period}}],
+        feed_spec=feed,
+        window_unit=unit,
+    )
+    if isinstance(valid, pl.LazyFrame):
+        valid = valid.collect()
+    assert valid.height == frame.height
+    assert "realized_volatility" in valid.columns
 
 
 def test_returns_features_compute_once_a_returns_column_is_added() -> None:
@@ -180,6 +229,20 @@ def test_size_only_quotes_do_not_require_unused_prices(name: str, lazy: bool) ->
     if isinstance(out, pl.LazyFrame):
         out = out.collect()
     assert out[name].null_count() == 0
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_multi_output_feature_names_an_overridden_missing_column(lazy: bool) -> None:
+    frame = _frame_for(INPUT_TYPE_COLUMNS["OHLCV"])
+    request = [{"name": "donchian_channels", "params": {"period": 2, "low_col": "floor"}}]
+    with pytest.raises(ValueError, match=r"donchian_channels.*needs column.*floor"):
+        compute_features(frame.lazy() if lazy else frame, request, calendar=None)
+    supplied = frame.with_columns(pl.lit(3.0).alias("floor"))
+    out = compute_features(supplied.lazy() if lazy else supplied, request, calendar=None)
+    if isinstance(out, pl.LazyFrame):
+        out = out.collect()
+    assert out.height == frame.height
+    assert set(out["donchian_channels_1"].drop_nulls().to_list()) == {3.0}
 
 
 @pytest.mark.parametrize("input_type", ["close", "unknown"])
