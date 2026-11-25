@@ -71,15 +71,22 @@ def test_ulp_range_slack_accepts_roundoff_without_changing_input(
 
 @pytest.mark.parametrize("column", ["open", "close"])
 @pytest.mark.parametrize("boundary,direction", [("high", np.inf), ("low", 0.0)])
-def test_roundoff_tolerance_does_not_accept_a_material_range_violation(column, boundary, direction):
+@pytest.mark.parametrize("steps", [8, 9, 32])
+def test_range_validation_enforces_the_documented_roundoff_limit(
+    column, boundary, direction, steps
+):
     frame = _bars().with_columns(pl.col("high").alias("close"))
-    invalid = frame[boundary][0]
-    for _ in range(32):
-        invalid = np.nextafter(invalid, direction)
-    frame = frame.with_columns(pl.lit(invalid).alias(column))
+    candidate = frame[boundary][0]
+    for _ in range(steps):
+        candidate = np.nextafter(candidate, direction)
+    frame = frame.with_columns(pl.lit(candidate).alias(column))
     before = frame.clone()
-    with pytest.raises(DataValidationError, match="low-high range"):
-        _label(frame)
+    if steps == 8:
+        output = _label(frame)
+        assert_frame_equal(output.select(frame.columns), frame)
+    else:
+        with pytest.raises(DataValidationError, match="low-high range"):
+            _label(frame)
     assert_frame_equal(frame, before)
 
 
