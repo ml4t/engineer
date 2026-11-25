@@ -13,7 +13,7 @@ from ml4t.specs import FeedSpec
 
 from ml4t.engineer import compute_features
 from ml4t.engineer.api import INPUT_TYPE_COLUMNS, _execute_feature
-from ml4t.engineer.core.registry import get_registry
+from ml4t.engineer.core.registry import FeatureRegistry, get_registry
 
 _N = 300
 
@@ -245,6 +245,16 @@ def test_multi_output_feature_names_an_overridden_missing_column(lazy: bool) -> 
     assert set(out["donchian_channels_1"].drop_nulls().to_list()) == {3.0}
 
 
+@pytest.fixture
+def isolated_registry(monkeypatch: pytest.MonkeyPatch) -> FeatureRegistry:
+    from ml4t.engineer.core import decorators
+
+    registry = FeatureRegistry()
+    monkeypatch.setattr(decorators, "get_registry", lambda: registry)
+    return registry
+
+
+@pytest.mark.usefixtures("isolated_registry")
 @pytest.mark.parametrize("input_type", ["close", "unknown"])
 def test_registration_rejects_a_label_that_cannot_supply_required_returns(input_type: str) -> None:
     from ml4t.engineer.core.decorators import feature
@@ -263,13 +273,9 @@ def test_registration_rejects_a_label_that_cannot_supply_required_returns(input_
 
 
 def test_third_party_returns_feature_is_registered_and_computes_from_inferred_inputs(
-    monkeypatch: pytest.MonkeyPatch,
+    isolated_registry: FeatureRegistry,
 ) -> None:
     from ml4t.engineer.core import decorators
-    from ml4t.engineer.core.registry import FeatureRegistry
-
-    registry = FeatureRegistry()
-    monkeypatch.setattr(decorators, "get_registry", lambda: registry)
 
     @decorators.feature(
         name="custom_returns_contract",
@@ -281,7 +287,7 @@ def test_third_party_returns_feature_is_registered_and_computes_from_inferred_in
         expr = pl.col(returns) if isinstance(returns, str) else returns
         return expr * expr
 
-    metadata = registry.get("custom_returns_contract")
+    metadata = isolated_registry.get("custom_returns_contract")
     assert metadata is not None
     assert metadata.input_type == "returns"
     result = pl.DataFrame({"returns": [0.0, 0.5, -0.25]}).select(metadata.func("returns"))
