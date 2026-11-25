@@ -1,10 +1,4 @@
-"""A feature's input_type must name the columns it needs.
-
-`feature_catalog.by_input_type(...)` is how a caller finds which features a given set of columns
-supports. Before this contract, 48 registered features carried the decorator's default label
-"close" while reading high, low, volume or returns, and 14 returns-based features failed on every
-OHLCV frame with a raw polars ColumnNotFoundError (issue #135).
-"""
+"""Catalog labels and public input errors must match real feature computations."""
 
 import numpy as np
 import polars as pl
