@@ -30,7 +30,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP, KEYWORD_ONLY_PARAMS
+from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP, INPUT_TYPE_COLUMNS, KEYWORD_ONLY_PARAMS
 from ml4t.engineer.core.registry import get_registry
 
 # =============================================================================
@@ -39,18 +39,6 @@ from ml4t.engineer.core.registry import get_registry
 # These mappings translate function parameter names to DataFrame column names.
 # Moved to module level to avoid recreation on every feature execution.
 # =============================================================================
-
-# Map input_type metadata to required DataFrame columns
-# This enables deriving column requirements from FeatureMetadata.input_type
-INPUT_TYPE_COLUMNS: dict[str, list[str]] = {
-    "OHLCV": ["open", "high", "low", "close", "volume"],
-    "OHLC": ["open", "high", "low", "close"],
-    "HLC": ["high", "low", "close"],
-    "HL": ["high", "low"],
-    "close": ["close"],
-    "returns": ["returns"],
-    "volume": ["volume"],
-}
 
 _GROUP_COLUMN_CANDIDATES = ("asset_id", "symbol", "ticker", "product", "asset")
 _TIME_COLUMN_CANDIDATES = ("timestamp", "event_time", "date", "datetime")
@@ -642,6 +630,27 @@ def _execute_feature(
                 f'"params": {{"{param_name}": value}}}}])'
             )
 
+    available = data.columns if isinstance(data, pl.DataFrame) else data.collect_schema().names()
+    passed = [c for arg in column_args for c in (arg if isinstance(arg, list) else [arg])]
+
+    def validate_columns(columns: list[str]) -> None:
+        missing = sorted(set(columns) - set(available))
+        if missing:
+            hint = (
+                " Add a 'returns' column using the return definition in the feature's docstring. "
+                "Validate the declared bar grid before deriving one-bar returns; "
+                "calendar=None uses row order without validating scheduled bars."
+                if "returns" in missing
+                else ""
+            )
+            raise ValueError(
+                f"Feature '{feature_name}' needs column(s) {missing}, which the input lacks "
+                f"(input_type '{metadata.input_type}' provides default columns "
+                f"{INPUT_TYPE_COLUMNS.get(metadata.input_type)}).{hint}"
+            )
+
+    validate_columns(passed)
+
     # Call the feature function
     try:
         result = metadata.func(*column_args, **keyword_params)
@@ -654,6 +663,23 @@ def _execute_feature(
             f"Available metadata: input_type='{metadata.input_type}', "
             f"parameters={metadata.parameters}"
         ) from e
+
+    if isinstance(result, pl.Expr):
+        expressions = [result]
+    elif isinstance(result, dict):
+        expressions = list(result.values())
+    elif isinstance(result, tuple | list):
+        expressions = list(result)
+    else:
+        expressions = []
+    validate_columns(
+        [
+            column
+            for expr in expressions
+            if isinstance(expr, pl.Expr)
+            for column in expr.meta.root_names()
+        ]
+    )
 
     # Handle different return types
     if isinstance(result, pl.Expr):

@@ -8,7 +8,12 @@ import inspect
 from collections.abc import Callable
 from typing import Any, Literal, TypeVar
 
-from ml4t.engineer.core.dispatch import COLUMN_ARG_MAP
+from ml4t.engineer.core.dispatch import (
+    COLUMN_ARG_MAP,
+    INPUT_TYPE_COLUMNS,
+    infer_input_type,
+    required_columns,
+)
 from ml4t.engineer.core.lookbacks import bind_feature_lookback
 from ml4t.engineer.core.registry import FeatureMetadata, get_registry
 
@@ -38,7 +43,7 @@ def feature(
     value_range: tuple[float, float] | None = None,
     formula: str = "",
     ta_lib_compatible: bool = False,
-    input_type: str = "close",
+    input_type: str | None = None,
     output_type: str = "indicator",
     parameters: dict[str, Any] | None = None,
     dependencies: list[str] | None = None,
@@ -72,8 +77,11 @@ def feature(
         Mathematical formula or algorithm description
     ta_lib_compatible : bool, default False
         Whether feature matches TA-Lib output
-    input_type : str, default "close"
-        Expected input data type (OHLCV, close, returns, etc.)
+    input_type : str or None, default None
+        Input columns the feature needs, as an ``INPUT_TYPE_COLUMNS`` label (close, HLC, OHLCV,
+        returns, ...). None infers the label from the signature's required column arguments.
+        A declared label must cover them; declare one when the feature reads columns through
+        parameters that have defaults, which the signature cannot reveal.
     output_type : str, default "indicator"
         Output data type (indicator, signal, label)
     parameters : dict, optional
@@ -139,6 +147,22 @@ def feature(
                 f"Feature '{name}' declares unknown parameters: {sorted(unknown_parameters)}"
             )
 
+        needed = required_columns(func)
+        if input_type is None:
+            resolved_input_type = infer_input_type(needed)
+        elif input_type not in INPUT_TYPE_COLUMNS:
+            raise TypeError(
+                f"Feature '{name}' declares unknown input_type {input_type!r}; "
+                f"use one of {sorted(INPUT_TYPE_COLUMNS)}"
+            )
+        elif not set(needed) <= set(INPUT_TYPE_COLUMNS[input_type]):
+            raise TypeError(
+                f"Feature '{name}' declares input_type {input_type!r}, which provides "
+                f"{INPUT_TYPE_COLUMNS[input_type]}, but its signature requires {needed}"
+            )
+        else:
+            resolved_input_type = input_type
+
         default_parameters: dict[str, Any] = {}
         for parameter_name, parameter in signature.parameters.items():
             if parameter_name in COLUMN_ARG_MAP:
@@ -189,7 +213,7 @@ def feature(
             normalized=normalized,
             lookback=lookback_fn,
             ta_lib_compatible=ta_lib_compatible,
-            input_type=input_type,
+            input_type=resolved_input_type,
             output_type=output_type,
             parameters=default_parameters,
             dependencies=dependencies or [],

@@ -149,20 +149,20 @@ Use this as reference once you know what kind of signal you want to build.
 
 | Category | Count | Examples |
 |----------|-------|----------|
-| Momentum | 31 | RSI, MACD, Stochastic, CCI, ADX, MFI |
+| Momentum | 36 | RSI, MACD, Stochastic, CCI, ADX, MFI |
 | Microstructure | 15 | Kyle Lambda, VPIN, Amihud, Roll spread |
-| Volatility | 15 | ATR, Bollinger, Yang-Zhang, Parkinson |
-| Statistics | 14 | Variance, Linear Regression, Correlation |
+| Volatility | 18 | ATR, Bollinger, Yang-Zhang, Parkinson |
+| Statistics | 15 | Variance, Linear Regression, Correlation |
 | ML | 14 | Fractional Diff, Entropy, Lag features |
-| Trend | 10 | SMA, EMA, WMA, DEMA, TEMA, KAMA |
-| Risk | 6 | Max Drawdown, Sortino, CVaR |
+| Trend | 15 | SMA, EMA, WMA, DEMA, TEMA, KAMA |
+| Risk | 7 | Max Drawdown, Sortino, CVaR |
 | Price Transform | 5 | Typical Price, Weighted Close |
 | Regime | 4 | Hurst Exponent, Choppiness Index |
-| Volume | 3 | OBV, AD, ADOSC |
+| Volume | 4 | OBV, AD, ADOSC |
 | Math | 3 | MAX, MIN, SUM |
 
 Standalone cross-asset utilities such as beta, rolling correlation, and
-cointegration are also available outside the 120-feature registry.
+cointegration are also available outside the 136-feature registry.
 
 ## Installation
 
