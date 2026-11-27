@@ -24,15 +24,15 @@ assert registry.get("rsi").category == "momentum"
 ### List Features
 
 ```python
-# All 120 features (sorted alphabetically)
+# All registered features (sorted alphabetically)
 all_features = registry.list_all()
 
 # By category
-momentum = registry.list_by_category("momentum")  # 31 features
+momentum = registry.list_by_category("momentum")
 
 # By property
-normalized = registry.list_normalized()            # 37 ML-ready features
-ta_lib = registry.list_ta_lib_compatible()         # 59 validated features
+normalized = registry.list_normalized()
+ta_lib = registry.list_ta_lib_compatible()
 ```
 
 ### Inspect Metadata
@@ -45,7 +45,7 @@ meta.category       # "momentum"
 meta.description    # "Relative Strength Index"
 meta.formula        # "RSI = 100 - 100/(1 + RS), RS = AvgGain/AvgLoss"
 meta.parameters     # {"period": 14}
-meta.input_type     # "OHLCV"
+meta.input_type     # "close"
 meta.output_type    # "indicator"
 meta.normalized     # True
 meta.value_range    # (0, 100)

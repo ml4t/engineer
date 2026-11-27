@@ -48,6 +48,13 @@ def _finite_float_array(values: Any, name: str, *, positive: bool = False) -> np
     return array
 
 
+def _outside_ohlc_range(values: np.ndarray, lows: np.ndarray, highs: np.ndarray) -> bool:
+    """Allow eight Float64 steps toward zero at each finite positive boundary."""
+    lower_slack = 8 * (lows - np.nextafter(lows, 0.0))
+    upper_slack = 8 * (highs - np.nextafter(highs, 0.0))
+    return bool(np.any((lows - values > lower_slack) | (values - highs > upper_slack)))
+
+
 def _validate_ohlc_arrays(
     data: pl.DataFrame,
     price_col: str,
@@ -72,7 +79,7 @@ def _validate_ohlc_arrays(
     lows = _finite_float_array(data[low_col].to_numpy(), low_col, positive=True)
     if np.any(highs < lows):
         raise DataValidationError("high prices must be greater than or equal to low prices")
-    if np.any((closes < lows) | (closes > highs)):
+    if _outside_ohlc_range(closes, lows, highs):
         raise DataValidationError("close prices must lie within each bar's low-high range")
 
     if open_col is None:
@@ -81,7 +88,7 @@ def _validate_ohlc_arrays(
         if open_col not in data.columns:
             raise DataValidationError(f"Open column '{open_col}' not found in data")
         opens = _finite_float_array(data[open_col].to_numpy(), open_col, positive=True)
-        if np.any((opens < lows) | (opens > highs)):
+        if _outside_ohlc_range(opens, lows, highs):
             raise DataValidationError("open prices must lie within each bar's low-high range")
     return closes, opens, highs, lows
 

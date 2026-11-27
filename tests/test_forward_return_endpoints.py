@@ -469,15 +469,22 @@ def test_positive_elapsed_horizon_never_wraps_into_past_at_ns_range_limit(lazy):
     assert frame.equals(before)
 
 
-def test_input_outside_nanosecond_range_is_not_silently_moved_to_another_century():
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize("year", [1500, 2500])
+@pytest.mark.parametrize("unit", ["us", "ms"])
+def test_input_outside_nanosecond_range_is_not_silently_moved_to_another_century(lazy, year, unit):
     from datetime import UTC, datetime
 
     frame = _prices().with_columns(
-        pl.Series("timestamp", [datetime(1500, 1, day, tzinfo=UTC) for day in [1, 2, 3]])
+        pl.Series(
+            "timestamp",
+            [datetime(year, 1, day, tzinfo=UTC) for day in [1, 2, 3]],
+            dtype=pl.Datetime(unit, "UTC"),
+        )
     )
     before = frame.clone()
     with pytest.raises(ValueError, match="range"):
-        _run(frame)
+        _run(frame, lazy=lazy)
     assert frame.equals(before)
 
 

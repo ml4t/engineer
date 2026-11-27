@@ -178,6 +178,11 @@ With high and low columns, an intrabar touch exits at the barrier price. Supplyi
 barriers, the function selects the stop-loss exit because OHLC data does not show
 which extreme occurred first.
 
+Adjusted prices can put an open or close just outside the low-high range through
+floating-point rounding. The range check allows eight Float64 steps toward zero
+at each boundary, without changing any supplied price. Larger range violations,
+inverted high/low bounds, nonfinite prices and nonpositive prices remain invalid.
+
 ### Trailing Stop
 
 Enable a trailing stop loss that ratchets up as price moves favorably:

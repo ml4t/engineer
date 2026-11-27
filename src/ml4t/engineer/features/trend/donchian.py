@@ -21,6 +21,7 @@ from ml4t.engineer.core.exceptions import InvalidParameterError
     normalized=False,
     formula="",
     ta_lib_compatible=False,
+    input_type="HL",
 )
 def donchian_channels(
     high: str = "high",
