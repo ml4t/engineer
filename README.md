@@ -7,14 +7,14 @@
 Feature engineering, labeling, alternative bars, and leakage-safe datasets for
 financial ML.
 
-`ml4t-engineer` provides 120 registry features across 11 categories, path-dependent
+`ml4t-engineer` provides 136 registry features across 11 categories, path-dependent
 and fixed-horizon labeling, activity-based bar sampling, and train-only preprocessing.
 The core interface uses Polars DataFrames.
 
 ## Installation
 
 Development source supports Python 3.12, 3.13, 3.14, and 3.15 on Linux, macOS, and Windows.
-Python 3.15 support and the calendar API used below are intended for the 0.2 release.
+Python 3.15 support and the calendar API below are available in release 0.2.1.
 Release 0.1.6 supports Python 3.12-3.14; use its
 [version-matched quick start](https://github.com/ml4t/engineer/tree/v0.1.6#quick-start)
 instead of passing the new `calendar` argument to that release.
@@ -23,8 +23,8 @@ instead of passing the new `calendar` argument to that release.
 pip install ml4t-engineer
 ```
 
-Until 0.2 is available from PyPI, run the examples below from a
-[source checkout](#development) with `uv sync --no-dev`, using that environment's Python.
+The examples below work with release 0.2.1. To use development changes, run them
+from a [source checkout](#development) with `uv sync --no-dev`.
 
 The quick start uses only core dependencies. Optional extras provide TA-Lib validation,
 DuckDB and PyArrow storage, market calendars, visualization, statistics, and ML tools:
