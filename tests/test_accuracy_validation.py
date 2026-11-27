@@ -6,6 +6,7 @@ import timeit
 
 import numpy as np
 import pytest
+from packaging.version import Version
 
 talib = pytest.importorskip("talib")
 
@@ -27,7 +28,6 @@ def test_rsi_accuracy_detailed():
         "trending_up": np.linspace(100, 200, n),
         "trending_down": np.linspace(200, 100, n),
         "sine_wave": 100 + 10 * np.sin(np.linspace(0, 4 * np.pi, n)),
-        "constant": np.full(n, 100.0),
     }
 
     results = []
@@ -76,6 +76,36 @@ def test_rsi_accuracy_detailed():
         assert result["status"] == "✅", (
             f"RSI accuracy failed for {result['case']}: max_diff={result['max_diff']}"
         )
+
+
+@pytest.mark.parametrize("period", [2, 14])
+def test_flat_rsi_preserves_legacy_zero_despite_talib_083_neutral_fifty(period):
+    import polars as pl
+
+    from ml4t.engineer import compute_features
+
+    data = np.full(40, 100.0)
+    output = (
+        compute_features(
+            pl.DataFrame(
+                {**dict.fromkeys(["open", "high", "low", "close"], data), "volume": np.ones(40)}
+            ).lazy(),
+            [{"name": "rsi", "params": {"period": period}}],
+            calendar=None,
+        )
+        .collect()["rsi"]
+        .to_numpy()
+    )
+    assert np.isnan(output[:period]).all()
+    np.testing.assert_array_equal(output[period:], np.zeros(40 - period))
+    np.testing.assert_array_equal(rsi(data, period=period), output)
+
+    # TA-Lib/ta-lib#480 changes only the undefined gain=loss=0 convention.
+    core_version = Version(talib.__ta_version__.decode().split()[0])
+    expected = 50.0 if core_version >= Version("0.8.3") else 0.0
+    reference = talib.RSI(data, timeperiod=period)
+    assert np.isnan(reference[:period]).all()
+    np.testing.assert_array_equal(reference[period:], np.full(40 - period, expected))
 
 
 def validate_all_indicators():

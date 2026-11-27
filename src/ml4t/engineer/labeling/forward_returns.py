@@ -57,7 +57,7 @@ def _utc_instants(frame: pl.DataFrame, name: str, timezone: str | None) -> pl.Da
     dtype = frame.schema[name]
     if not isinstance(dtype, pl.Datetime):
         raise ValueError(f"{name!r} must contain datetime instants")
-    value = pl.col(name).cast(pl.Datetime("ns", dtype.time_zone))
+    value = pl.col(name).cast(pl.Datetime("ns", dtype.time_zone), strict=False)
     if frame.select(value.cast(dtype).ne_missing(pl.col(name)).any()).item():
         raise ValueError(f"{name!r} is outside the supported nanosecond timestamp range")
     if dtype.time_zone is None:

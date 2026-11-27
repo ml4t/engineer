@@ -157,6 +157,12 @@ expressions, not portfolio statistics. Use explicit grouping for multiple assets
 validate the declared bar grid before deriving returns as described below. Row-only
 data must already have the intended observation order.
 
+Native `rsi` retains its existing flat-price convention: after warm-up, a run with
+no gains or losses returns zero. TA-Lib changed that case to 50 in version 0.8.3;
+upgrading the optional reference package does not change Engineer's result.
+Nonconstant Wilder RSI remains compared with TA-Lib at `1e-6` tolerance. See the
+[upstream change](https://github.com/TA-Lib/ta-lib/releases/tag/v0.8.3).
+
 ### Explicit finite-window methods
 
 Release 0.2.1 includes the following registered methods for workflows that need

@@ -1,8 +1,8 @@
 """
-Relative Strength Index (RSI) - TA-Lib compatible implementation.
+Relative Strength Index (RSI) with the legacy TA-Lib flat-input convention.
 
 RSI measures the speed and change of price movements, oscillating between 0 and 100.
-Uses Wilder's smoothing method for exact TA-Lib compatibility.
+Uses Wilder's smoothing method. Flat runs retain the pre-0.8.3 TA-Lib value of zero.
 """
 
 import numpy as np
@@ -46,7 +46,7 @@ def _rsi_run(
     if avg_loss != 0:
         rs = avg_gain / avg_loss
         result[start + period] = 100.0 - (100.0 / (1.0 + rs))
-    # When avg_loss is 0, TA-Lib returns 0 if avg_gain is also 0
+    # Preserve the legacy flat-input convention (TA-Lib before 0.8.3).
     elif avg_gain == 0:
         result[start + period] = 0.0
     else:
@@ -70,7 +70,7 @@ def _rsi_run(
         if avg_loss != 0:
             rs = avg_gain / avg_loss
             result[i] = 100.0 - (100.0 / (1.0 + rs))
-        # When avg_loss is 0, TA-Lib returns 0 if avg_gain is also 0
+        # Preserve the legacy flat-input convention (TA-Lib before 0.8.3).
         elif avg_gain == 0:
             result[i] = 0.0
         else:
@@ -190,6 +190,7 @@ def rsi(
     Notes
     -----
     - Uses Wilder's smoothing (not simple EMA) for exact TA-Lib compatibility
+      except flat runs: Engineer retains zero, while TA-Lib 0.8.3+ returns 50
     - RSI = 100 - (100 / (1 + RS)) where RS = Average Gain / Average Loss
     - First average uses simple mean, subsequent close use Wilder's smoothing
     - Standard period is 14, commonly used close are 7, 14, 21
