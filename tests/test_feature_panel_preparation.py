@@ -169,6 +169,64 @@ def test_future_publication_cannot_fill_or_compress_a_required_window():
     assert a["available_at"].null_count() == 2
 
 
+def gap():
+    return history().with_columns(
+        pl.when((pl.col("asset") == "A") & (pl.col("timestamp") == DAYS[1]))
+        .then(None)
+        .otherwise(pl.col("close"))
+        .alias("close")
+    )
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+@pytest.mark.parametrize(
+    ("frame", "options"),
+    [
+        (history, {}),
+        (
+            history,
+            {
+                "features": {
+                    "average": finite_mean("close", period=3),
+                    "pair": finite_mean("close", period=2),
+                },
+                "lookbacks": {"average": 3, "pair": 2},
+            },
+        ),
+        (gap, {}),
+        (gap, {"missing_input_policy": "known_missing"}),
+        (history, {"screen": "eligible"}),
+    ],
+)
+def test_append_only_history_gives_the_per_decision_panel(lazy, frame, options):
+    source = frame().lazy() if lazy else frame()
+    fast = prepare(source, append_only=True, **options)
+    exact = prepare(source, **options)
+    if lazy:
+        fast, exact = fast.collect(), exact.collect()
+    assert_frame_equal(fast, exact)
+
+
+def test_append_only_refuses_a_row_published_after_a_decision_it_precedes():
+    delayed = history().with_columns(
+        pl.when((pl.col("asset") == "A") & (pl.col("timestamp") == DAYS[1]))
+        .then(pl.lit(datetime(2025, 7, 10, 18, tzinfo=UTC)))
+        .otherwise(pl.col("available_at"))
+        .alias("available_at")
+    )
+    with pytest.raises(ValueError, match="known by that decision"):
+        prepare(delayed, append_only=True)
+
+
+def test_append_only_refuses_decision_specific_snapshots():
+    with pytest.raises(ValueError, match="append_only"):
+        prepare(
+            history().with_columns(pl.col("available_at").alias("as_of")),
+            append_only=True,
+            history_decision_time_col="as_of",
+        )
+
+
 @pytest.mark.parametrize("lazy", [False, True])
 def test_explicit_known_missing_profile_uses_kernel_definition_without_changing_rows(lazy):
     frame = history().with_columns(
